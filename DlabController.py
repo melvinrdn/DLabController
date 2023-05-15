@@ -235,8 +235,6 @@ class DLabController(object):
         -------
         None
         """
-        # TODO - change to feedback window when on dlab computer
-        #self.camera_win = camera_control.CameraControl(self)
         self.feedback_win = feedbacker.Feedbacker(self, slm, answer)
 
     def open_camera(self):
