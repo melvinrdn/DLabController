@@ -21,7 +21,7 @@ print('Done !')
 
 class DLabController(object):
     """
-    A class for controlling the Dlab hardware
+    A class for controlling the Dlab hardware, test
     """
 
     def __init__(self, parent):
