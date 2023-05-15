@@ -1,7 +1,7 @@
-# SLM Phase Controller
-A GUI application for controlling the phase of the Santec SLM-300 (D-Lab).
+# D-Lab Controller
+A GUI application for controlling the hadrware of the D-Lab.
 
-To run the program, execute "controlPhaseSLM.py", it will load all the other files as it needs to.
+To run the program, execute "DLabController.py", it will load all the other files as it needs to.
 
 ## Structure
 
