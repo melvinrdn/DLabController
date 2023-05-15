@@ -1,0 +1,6 @@
+numpy~=1.23.5
+scipy~=1.10.1
+matplotlib~=3.7.1
+opencv-python~=4.7.0.72
+Pillow~=9.4.0
+pylablib~=1.4.1

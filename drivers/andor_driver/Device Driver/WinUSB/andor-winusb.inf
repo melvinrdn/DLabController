@@ -1,0 +1,185 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = %ClassName%
+ClassGuid   = {88bae032-5a81-49f0-bc3d-a4ff138216d6}
+Provider    = %VendorName%
+CatalogFile = andor-winusb.cat
+CatalogFile.NTAMD64 = andor-winusb_x64.cat
+DriverVer   = 05/08/2019, 1.0.0.0
+
+
+[Manufacturer]
+%VendorName% = AndorDevice_WinUSB,NTx86,NTamd64
+
+[AndorDevice_WinUSB.NTx86]
+"Andor Zyla" = USB_Install, USB\"VID_136E&PID_0014"
+"Andor iStar-sCMOS" = USB_Install, USB\"VID_136E&PID_0018"
+"Andor Mosaic3" = USB_Install, USB\"VID_136E&PID_0019"
+"Andor Chameleon" = USB_Install, USB\"VID_136E&PID_0020"
+"Andor Sona" = USB_Install, USB\"VID_136E&PID_0021"
+"Andor Marana" = USB_Install, USB\"VID_136E&PID_0022"
+"Andor Balor" = USB_Install, USB\"VID_136E&PID_0023"
+
+[AndorDevice_WinUSB.NTamd64]
+"Andor Zyla" = USB_Install, USB\"VID_136E&PID_0014"
+"Andor iStar-sCMOS" = USB_Install, USB\"VID_136E&PID_0018"
+"Andor Mosaic3" = USB_Install, USB\"VID_136E&PID_0019"
+"Andor Chameleon" = USB_Install, USB\"VID_136E&PID_0020"
+"Andor Sona" = USB_Install, USB\"VID_136E&PID_0021"
+"Andor Marana" = USB_Install, USB\"VID_136E&PID_0022"
+"Andor Balor" = USB_Install, USB\"VID_136E&PID_0023"
+
+[ClassInstall32]
+Addreg = WinUSBDeviceClassReg
+
+[WinUSBDeviceClassReg]
+HKR,,,0,"Universal Serial Bus devices"
+HKR,,Icon,,-20
+
+
+[USB_Install.NT]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[USB_Install.NTAMD64]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+
+[USB_Install.NTAMD64.Services]
+Include    = winusb.inf
+AddService = WinUSB,0x00000002,WinUSB_ServiceInstall
+
+[USB_Install.NT.Services]
+Include    = winusb.inf
+AddService = WinUSB,0x00000002,WinUSB_ServiceInstall
+
+[WinUSB_ServiceInstall]
+DisplayName   = "WinUSB - Kernel Driver 02/28/2012 6.1.7600.16385"
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %12%\WinUSB.sys
+
+[USB_Install.NT.Wdf]
+KmdfService = WINUSB, WinUsb_Install
+
+[USB_Install.NTAMD64.Wdf]
+KmdfService = WINUSB, WinUsb_Install
+
+
+[WinUSB_Install]
+KmdfLibraryVersion = 1.11
+
+[USB_Install.NT.HW]
+AddReg = AddDeviceInterfaceGUID
+
+[USB_Install.NTAMD64.HW]
+AddReg = AddDeviceInterfaceGUID
+
+[USB_Install.NT]
+CopyFiles = libusb_file_dll_x86
+
+[USB_Install.NTAMD64]
+CopyFiles = libusb_file_dll, libusb_file_dll_wow64
+
+[AddDeviceInterfaceGUID]
+HKR,,DeviceInterfaceGUIDs,0x10000,%DeviceGUID%
+
+[USB_Install.NT.CoInstallers]
+AddReg    = CoInstallers_AddReg
+CopyFiles = CoInstallers_CopyFiles
+
+[USB_Install.NTAMD64.CoInstallers]
+AddReg    = CoInstallers_AddReg
+CopyFiles = CoInstallers_CopyFiles
+
+
+[CoInstallers_AddReg]
+HKR,,CoInstallers32,0x00010000,"WdfCoInstaller01011.dll,WdfCoInstaller","WinUSBCoInstaller2.dll"
+
+[CoInstallers_CopyFiles]
+WinUSBCoInstaller2.dll
+WdfCoInstaller01011.dll
+
+[DestinationDirs]
+CoInstallers_CopyFiles = 11
+libusb_file_dll        = 10,system32
+libusb_file_dll_wow64  = 10,syswow64
+libusb_file_dll_x86    = 10,system32
+
+[SourceDisksNames]
+1 = %SourceName%
+
+[SourceDisksFiles.x86]
+WinUSBCoInstaller2.dll  = 1,x86
+WdfCoInstaller01011.dll = 1,x86
+libusb-1.0_x86.dll      = 1,x86
+
+[SourceDisksFiles.amd64]
+WinUSBCoInstaller2.dll  = 1,amd64
+WdfCoInstaller01011.dll = 1,amd64
+libusb-1.0.dll          = 1,amd64
+libusb-1.0_x86.dll      = 1,x86
+
+[libusb_file_dll]
+libusb-1.0.dll
+
+[libusb_file_dll_x86]
+libusb-1.0.dll, libusb-1.0_x86.dll
+
+[libusb_file_dll_wow64]
+libusb-1.0.dll, libusb-1.0_x86.dll
+
+;--------------------------------------------------------------------------
+; libusb-1.0 runtime library
+;--------------------------------------------------------------------------
+
+[LIBUSB_WIN32_DEV.NT]
+CopyFiles = libusb_file_dll_x86
+
+[LIBUSB_WIN32_DEV.NTAMD64]
+CopyFiles = libusb_file_dll, libusb_file_dll_wow64
+
+
+[Strings]
+VendorName = "Andor Technology"
+ClassName = "Universal Serial Bus Devices"
+SourceName = "Andor Installation Disk"
+DeviceGUID = "{B6DE9140-5127-4BB5-AF9F-739F5D58DE42}"
+
+[Devices]
+"Unprogrammed Cypress"          = LIBUSB_WIN32_DEV, USB\VID_04B4&PID_8613
+"Unprogrammed Cypress FX3"      = LIBUSB_WIN32_DEV, USB\VID_04B4&PID_00F3
+"Andor USB Cam: EEPROM missing" = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0000
+"Andor Zyla USB3"               = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0014
+"Andor iStar-sCMOS"             = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0018
+"Andor Mosaic3"                 = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0019
+"Andor Chameleon"               = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0020
+"Andor Sona"                    = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0021
+"Andor Marana"                  = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0022
+"Andor Balor"                   = LIBUSB_WIN32_DEV, USB\VID_136E&PID_0023
+
+[Devices.NT]
+"Unprogrammed Cypress"          = LIBUSB_WIN32_DEV.NT, USB\VID_04B4&PID_8613
+"Unprogrammed Cypress FX3"      = LIBUSB_WIN32_DEV.NT, USB\VID_04B4&PID_00F3
+"Andor USB Cam: EEPROM missing" = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0000
+"Andor Zyla USB3"               = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0014
+"Andor iStar-sCMOS"             = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0018
+"Andor Mosaic3"                 = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0019
+"Andor Chameleon"               = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0020
+"Andor Sona"                    = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0021
+"Andor Marana"                  = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0022
+"Andor Balor"                   = LIBUSB_WIN32_DEV.NT, USB\VID_136E&PID_0023
+
+[Devices.NTAMD64]
+"Unprogrammed Cypress"          = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_04B4&PID_8613
+"Unprogrammed Cypress FX3"      = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_04B4&PID_00F3
+"Andor USB Cam: EEPROM missing" = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0000
+"Andor Zyla USB3"               = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0014
+"Andor iStar-sCMOS"             = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0018
+"Andor Mosaic3"                 = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0019
+"Andor Chameleon"               = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0020
+"Andor Sona"                    = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0021
+"Andor Marana"                  = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0022
+"Andor Balor"                   = LIBUSB_WIN32_DEV.NTAMD64, USB\VID_136E&PID_0023
