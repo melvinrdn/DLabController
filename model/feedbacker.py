@@ -326,6 +326,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_Nr)
         self.but_WPG_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPG)
+        self.but_WPG_Home = tk.Button(frm_stage, text='Home', command=self.home_WPG)
         self.but_WPG_Read = tk.Button(frm_stage, text='Read', command=self.read_WPG)
         self.but_WPG_Move = tk.Button(frm_stage, text='Move', command=self.move_WPG)
         # scan parameters
@@ -514,8 +515,9 @@ class Feedbacker(object):
         self.but_WPR_Move.grid(row=2, column=8)
 
         self.but_WPG_Ini.grid(row=3, column=5)
-        self.but_WPG_Read.grid(row=3, column=6)
-        self.but_WPG_Move.grid(row=3, column=7)
+        self.but_WPG_Home.grid(row=3, column=6)
+        self.but_WPG_Read.grid(row=3, column=7)
+        self.but_WPG_Move.grid(row=3, column=8)
 
         self.but_Delay_Ini.grid(row=4, column=5)
         self.but_Delay_Home.grid(row=4, column=6)
@@ -526,17 +528,17 @@ class Feedbacker(object):
         self.ent_WPR_to.grid(row=2, column=10)
         self.ent_WPR_steps.grid(row=2, column=11)
 
-        self.ent_WPG_from.grid(row=3, column=8)
-        self.ent_WPG_to.grid(row=3, column=9)
-        self.ent_WPG_steps.grid(row=3, column=10)
+        self.ent_WPG_from.grid(row=3, column=9)
+        self.ent_WPG_to.grid(row=3, column=10)
+        self.ent_WPG_steps.grid(row=3, column=11)
 
         self.ent_Delay_from.grid(row=4, column=9)
         self.ent_Delay_to.grid(row=4, column=10)
         self.ent_Delay_steps.grid(row=4, column=11)
 
-        self.cb_wprscan.grid(row=2, column=11)
-        self.cb_wpgscan.grid(row=3, column=11)
-        self.cb_delayscan.grid(row=4, column=11)
+        self.cb_wprscan.grid(row=2, column=12)
+        self.cb_wpgscan.grid(row=3, column=12)
+        self.cb_delayscan.grid(row=4, column=12)
 
         # lbl_WPR.grid(row=2,column = 1)
 
@@ -680,6 +682,7 @@ class Feedbacker(object):
             self.WPR.move_home(blocking=True)
             self.but_WPR_Home.config(fg='green')
             print("WPR homed!")
+            self.read_WPR()
         except:
             self.but_WPR_Home.config(fg='red')
             print("Not able to home WPR")
@@ -745,7 +748,27 @@ class Feedbacker(object):
         except:
             self.but_WPG_Ini.config(fg='red')
             print("Not able to initalize WPG")
+    def home_WPG(self):
+        """
+        Homes the green waveplate motor object.
+        NOT YET WORKING due to hardware failure
+        Raises
+        ------
+        Exception
+            If the motor fails to home.
 
+        Returns
+        -------
+        None
+        """
+        try:
+            #self.WPG.move_home(blocking=True)
+            self.but_WPG_Home.config(fg='green')
+            print("DON'T! It's a trap!")
+            self.read_WPG()
+        except:
+            self.but_WPG_Home.config(fg='red')
+            print("Not able to home WPR")
     def read_WPG(self):
         """
         Reads the current position of the green waveplate motor.
@@ -824,6 +847,7 @@ class Feedbacker(object):
             self.Delay.move_home(blocking=True)
             self.but_Delay_Home.config(fg='green')
             print("Delay stage homed!")
+            self.read_Delay()
         except:
             self.but_Delay_Home.config(fg='red')
             print("Not able to home Delay")
