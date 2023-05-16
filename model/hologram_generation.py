@@ -239,7 +239,6 @@ class GSWindow(object):
         A, self.pattern = algorithms[function](self.img, iterations, self)
         f_slm = abs(A) * np.exp(1j * self.pattern)
         fft = np.fft.fftshift(np.fft.fft2(f_slm))
-        # TODO: better calculation of generated focus including propagation lengths
 
         self.ax2.imshow(self.pattern, cmap='twilight', interpolation='None',
                         extent=extent_slm)

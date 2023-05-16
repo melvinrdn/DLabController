@@ -305,6 +305,7 @@ class Feedbacker(object):
                                          command=None)
         # buttons
         self.but_WPR_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPR)
+        self.but_WPR_Home = tk.Button(frm_stage, text='Home', command=self.home_WPR)
         self.but_WPR_Read = tk.Button(frm_stage, text='Read', command=self.read_WPR)
         self.but_WPR_Move = tk.Button(frm_stage, text='Move', command=self.move_WPR)
 
@@ -383,6 +384,7 @@ class Feedbacker(object):
         self.cb_delayscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
                                            command=None)
         self.but_Delay_Ini = tk.Button(frm_stage, text='Init', command=self.init_Delay)
+        self.but_Delay_Home = tk.Button(frm_stage, text='Home', command=self.home_Delay)
         self.but_Delay_Read = tk.Button(frm_stage, text='Read', command=self.read_Delay)
         self.but_Delay_Move = tk.Button(frm_stage, text='Move', command=self.move_Delay)
 
@@ -507,26 +509,30 @@ class Feedbacker(object):
         self.ent_Delay_should.grid(row=4, column=4)
 
         self.but_WPR_Ini.grid(row=2, column=5)
-        self.but_WPR_Read.grid(row=2, column=6)
-        self.but_WPR_Move.grid(row=2, column=7)
+        self.but_WPR_Home.grid(row=2, column=6)
+        self.but_WPR_Read.grid(row=2, column=7)
+        self.but_WPR_Move.grid(row=2, column=8)
 
         self.but_WPG_Ini.grid(row=3, column=5)
         self.but_WPG_Read.grid(row=3, column=6)
         self.but_WPG_Move.grid(row=3, column=7)
 
         self.but_Delay_Ini.grid(row=4, column=5)
-        self.but_Delay_Read.grid(row=4, column=6)
-        self.but_Delay_Move.grid(row=4, column=7)
+        self.but_Delay_Home.grid(row=4, column=6)
+        self.but_Delay_Read.grid(row=4, column=7)
+        self.but_Delay_Move.grid(row=4, column=8)
 
-        self.ent_WPR_from.grid(row=2, column=8)
-        self.ent_WPR_to.grid(row=2, column=9)
-        self.ent_WPR_steps.grid(row=2, column=10)
+        self.ent_WPR_from.grid(row=2, column=9)
+        self.ent_WPR_to.grid(row=2, column=10)
+        self.ent_WPR_steps.grid(row=2, column=11)
+
         self.ent_WPG_from.grid(row=3, column=8)
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
-        self.ent_Delay_from.grid(row=4, column=8)
-        self.ent_Delay_to.grid(row=4, column=9)
-        self.ent_Delay_steps.grid(row=4, column=10)
+
+        self.ent_Delay_from.grid(row=4, column=9)
+        self.ent_Delay_to.grid(row=4, column=10)
+        self.ent_Delay_steps.grid(row=4, column=11)
 
         self.cb_wprscan.grid(row=2, column=11)
         self.cb_wpgscan.grid(row=3, column=11)
@@ -657,6 +663,26 @@ class Feedbacker(object):
         except:
             self.but_WPR_Ini.config(fg='red')
             print("Not able to initalize WPR")
+    def home_WPR(self):
+        """
+        Homes the red waveplate motor object.
+
+        Raises
+        ------
+        Exception
+            If the motor fails to home.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            self.WPR.move_home(blocking=True)
+            self.but_WPR_Home.config(fg='green')
+            print("WPR homed!")
+        except:
+            self.but_WPR_Home.config(fg='red')
+            print("Not able to home WPR")
 
     def read_WPR(self):
         """
@@ -781,7 +807,26 @@ class Feedbacker(object):
         except:
             self.but_Delay_Ini.config(fg='red')
             print("Not able to initalize Delay")
+    def home_Delay(self):
+        """
+        Homes the delay waveplate motor object.
 
+        Raises
+        ------
+        Exception
+            If the motor fails to home.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            self.Delay.move_home(blocking=True)
+            self.but_Delay_Home.config(fg='green')
+            print("Delay stage homed!")
+        except:
+            self.but_Delay_Home.config(fg='red')
+            print("Not able to home Delay")
     def read_Delay(self):
         """
         Reads the current position of the Delay motor.

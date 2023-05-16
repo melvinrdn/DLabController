@@ -16,6 +16,7 @@ import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.settings import slm_size, bit_depth
 from views import preview_window, questionbox, camera_control, andor_xuv_camera, mcp
+
 print('Done !')
 
 
@@ -104,17 +105,18 @@ class DLabController(object):
         self.ax.axes.yaxis.set_visible(False)
 
         # Setting up bot frame
-        #but_mcp.grid(row=0, column=0, padx=5, pady=5)
+        # but_mcp.grid(row=0, column=0, padx=5, pady=5)
         but_xuv_camera.grid(row=0, column=0, padx=5, pady=5)
         but_camera.grid(row=0, column=1, padx=5, pady=5)
         but_feedback.grid(row=0, column=2, padx=5, pady=5)
-        #but_prev.grid(row=0, column=4, padx=5, pady=5)
+        # but_prev.grid(row=0, column=4, padx=5, pady=5)
         but_pub.grid(row=0, column=3, padx=5, pady=5)
         but_exit.grid(row=0, column=4, padx=5, pady=5)
 
         # but_clean_settings.grid(row=0, column=6, padx=5, pady=5)
 
         print('Done !')
+
         # binding keys
         def left_handler(event):
             """
