@@ -1112,8 +1112,7 @@ class Feedbacker(object):
 
         if self.var_phasescan.get() == 1:
             self.f = open(self.autolog, "a+")
-            self.f.write(
-                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get())
+            self.f.write("# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()+ "\n")
             self.phase_scan()
             self.f.close()
 
@@ -1248,6 +1247,7 @@ class Feedbacker(object):
         im = self.take_image(int(self.ent_avgs.get()))
         self.save_image(im, start_image)
         self.plot_MCP(im)
+        self.f.write(self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
         self.f.close()
 
     # def measure_simple(self):
