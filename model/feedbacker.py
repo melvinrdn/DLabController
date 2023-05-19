@@ -943,7 +943,7 @@ class Feedbacker(object):
         # this is the image taking part
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
-            image = np.zeros([1200, 1600])
+            image = np.zeros([1000, 1600])
             global meas_has_started
             self.d_phase = deque()
             meas_has_started = True
