@@ -1245,7 +1245,7 @@ class Feedbacker(object):
             start_image = 0
 
         im = self.take_image(int(self.ent_avgs.get()))
-        info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n"
+        info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
         self.save_image(im, start_image, info)
         self.plot_MCP(im)
         self.f.close()
