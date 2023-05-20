@@ -1702,14 +1702,16 @@ class Feedbacker(object):
         -------
         None
         """
-        if not self.spec_interface_initialized:
-            avs.AVS_Init()
-        if self.active_spec_handle is None:
-            speclist = avs.AVS_GetList()
-            print(str(len(speclist)) + ' spectrometer(s) found.')
-            self.active_spec_handle = avs.AVS_Activate(speclist[0])
-            self.ent_spc_ind.config(state='disabled')
-
+        try:
+            if not self.spec_interface_initialized:
+                avs.AVS_Init()
+            if self.active_spec_handle is None:
+                speclist = avs.AVS_GetList()
+                print(str(len(speclist)) + ' spectrometer(s) found.')
+                self.active_spec_handle = avs.AVS_Activate(speclist[0])
+                self.ent_spc_ind.config(state='disabled')
+        except:
+            print('There was no spectrometer found!')
     def spec_deactivate(self):
         """
         Deactivate the spectrometer.
@@ -1738,13 +1740,15 @@ class Feedbacker(object):
         -------
         None
         """
-        self.spec_activate()
-        int_time = float(self.ent_spc_exp.get())
-        no_avg = int(self.ent_spc_avg.get())
-        avs.set_measure_params(self.active_spec_handle, int_time, no_avg)
-        avs.AVS_Measure(self.active_spec_handle)
-        self.eval_spec()
-
+        try:
+            self.spec_activate()
+            int_time = float(self.ent_spc_exp.get())
+            no_avg = int(self.ent_spc_avg.get())
+            avs.set_measure_params(self.active_spec_handle, int_time, no_avg)
+            avs.AVS_Measure(self.active_spec_handle)
+            self.eval_spec()
+        except:
+            print('No spectrometer found!')
     def stop_measure(self):
         """
         Stop the spectrometer measurement.
