@@ -1250,59 +1250,6 @@ class Feedbacker(object):
         self.plot_MCP(im)
         self.f.close()
 
-    # def measure_simple(self):
-    #     print("now I am measuring one simple image")
-
-    #     name = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' + 'auto-log.txt'
-    #     if exists(name):
-    #         print("a log file already exists!")
-    #         lines = np.loadtxt(name, comments="#", delimiter="\t", unpack=False)
-    #         f= open(name,"a+")
-    #         print(lines.shape)
-    #         #last_line = f.readlines()[-1]
-    #         try:
-    #             start_image=lines[-1,0] +1
-    #         except:
-    #             start_image=lines[-1] +1
-    #         print("The last image had index " + str(int(start_image-1)))
-    #     else:
-    #         f= open(name,"a+")
-    #         start_image = 0
-
-    #     f.write("# simple measurement, "+ " avgs: " + str(self.ent_avgs.get()) +str(self.ent_comment.get())+"\n")
-
-    # with Vimba.get_instance() as vimba_driver:
-    #   cams = vimba_driver.get_all_cameras()
-    #   image = np.zeros([1000, 1600])
-    #   start_time = time.time()
-
-    #   phasefilename = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' +str(int(start_image))+ '-' + 'phase_values.txt'
-    #   global g
-    #   g = open(phasefilename,"a+")
-    #   global meas_has_started
-    #   meas_has_started = True
-
-    #   nr =  int(self.ent_avgs.get())
-    #   with cams[0] as cam:
-    #       for frame in cam.get_frame_generator(limit = int(self.ent_avgs.get())):
-    #           frame = cam.get_frame()
-    #           frame.convert_pixel_format(PixelFormat.Mono8)
-    #           img = frame.as_opencv_image()
-    #           img = np.squeeze(frame.as_opencv_image())
-    #           numpy_image = img
-    #           image = image + numpy_image
-    #       image = image/nr
-    #       end_time = time.time()
-    #       elapsed_time = end_time - start_time
-    #       filename = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' + str(int(start_image)) + '.bmp'
-    #       cv2.imwrite(filename, image)
-    #       meas_has_started=False
-    #       print("simple image taken, Elapsed time: ", round(elapsed_time,2))
-    #       f.write(str(int(start_image))+ "\t"+ str(0) + "\n")
-    #       f.close()
-    #       self.plot_MCP(image)
-    #       g.close()
-    # return image
 
     def feedback(self):
         """
@@ -1702,14 +1649,16 @@ class Feedbacker(object):
         -------
         None
         """
-        if not self.spec_interface_initialized:
-            avs.AVS_Init()
-        if self.active_spec_handle is None:
-            speclist = avs.AVS_GetList()
-            print(str(len(speclist)) + ' spectrometer(s) found.')
-            self.active_spec_handle = avs.AVS_Activate(speclist[0])
-            self.ent_spc_ind.config(state='disabled')
-
+        try:
+            if not self.spec_interface_initialized:
+                avs.AVS_Init()
+            if self.active_spec_handle is None:
+                speclist = avs.AVS_GetList()
+                print(str(len(speclist)) + ' spectrometer(s) found.')
+                self.active_spec_handle = avs.AVS_Activate(speclist[0])
+                self.ent_spc_ind.config(state='disabled')
+        except:
+            print('There was no spectrometer found!')
     def spec_deactivate(self):
         """
         Deactivate the spectrometer.
@@ -1738,13 +1687,15 @@ class Feedbacker(object):
         -------
         None
         """
-        self.spec_activate()
-        int_time = float(self.ent_spc_exp.get())
-        no_avg = int(self.ent_spc_avg.get())
-        avs.set_measure_params(self.active_spec_handle, int_time, no_avg)
-        avs.AVS_Measure(self.active_spec_handle)
-        self.eval_spec()
-
+        try:
+            self.spec_activate()
+            int_time = float(self.ent_spc_exp.get())
+            no_avg = int(self.ent_spc_avg.get())
+            avs.set_measure_params(self.active_spec_handle, int_time, no_avg)
+            avs.AVS_Measure(self.active_spec_handle)
+            self.eval_spec()
+        except:
+            print('No spectrometer found!')
     def stop_measure(self):
         """
         Stop the spectrometer measurement.
