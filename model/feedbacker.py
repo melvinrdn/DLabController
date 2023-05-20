@@ -982,7 +982,7 @@ class Feedbacker(object):
             The status of the save operation (1 for success, 0 for failure).
         """
         self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(image_nr) + '.bmp'
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(image_nr)) + '.bmp'
         cv2.imwrite(filename, image)
         self.f.write(str(int(image_nr)) + "\t" + image_info + "\n")
         self.f.close()
@@ -1038,9 +1038,9 @@ class Feedbacker(object):
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
-                start_image = lines[-1, 0] + 1
+                start_image = lines[-1]+1
             except:
-                start_image = lines[-1] + 1
+                start_image = lines + 1
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
@@ -1134,13 +1134,14 @@ class Feedbacker(object):
         -------
         None
         """
+        self.but_meas_simple.config(fg='red')
         self.f = open(self.autolog, "a+")
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
-                start_image = lines[-1, 0] + 1
-            except:
                 start_image = lines[-1] + 1
+            except:
+                start_image = lines + 1
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
@@ -1150,6 +1151,7 @@ class Feedbacker(object):
         self.save_image(im, start_image, info)
         self.plot_MCP(im)
         self.f.close()
+        self.but_meas_simple.config(fg='green')
 
 
     def feedback(self):
