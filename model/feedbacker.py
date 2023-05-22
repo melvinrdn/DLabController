@@ -751,7 +751,6 @@ class Feedbacker(object):
     def home_WPG(self):
         """
         Homes the green waveplate motor object.
-        NOT YET WORKING due to hardware failure
         Raises
         ------
         Exception
@@ -762,9 +761,8 @@ class Feedbacker(object):
         None
         """
         try:
-            #self.WPG.move_home(blocking=True)
+            self.WPG.move_home(blocking=True)
             self.but_WPG_Home.config(fg='green')
-            print("DON'T! It's a trap!")
             self.read_WPG()
         except:
             self.but_WPG_Home.config(fg='red')
