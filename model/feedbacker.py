@@ -18,6 +18,7 @@ from simple_pid import PID
 import threading
 from datetime import date
 from collections import deque
+import os
 
 
 class Feedbacker(object):
@@ -77,7 +78,7 @@ class Feedbacker(object):
         frm_mcp_image = tk.Frame(self.win)
         frm_mid = tk.Frame(self.win)
 
-        #new frame for scan related parameters
+        # new frame for scan related parameters
         frm_scans = tk.Frame(self.win)
 
         if self.CAMERA:
@@ -94,6 +95,7 @@ class Feedbacker(object):
 
         frm_meas = tk.LabelFrame(frm_scans, text='Phase Scan')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
+        frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
 
         vcmd = (self.win.register(self.parent.callback))
 
@@ -389,6 +391,37 @@ class Feedbacker(object):
         self.but_Delay_Read = tk.Button(frm_stage, text='Read', command=self.read_Delay)
         self.but_Delay_Move = tk.Button(frm_stage, text='Move', command=self.move_Delay)
 
+        # power wp calibration
+        lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
+        self.strvar_pharos_att = tk.StringVar(self.win, '90')
+        self.ent_pharos_att = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_pharos_att)
+
+        lbl_pharos_pp = tk.Label(frm_wp_power_cal, text='Pharos PP:')
+        self.strvar_pharos_pp = tk.StringVar(self.win, '1')
+        self.ent_pharos_pp = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_pharos_pp)
+
+        self.strvar_red_power = tk.StringVar(self.win, '')
+        self.ent_red_power = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_red_power)
+
+        self.but_calibration_power = tk.Button(frm_wp_power_cal, text='Open Calibration file', command=self.open_calibration_power)
+        self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
+
+        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Power:')
+        self.strvar_green_power = tk.StringVar(self.win, '')
+        self.ent_green_power = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_green_power)
+
         # setting up
         if self.CAMERA:
             frm_cam.grid(row=0, column=0, sticky='nsew')
@@ -401,6 +434,7 @@ class Feedbacker(object):
         frm_scans.grid(row=1, column=1)
         frm_meas.grid(row=0, column=0, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
+        frm_wp_power_cal.grid(row=2, column=0, padx=5)
 
         frm_mid.grid(row=2, column=0, sticky='nsew')
         frm_bot.grid(row=3, column=0)
@@ -469,10 +503,10 @@ class Feedbacker(object):
 
         # setting up frm_meas
         lbl_from.grid(row=0, column=0, sticky='w')
-        lbl_to.grid(row=1, column=0,sticky='w')
-        lbl_steps.grid(row=2, column=0,sticky='w')
-        lbl_avgs.grid(row=3, column=0,sticky='w')
-        lbl_comment.grid(row=4, column=0,sticky='w')
+        lbl_to.grid(row=1, column=0, sticky='w')
+        lbl_steps.grid(row=2, column=0, sticky='w')
+        lbl_avgs.grid(row=3, column=0, sticky='w')
+        lbl_comment.grid(row=4, column=0, sticky='w')
         self.ent_from.grid(row=0, column=1)
         self.ent_to.grid(row=1, column=1)
         self.ent_steps.grid(row=2, column=1)
@@ -539,6 +573,19 @@ class Feedbacker(object):
         self.cb_wprscan.grid(row=2, column=12)
         self.cb_wpgscan.grid(row=3, column=12)
         self.cb_delayscan.grid(row=4, column=12)
+
+        # setting up frm_wp_power_calibration
+        self.but_calibration_power.grid(row=0, column=0)
+        lbl_pharos_att.grid(row=0, column=1)
+        self.ent_pharos_att.grid(row=0, column=2)
+        lbl_pharos_pp.grid(row=0, column=3)
+        self.ent_pharos_pp.grid(row=0, column=4)
+
+        self.but_red_power.grid(row=0, column=5)
+        self.ent_red_power.grid(row=0, column=6)
+
+        lbl_green_power.grid(row=1, column=5)
+        self.ent_green_power.grid(row=1, column=6)
 
         # lbl_WPR.grid(row=2,column = 1)
 
@@ -665,6 +712,7 @@ class Feedbacker(object):
         except:
             self.but_WPR_Ini.config(fg='red')
             print("Not able to initalize WPR")
+
     def home_WPR(self):
         """
         Homes the red waveplate motor object.
@@ -748,6 +796,7 @@ class Feedbacker(object):
         except:
             self.but_WPG_Ini.config(fg='red')
             print("Not able to initalize WPG")
+
     def home_WPG(self):
         """
         Homes the green waveplate motor object.
@@ -767,6 +816,7 @@ class Feedbacker(object):
         except:
             self.but_WPG_Home.config(fg='red')
             print("Not able to home WPR")
+
     def read_WPG(self):
         """
         Reads the current position of the green waveplate motor.
@@ -828,6 +878,7 @@ class Feedbacker(object):
         except:
             self.but_Delay_Ini.config(fg='red')
             print("Not able to initalize Delay")
+
     def home_Delay(self):
         """
         Homes the delay waveplate motor object.
@@ -849,6 +900,7 @@ class Feedbacker(object):
         except:
             self.but_Delay_Home.config(fg='red')
             print("Not able to home Delay")
+
     def read_Delay(self):
         """
         Reads the current position of the Delay motor.
@@ -909,6 +961,48 @@ class Feedbacker(object):
         if self.Delay is not None:
             self.Delay.disable()
             print('Delay disconnected')
+
+    def open_calibration_power(self):
+        """
+        Open the file where the power calibration is
+
+        Returns
+        -------
+        None
+        """
+        try:
+            filepath = tk.filedialog.askopenfilename()
+            if not filepath:
+                return
+            if filepath[-4:] == '.txt':
+                self.pharos_att, self.pharos_pp, self.red_p = np.loadtxt(filepath, delimiter='\t',skiprows=1, unpack=True)
+                self.but_calibration_power.config(fg='green')
+        except:
+            print("Impossible to read the calibration file")
+            self.but_calibration_power.config(fg='red')
+
+    def read_red_power(self):
+        """
+        Reads the corresponding red power if one knows the attenuation and the pulse picker on the Pharos.
+
+        Raises
+        ------
+        Exception
+            If the power cannot be read.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            given_att = float(self.ent_pharos_att.get())
+            given_pp = float(self.ent_pharos_pp.get())
+            red_power_indice = np.where((self.pharos_att == given_att) & (self.pharos_pp == given_pp))
+            red_power = self.red_p[red_power_indice]
+            print(red_power[0])
+            self.strvar_red_power.set(str(red_power[0]))
+        except:
+            print('Impossible to read red power')
 
 
     def take_image(self, avgs, record_phase=True):
@@ -1036,7 +1130,7 @@ class Feedbacker(object):
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
-                start_image = lines[-1]+1
+                start_image = lines[-1] + 1
             except:
                 start_image = lines + 1
             print("The last image had index " + str(int(start_image - 1)))
@@ -1110,13 +1204,12 @@ class Feedbacker(object):
 
         if self.var_phasescan.get() == 1:
             self.f = open(self.autolog, "a+")
-            self.f.write("# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()+ "\n")
+            self.f.write(
+                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
             self.phase_scan()
             self.f.close()
 
         self.but_meas_scan.config(fg='green')
-
-
 
     def measure_simple(self):
         """
@@ -1150,7 +1243,6 @@ class Feedbacker(object):
         self.plot_MCP(im)
         self.f.close()
         self.but_meas_simple.config(fg='green')
-
 
     def feedback(self):
         """
@@ -1560,6 +1652,7 @@ class Feedbacker(object):
                 self.ent_spc_ind.config(state='disabled')
         except:
             print('There was no spectrometer found!')
+
     def spec_deactivate(self):
         """
         Deactivate the spectrometer.
@@ -1597,6 +1690,7 @@ class Feedbacker(object):
             self.eval_spec()
         except:
             print('No spectrometer found!')
+
     def stop_measure(self):
         """
         Stop the spectrometer measurement.
