@@ -249,15 +249,15 @@ class Feedbacker(object):
         lbl_comment = tk.Label(frm_meas, text='comment:')
         self.strvar_comment = tk.StringVar(self.win, ' ')
         self.ent_comment = tk.Entry(
-            frm_meas, width=10, validate='none',
+            frm_meas, width=15, validate='none',
             textvariable=self.strvar_comment)
 
         self.var_phasescan = tk.IntVar()
         self.cb_phasescan = tk.Checkbutton(frm_meas, text='Scan', variable=self.var_phasescan, onvalue=1, offvalue=0,
                                            command=None)
 
-        self.but_meas_scan = tk.Button(frm_meas, text='Measure + Save', command=self.enabl_mcp)
-        self.but_meas_simple = tk.Button(frm_meas, text='Single Image + Save', command=self.enabl_mcp_simple)
+        self.but_meas_scan = tk.Button(frm_meas, text='Scan & Save', command=self.enabl_mcp)
+        self.but_meas_simple = tk.Button(frm_meas, text='Single Image & Save', command=self.enabl_mcp_simple)
 
         lbl_Stage = tk.Label(frm_stage, text='Stage')
         lbl_Nr = tk.Label(frm_stage, text='#')
@@ -468,11 +468,11 @@ class Feedbacker(object):
         but_pid_stop.grid(row=2, column=2)
 
         # setting up frm_meas
-        lbl_from.grid(row=0, column=0)
-        lbl_to.grid(row=1, column=0)
-        lbl_steps.grid(row=2, column=0)
-        lbl_avgs.grid(row=3, column=0)
-        lbl_comment.grid(row=4, column=0)
+        lbl_from.grid(row=0, column=0, sticky='w')
+        lbl_to.grid(row=1, column=0,sticky='w')
+        lbl_steps.grid(row=2, column=0,sticky='w')
+        lbl_avgs.grid(row=3, column=0,sticky='w')
+        lbl_comment.grid(row=4, column=0,sticky='w')
         self.ent_from.grid(row=0, column=1)
         self.ent_to.grid(row=1, column=1)
         self.ent_steps.grid(row=2, column=1)
@@ -489,9 +489,9 @@ class Feedbacker(object):
         lbl_is.grid(row=1, column=3)
         lbl_should.grid(row=1, column=4)
 
-        lbl_stage_scan_from.grid(row=1, column=8)
-        lbl_stage_scan_to.grid(row=1, column=9)
-        lbl_stage_scan_steps.grid(row=1, column=10)
+        lbl_stage_scan_from.grid(row=1, column=9)
+        lbl_stage_scan_to.grid(row=1, column=10)
+        lbl_stage_scan_steps.grid(row=1, column=11)
 
         lbl_WPR.grid(row=2, column=1)
         lbl_WPG.grid(row=3, column=1)
@@ -751,7 +751,6 @@ class Feedbacker(object):
     def home_WPG(self):
         """
         Homes the green waveplate motor object.
-        NOT YET WORKING due to hardware failure
         Raises
         ------
         Exception
@@ -762,9 +761,8 @@ class Feedbacker(object):
         None
         """
         try:
-            #self.WPG.move_home(blocking=True)
+            self.WPG.move_home(blocking=True)
             self.but_WPG_Home.config(fg='green')
-            print("DON'T! It's a trap!")
             self.read_WPG()
         except:
             self.but_WPG_Home.config(fg='red')
@@ -982,7 +980,7 @@ class Feedbacker(object):
             The status of the save operation (1 for success, 0 for failure).
         """
         self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(image_nr) + '.bmp'
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(image_nr)) + '.bmp'
         cv2.imwrite(filename, image)
         self.f.write(str(int(image_nr)) + "\t" + image_info + "\n")
         self.f.close()
@@ -1038,9 +1036,9 @@ class Feedbacker(object):
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
-                start_image = lines[-1, 0] + 1
+                start_image = lines[-1]+1
             except:
-                start_image = lines[-1] + 1
+                start_image = lines + 1
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
@@ -1118,106 +1116,7 @@ class Feedbacker(object):
 
         self.but_meas_scan.config(fg='green')
 
-    # def measure(self):
-    #     print("entered the measure funciton yay")
-    #     #get the number of last image from autologfile
-    #     lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False)
-    #     if lines.size > 0:
-    #         try:
-    #             start_image=lines[-1,0] +1
-    #         except:
-    #             start_image=lines[-1] +1
-    #         print("The last image had index " + str(int(start_image-1)))
-    #     else:
-    #         start_image = 0
 
-    #     print("made it to here")
-
-    #     if self.var_phasescan.get() == 1:
-    #         self.phis = np.linspace(float(self.ent_from.get()),float(self.ent_to.get()),int(self.ent_steps.get()))
-
-    #         print("getting to scan starting point...")
-    #         self.strvar_setp.set(self.phis[0])
-    #         self.set_setpoint()
-    #         time.sleep(1)
-    #         print("Ready to scan the phase!")
-    #         for ind,phi in enumerate(self.phis):
-    #             start_time = time.time()
-    #             self.strvar_setp.set(phi)
-    #             self.set_setpoint()
-    #             im = self.take_image(int(self.ent_avgs.get()))
-    #             info = str(round(phi,2))
-    #             self.save_image(im,start_image+ind, info)
-    #             self.plot_MCP(im)
-    #             end_time = time.time()
-    #             elapsed_time = end_time - start_time
-    #             print("Phase: ", round(phi,2)," Elapsed time: ", round(elapsed_time,2))
-
-    # def measure(self):
-    #     print("now I am measuring",float(self.ent_from.get()))
-
-    #     name = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' + 'auto-log.txt'
-    #     if exists(name):
-    #         print("a log file already exists!")
-    #         lines = np.loadtxt(name, comments="#", delimiter="\t", unpack=False)
-    #         f= open(name,"a+")
-    #         print(lines.shape)
-    #         #last_line = f.readlines()[-1]
-    #         try:
-    #             start_image=lines[-1,0] +1
-    #         except:
-    #             start_image=lines[-1] +1
-    #         print("The last image had index " + str(int(start_image-1)))
-    #     else:
-    #         f= open(name,"a+")
-    #         start_image = 0
-
-    #     f.write("# "+ " from: " +str(self.ent_from.get()) + " to: " + str(self.ent_to.get()) + " Steps: " + str(self.ent_steps.get()) + " avgs: " + str(self.ent_avgs.get()) +str(self.ent_comment.get())+"\n")
-    #     self.phis = np.linspace(float(self.ent_from.get()),float(self.ent_to.get()),int(self.ent_steps.get()))
-
-    #     print("getting to scan starting point...")
-    #     self.strvar_setp.set(self.phis[0])
-    #     self.set_setpoint()
-    #     time.sleep(3)
-    #     print("Ready to scan!")
-
-    #     for ind,phi in enumerate(self.phis):
-    #         self.strvar_setp.set(phi)
-    #         self.set_setpoint()
-    #         with Vimba.get_instance() as vimba_driver:
-    #             cams = vimba_driver.get_all_cameras()
-    #             image = np.zeros([1000, 1600])
-    #             start_time = time.time()
-    #             time.sleep(0.5)
-    #             phasefilename = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' +str(int(start_image+ind))+ '-' + 'phase_values.txt'
-    #             global g
-    #             g = open(phasefilename,"a+")
-    #             global meas_has_started
-    #             meas_has_started = True
-
-    #             nr =  int(self.ent_avgs.get())
-
-    #             with cams[0] as cam:
-    #                 for frame in cam.get_frame_generator(limit = int(self.ent_avgs.get())):
-    #                    frame = cam.get_frame()
-    #                    frame.convert_pixel_format(PixelFormat.Mono8)
-    #                    img = frame.as_opencv_image()
-    #                    img = np.squeeze(frame.as_opencv_image())
-    #                    numpy_image = img
-    #                    image = image + numpy_image
-    #                 image = image/nr
-    #                 end_time = time.time()
-    #                 elapsed_time = end_time - start_time
-    #                 filename = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' + str(int(start_image+ind)) + '.bmp'
-    #                 cv2.imwrite(filename, image)
-    #                 print("Phase: ", round(phi,2)," Elapsed time: ", round(elapsed_time,2))
-    #                 f.write(str(int(start_image+ind))+"\t"+str(round(phi,2))+"\n")
-    #                 self.plot_MCP(image)
-    #                 meas_has_started = False
-    #                 g.close()
-
-    #     f.close()
-    #     return image
 
     def measure_simple(self):
         """
@@ -1233,13 +1132,14 @@ class Feedbacker(object):
         -------
         None
         """
+        self.but_meas_simple.config(fg='red')
         self.f = open(self.autolog, "a+")
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
-                start_image = lines[-1, 0] + 1
-            except:
                 start_image = lines[-1] + 1
+            except:
+                start_image = lines + 1
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
@@ -1249,6 +1149,7 @@ class Feedbacker(object):
         self.save_image(im, start_image, info)
         self.plot_MCP(im)
         self.f.close()
+        self.but_meas_simple.config(fg='green')
 
 
     def feedback(self):
