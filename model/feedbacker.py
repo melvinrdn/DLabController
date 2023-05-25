@@ -18,6 +18,7 @@ from simple_pid import PID
 import threading
 from datetime import date
 from collections import deque
+from . import  calibrator as cal
 import os
 
 
@@ -393,7 +394,7 @@ class Feedbacker(object):
 
         # power wp calibration
         lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
-        self.strvar_pharos_att = tk.StringVar(self.win, '90')
+        self.strvar_pharos_att = tk.StringVar(self.win, '100')
         self.ent_pharos_att = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -412,15 +413,36 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_red_power)
 
-        self.but_calibration_power_red = tk.Button(frm_wp_power_cal, text='Open red Calibration file', command=self.open_calibration_power_red)
-        self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
+        self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open Calibrator!', command=self.enable_calibrator)
+        #self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
 
-        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Power:')
+        lbl_red_power = tk.Label(frm_wp_power_cal, text='Red Max Power (W):')
+        self.strvar_red_power = tk.StringVar(self.win, '')
+        self.ent_red_power = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_red_power)
+
+        lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
+        self.strvar_red_phase = tk.StringVar(self.win, '')
+        self.ent_red_phase = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_red_phase)
+
+        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Max Power (mW):')
         self.strvar_green_power = tk.StringVar(self.win, '')
         self.ent_green_power = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_power)
+
+        lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
+        self.strvar_green_phase = tk.StringVar(self.win, '')
+        self.ent_green_phase = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_green_phase)
 
         # setting up
         if self.CAMERA:
@@ -575,17 +597,23 @@ class Feedbacker(object):
         self.cb_delayscan.grid(row=4, column=12)
 
         # setting up frm_wp_power_calibration
-        self.but_calibration_power_red.grid(row=0, column=0)
+        self.but_calibrator_open.grid(row=0, column=0)
         lbl_pharos_att.grid(row=0, column=1)
         self.ent_pharos_att.grid(row=0, column=2)
         lbl_pharos_pp.grid(row=0, column=3)
         self.ent_pharos_pp.grid(row=0, column=4)
 
-        self.but_red_power.grid(row=0, column=5)
+        lbl_red_power.grid(row=0, column=5)
         self.ent_red_power.grid(row=0, column=6)
+
+        lbl_red_phase.grid(row=0, column=7)
+        self.ent_red_phase.grid(row=0, column=8)
 
         lbl_green_power.grid(row=1, column=5)
         self.ent_green_power.grid(row=1, column=6)
+
+        lbl_green_phase.grid(row=1, column=7)
+        self.ent_green_phase.grid(row=1, column=8)
 
         # lbl_WPR.grid(row=2,column = 1)
 
@@ -962,7 +990,14 @@ class Feedbacker(object):
             self.Delay.disable()
             print('Delay disconnected')
 
-    def open_calibration_power_red(self):
+    def enable_calibrator(self):
+        global stop_calib
+        stop_calib = False
+        self.calib_thread = threading.Thread(target=self.open_calibrator)
+        self.calib_thread.daemon = True
+        self.calib_thread.start()
+
+    def open_calibrator(self):
         """
         Open the file where the power calibration is
 
@@ -970,16 +1005,14 @@ class Feedbacker(object):
         -------
         None
         """
-        try:
-            filepath = tk.filedialog.askopenfilename()
-            if not filepath:
-                return
-            if filepath[-4:] == '.txt':
-                self.calibration_angle_red, self.calibration_power_red = np.loadtxt(filepath, delimiter='\t',skiprows=0, unpack=True)
-                self.but_calibration_power_red.config(fg='green')
-        except:
-            print("Impossible to read the calibration file")
-            self.but_calibration_power_red.config(fg='red')
+        #try:
+        self.calibrator = cal.Calibrator()
+        self.strvar_red_power.set(str(self.calibrator.max_red))
+        self.strvar_green_power.set(str(self.calibrator.max_green))
+        self.strvar_red_phase.set(str(self.calibrator.phase_red))
+        self.strvar_green_phase.set(str(self.calibrator.phase_green))
+        #except:
+        #    print("Failure in opening the Calibrator")
 
     def read_red_power(self):
         """
