@@ -412,7 +412,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_red_power)
 
-        self.but_calibration_power = tk.Button(frm_wp_power_cal, text='Open Calibration file', command=self.open_calibration_power)
+        self.but_calibration_power_red = tk.Button(frm_wp_power_cal, text='Open red Calibration file', command=self.open_calibration_power_red)
         self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
 
         lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Power:')
@@ -575,7 +575,7 @@ class Feedbacker(object):
         self.cb_delayscan.grid(row=4, column=12)
 
         # setting up frm_wp_power_calibration
-        self.but_calibration_power.grid(row=0, column=0)
+        self.but_calibration_power_red.grid(row=0, column=0)
         lbl_pharos_att.grid(row=0, column=1)
         self.ent_pharos_att.grid(row=0, column=2)
         lbl_pharos_pp.grid(row=0, column=3)
@@ -962,7 +962,7 @@ class Feedbacker(object):
             self.Delay.disable()
             print('Delay disconnected')
 
-    def open_calibration_power(self):
+    def open_calibration_power_red(self):
         """
         Open the file where the power calibration is
 
@@ -975,11 +975,11 @@ class Feedbacker(object):
             if not filepath:
                 return
             if filepath[-4:] == '.txt':
-                self.pharos_att, self.pharos_pp, self.red_p = np.loadtxt(filepath, delimiter='\t',skiprows=1, unpack=True)
-                self.but_calibration_power.config(fg='green')
+                self.calibration_angle_red, self.calibration_power_red = np.loadtxt(filepath, delimiter='\t',skiprows=0, unpack=True)
+                self.but_calibration_power_red.config(fg='green')
         except:
             print("Impossible to read the calibration file")
-            self.but_calibration_power.config(fg='red')
+            self.but_calibration_power_red.config(fg='red')
 
     def read_red_power(self):
         """
