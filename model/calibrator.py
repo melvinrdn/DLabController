@@ -175,6 +175,7 @@ class Calibrator(object):
 
     def cos_func(self,x, amplitude, phase):
         return amplitude * np.cos(2 * np.pi / 90 * x - 2*np.pi/90*phase) + amplitude
+
     def cos_fit(self,x,y):
         initial_guess = (np.max(y)/2, 0)
         popt, pcov = curve_fit(self.cos_func, x, y, p0=initial_guess)
@@ -208,11 +209,11 @@ class Calibrator(object):
         return power
 
     def power_to_wpr(self, power):
-        angle = (np.arccos(1-power/self.max_red)-self.phase_red+np.pi)/(2*np.pi/90)
+        angle = -(45*np.arccos(power/self.max_red-1))/np.pi + self.phase_red
         return angle
 
     def power_to_wpg(self, power):
-        angle = (np.arccos(1-power/self.max_green)-self.phase_green+np.pi)/(2*np.pi/90)
+        angle = -(45*np.arccos(power/self.max_green-1))/np.pi + self.phase_green
         return angle
 
     def on_close(self):

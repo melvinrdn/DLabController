@@ -97,6 +97,7 @@ class Feedbacker(object):
         frm_meas = tk.LabelFrame(frm_scans, text='Phase Scan')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
+        frm_intensity_ratio_scan = tk.LabelFrame(frm_scans, text='Red vs Green focus intensity')
 
         vcmd = (self.win.register(self.parent.callback))
 
@@ -417,33 +418,46 @@ class Feedbacker(object):
         #self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red Max Power (W):')
-        self.strvar_red_power = tk.StringVar(self.win, '')
+        self.strvar_red_power = tk.StringVar(self.win, '4.5')
         self.ent_red_power = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_red_power)
 
         lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
-        self.strvar_red_phase = tk.StringVar(self.win, '')
+        self.strvar_red_phase = tk.StringVar(self.win, '-27.76')
         self.ent_red_phase = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_red_phase)
 
+        lbl_red_current_power = tk.Label(frm_wp_power_cal, text='Red current Power (W):')
+        self.strvar_red_current_power = tk.StringVar(self.win, '')
+        self.ent_red_current_power = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_red_current_power)
+
         lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Max Power (mW):')
-        self.strvar_green_power = tk.StringVar(self.win, '')
+        self.strvar_green_power = tk.StringVar(self.win, '345')
         self.ent_green_power = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_power)
 
         lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
-        self.strvar_green_phase = tk.StringVar(self.win, '')
+        self.strvar_green_phase = tk.StringVar(self.win, '44.02')
         self.ent_green_phase = tk.Entry(
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_phase)
 
+        lbl_green_current_power = tk.Label(frm_wp_power_cal, text='Green current Power (mW):')
+        self.strvar_green_current_power = tk.StringVar(self.win, '')
+        self.ent_green_current_power = tk.Entry(
+            frm_wp_power_cal, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_green_current_power)
         # setting up
         if self.CAMERA:
             frm_cam.grid(row=0, column=0, sticky='nsew')
@@ -456,7 +470,8 @@ class Feedbacker(object):
         frm_scans.grid(row=1, column=1)
         frm_meas.grid(row=0, column=0, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
-        frm_wp_power_cal.grid(row=2, column=0, padx=5)
+        frm_wp_power_cal.grid(row=2, column=0, padx=5,pady=5)
+        frm_intensity_ratio_scan.grid(row=3, column=0, padx=5, pady=5)
 
         frm_mid.grid(row=2, column=0, sticky='nsew')
         frm_bot.grid(row=3, column=0)
@@ -600,20 +615,28 @@ class Feedbacker(object):
         self.but_calibrator_open.grid(row=0, column=0)
         lbl_pharos_att.grid(row=0, column=1)
         self.ent_pharos_att.grid(row=0, column=2)
-        lbl_pharos_pp.grid(row=0, column=3)
-        self.ent_pharos_pp.grid(row=0, column=4)
+        lbl_pharos_pp.grid(row=1, column=1)
+        self.ent_pharos_pp.grid(row=1, column=2)
 
         lbl_red_power.grid(row=0, column=5)
         self.ent_red_power.grid(row=0, column=6)
 
-        lbl_red_phase.grid(row=0, column=7)
-        self.ent_red_phase.grid(row=0, column=8)
+        lbl_red_phase.grid(row=1, column=5)
+        self.ent_red_phase.grid(row=1, column=6)
 
-        lbl_green_power.grid(row=1, column=5)
-        self.ent_green_power.grid(row=1, column=6)
+        lbl_red_current_power.grid(row=2, column=5)
+        self.ent_red_current_power.grid(row=2, column=6)
+
+        lbl_green_power.grid(row=0, column=7)
+        self.ent_green_power.grid(row=0, column=8)
 
         lbl_green_phase.grid(row=1, column=7)
         self.ent_green_phase.grid(row=1, column=8)
+
+        lbl_green_current_power.grid(row=2, column=7)
+        self.ent_green_current_power.grid(row=2, column=8)
+
+
 
         # lbl_WPR.grid(row=2,column = 1)
 
@@ -720,6 +743,15 @@ class Feedbacker(object):
             self.spec_interface_initialized = False
             self.active_spec_handle = None
 
+    def angle_to_power(self, angle, maxA, phase):
+        power = maxA/2 * np.cos(2 * np.pi / 90 * angle - 2*np.pi/90*phase) + maxA/2
+        return power
+
+    def power_to_angle(self, power, maxA, phase):
+        angle = -(45*np.arccos(power/maxA/2-1))/np.pi + phase
+        return angle
+
+
     def init_WPR(self):
         """
         Initializes the red waveplate motor object.
@@ -779,6 +811,7 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
+            self.strvar_red_current_power.set(self.angle_to_power(pos, self.ent_red_power.get(), self.ent_red_phase.get()))
         except:
             print("Impossible to read WPR position")
 
@@ -861,6 +894,8 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
+            self.strvar_green_current_power.set(self.angle_to_power(pos, self.ent_green_power.get(), self.ent_green_phase.get()))
+
         except:
             print("Impossible to read WPG position")
 
