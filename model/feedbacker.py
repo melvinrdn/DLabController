@@ -97,7 +97,7 @@ class Feedbacker(object):
         frm_meas = tk.LabelFrame(frm_scans, text='Phase Scan')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
-        frm_intensity_ratio_scan = tk.LabelFrame(frm_scans, text='Red vs Green focus intensity')
+        frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
 
         vcmd = (self.win.register(self.parent.callback))
 
@@ -268,10 +268,6 @@ class Feedbacker(object):
         lbl_is = tk.Label(frm_stage, text='is')
         lbl_should = tk.Label(frm_stage, text='should')
 
-        lbl_stage_scan_from = tk.Label(frm_stage, text='from:')
-        lbl_stage_scan_to = tk.Label(frm_stage, text='to:')
-        lbl_stage_scan_steps = tk.Label(frm_stage, text='steps:')
-
         lbl_WPR = tk.Label(frm_stage, text='WP red:')
         self.strvar_WPR_is = tk.StringVar(self.win, '')
         self.ent_WPR_is = tk.Entry(
@@ -290,25 +286,7 @@ class Feedbacker(object):
             textvariable=self.strvar_WPR_Nr)
 
 
-        # scan parameters
-        self.strvar_WPR_from = tk.StringVar(self.win, '0')
-        self.ent_WPR_from = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPR_from)
-        self.strvar_WPR_to = tk.StringVar(self.win, '45')
-        self.ent_WPR_to = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPR_to)
-        self.strvar_WPR_steps = tk.StringVar(self.win, '10')
-        self.ent_WPR_steps = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPR_steps)
-        self.var_wprscan = tk.IntVar()
-        self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
-                                         command=None)
+
         # buttons
         self.but_WPR_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPR)
         self.but_WPR_Home = tk.Button(frm_stage, text='Home', command=self.home_WPR)
@@ -345,25 +323,7 @@ class Feedbacker(object):
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
 
-        # scan parameters
-        self.strvar_WPG_from = tk.StringVar(self.win, '0')
-        self.ent_WPG_from = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPG_from)
-        self.strvar_WPG_to = tk.StringVar(self.win, '45')
-        self.ent_WPG_to = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPG_to)
-        self.strvar_WPG_steps = tk.StringVar(self.win, '10')
-        self.ent_WPG_steps = tk.Entry(
-            frm_stage, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPG_steps)
-        self.var_wpgscan = tk.IntVar()
-        self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
-                                         command=None)
+
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -470,6 +430,94 @@ class Feedbacker(object):
             frm_wp_power_cal, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_current_power)
+
+        #frm_wp_scans
+        lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
+        self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
+        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value= "Red/Green Ratio", text="Red/Green Ratio")
+        self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red", text="Only Red")
+        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green", text = "Only Green")
+        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing", text = "Nothing")
+
+        lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
+        lbl_int_ratio_constant = tk.Label(frm_wp_scans, text='Constant:')
+
+        lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
+        lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
+        lbl_stage_scan_steps = tk.Label(frm_wp_scans, text='steps:')
+
+        self.strvar_int_ratio_focus = tk.StringVar(self.win, '2')
+        self.ent_int_ratio_focus = tk.Entry(
+            frm_wp_scans, width=4, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_int_ratio_focus)
+        self.strvar_int_ratio_constant = tk.StringVar(self.win, '4.4')
+        self.ent_int_ratio_constant = tk.Entry(
+            frm_wp_scans, width=4, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_int_ratio_constant)
+
+        #scan paramters RATIO
+        self.strvar_ratio_from = tk.StringVar(self.win, '0')
+        self.ent_ratio_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_ratio_from)
+        self.strvar_ratio_to = tk.StringVar(self.win, '45')
+        self.ent_ratio_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_ratio_to)
+        self.strvar_ratio_steps = tk.StringVar(self.win, '10')
+        self.ent_ratio_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_ratio_steps)
+
+
+        # scan parameters ONLY RED
+        self.strvar_WPR_from = tk.StringVar(self.win, '0')
+        self.ent_WPR_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPR_from)
+        self.strvar_WPR_to = tk.StringVar(self.win, '45')
+        self.ent_WPR_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPR_to)
+        self.strvar_WPR_steps = tk.StringVar(self.win, '10')
+        self.ent_WPR_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPR_steps)
+        #self.var_wprscan = tk.IntVar()
+        #self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
+        #                                 command=None)
+
+
+
+        # scan parameters ONLY GREEN
+        self.strvar_WPG_from = tk.StringVar(self.win, '0')
+        self.ent_WPG_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPG_from)
+        self.strvar_WPG_to = tk.StringVar(self.win, '45')
+        self.ent_WPG_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPG_to)
+        self.strvar_WPG_steps = tk.StringVar(self.win, '10')
+        self.ent_WPG_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPG_steps)
+        #self.var_wpgscan = tk.IntVar()
+        #self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
+        #command=None)
+
+
         # setting up
         if self.CAMERA:
             frm_cam.grid(row=0, column=0, sticky='nsew')
@@ -483,7 +531,7 @@ class Feedbacker(object):
         frm_meas.grid(row=0, column=0, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
         frm_wp_power_cal.grid(row=2, column=0, padx=5,pady=5)
-        frm_intensity_ratio_scan.grid(row=3, column=0, padx=5, pady=5)
+        frm_wp_scans.grid(row=3, column=0, padx=5, pady=5)
 
         frm_mid.grid(row=2, column=0, sticky='nsew')
         frm_bot.grid(row=3, column=0)
@@ -572,9 +620,7 @@ class Feedbacker(object):
         lbl_is.grid(row=1, column=3)
         lbl_should.grid(row=1, column=4)
 
-        #lbl_stage_scan_from.grid(row=1, column=9)
-        #lbl_stage_scan_to.grid(row=1, column=10)
-        #lbl_stage_scan_steps.grid(row=1, column=11)
+
 
         lbl_WPR.grid(row=2, column=1)
         lbl_WPG.grid(row=3, column=1)
@@ -633,25 +679,51 @@ class Feedbacker(object):
         lbl_pharos_pp.grid(row=1, column=1)
         self.ent_pharos_pp.grid(row=1, column=2)
 
-        lbl_red_power.grid(row=0, column=5)
+        lbl_red_power.grid(row=0, column=5, sticky='w')
         self.ent_red_power.grid(row=0, column=6)
 
-        lbl_red_phase.grid(row=1, column=5)
+        lbl_red_phase.grid(row=1, column=5, sticky='w')
         self.ent_red_phase.grid(row=1, column=6)
 
-        lbl_red_current_power.grid(row=2, column=5)
+        lbl_red_current_power.grid(row=2, column=5, sticky='w')
         self.ent_red_current_power.grid(row=2, column=6)
 
-        lbl_green_power.grid(row=0, column=7)
+        lbl_green_power.grid(row=0, column=7, sticky='w')
         self.ent_green_power.grid(row=0, column=8)
 
-        lbl_green_phase.grid(row=1, column=7)
+        lbl_green_phase.grid(row=1, column=7, sticky='w')
         self.ent_green_phase.grid(row=1, column=8)
 
-        lbl_green_current_power.grid(row=2, column=7)
+        lbl_green_current_power.grid(row=2, column=7, sticky='w')
         self.ent_green_current_power.grid(row=2, column=8)
 
+        # setting up frm_wp_scans
+        lbl_wp_scan_info.grid(row=0, column=0, sticky='w')
+        self.rb_int_ratio.grid(row=1, column=0, sticky='w')
+        self.rb_wpr.grid(row=2, column=0, sticky='w')
+        self.rb_wpg.grid(row=3, column=0, sticky='w')
 
+        lbl_int_ratio_focus.grid(row=1, column=1)
+        lbl_int_ratio_constant.grid(row=1, column=3)
+
+        lbl_stage_scan_from.grid(row=0, column=8)
+        lbl_stage_scan_to.grid(row=0, column=9)
+        lbl_stage_scan_steps.grid(row=0, column=10)
+
+        self.ent_int_ratio_focus.grid(row=1, column=2, padx=3, pady=3)
+        self.ent_int_ratio_constant.grid(row=1, column=4, padx=3, pady=3)
+
+        self.ent_ratio_from.grid(row=1, column=8)
+        self.ent_ratio_to.grid(row=1, column=9)
+        self.ent_ratio_steps.grid(row=1, column=10)
+
+        self.ent_WPR_from.grid(row=2, column=8)
+        self.ent_WPR_to.grid(row=2, column=9)
+        self.ent_WPR_steps.grid(row=2, column=10)
+
+        self.ent_WPG_from.grid(row=3, column=8)
+        self.ent_WPG_to.grid(row=3, column=9)
+        self.ent_WPG_steps.grid(row=3, column=10)
 
         # lbl_WPR.grid(row=2,column = 1)
 
