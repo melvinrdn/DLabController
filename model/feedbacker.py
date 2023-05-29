@@ -94,7 +94,8 @@ class Feedbacker(object):
         frm_ratio = tk.LabelFrame(frm_mid, text='Phase extraction')
         frm_pid = tk.LabelFrame(frm_mid, text='PID controller')
 
-        frm_meas = tk.LabelFrame(frm_scans, text='Phase Scan')
+        frm_measure = tk.LabelFrame(frm_scans, text='Measurement')
+        frm_phase_scan = tk.LabelFrame(frm_scans, text='Phase Scan')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
         frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
@@ -222,46 +223,56 @@ class Feedbacker(object):
         but_pid_stop = tk.Button(frm_pid, text='Stop PID', command=self.pid_stop)
         but_pid_setk = tk.Button(frm_pid, text='Set PID values', command=self.set_pid_val)
 
-        lbl_from = tk.Label(frm_meas, text='From:')
+        lbl_from = tk.Label(frm_phase_scan, text='From:')
         self.strvar_from = tk.StringVar(self.win, '-3.1')
         self.ent_from = tk.Entry(
-            frm_meas, width=5, validate='all',
+            frm_phase_scan, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_from)
 
-        lbl_to = tk.Label(frm_meas, text='To:')
+        lbl_to = tk.Label(frm_phase_scan, text='To:')
         self.strvar_to = tk.StringVar(self.win, '3.1')
         self.ent_to = tk.Entry(
-            frm_meas, width=5, validate='all',
+            frm_phase_scan, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_to)
 
-        lbl_steps = tk.Label(frm_meas, text='Steps:')
+        lbl_steps = tk.Label(frm_phase_scan, text='Steps:')
         self.strvar_steps = tk.StringVar(self.win, '10')
         self.ent_steps = tk.Entry(
-            frm_meas, width=5, validate='all',
+            frm_phase_scan, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_steps)
-        lbl_avgs = tk.Label(frm_meas, text='Avgs:')
 
-        self.strvar_avgs = tk.StringVar(self.win, '5')
+
+        self.var_phasescan = tk.IntVar()
+        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1, offvalue=0,
+                                           command=None)
+        # MEASUREMENT FRAME
+        self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
+        self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
+        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp)
+
+        lbl_avgs = tk.Label(frm_measure, text='Avgs:')
+        self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
-            frm_meas, width=5, validate='all',
+            frm_measure, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_avgs)
 
-        lbl_comment = tk.Label(frm_meas, text='comment:')
-        self.strvar_comment = tk.StringVar(self.win, ' ')
+        lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
+        self.strvar_mcp = tk.StringVar(self.win, '-1550')
+        self.ent_mcp = tk.Entry(
+            frm_measure, width=25, validate='none',
+            textvariable=self.strvar_mcp)
+
+        lbl_comment = tk.Label(frm_measure, text='comment:')
+        self.strvar_comment = tk.StringVar(self.win, '')
         self.ent_comment = tk.Entry(
-            frm_meas, width=15, validate='none',
+            frm_measure, width=25, validate='none',
             textvariable=self.strvar_comment)
 
-        self.var_phasescan = tk.IntVar()
-        self.cb_phasescan = tk.Checkbutton(frm_meas, text='Scan', variable=self.var_phasescan, onvalue=1, offvalue=0,
-                                           command=None)
 
-        self.but_meas_scan = tk.Button(frm_meas, text='Scan & Save', command=self.enabl_mcp)
-        self.but_meas_simple = tk.Button(frm_meas, text='Single Image & Save', command=self.enabl_mcp_simple)
 
         lbl_Stage = tk.Label(frm_stage, text='Stage')
         lbl_Nr = tk.Label(frm_stage, text='#')
@@ -531,7 +542,8 @@ class Feedbacker(object):
         frm_plt.grid(row=1, column=0, sticky='nsew')
         frm_mcp_image.grid(row=1, column=2, sticky='nsew')
         frm_scans.grid(row=1, column=1)
-        frm_meas.grid(row=0, column=0, padx=5)
+        frm_measure.grid(row=0, column=0, padx=5)
+        frm_phase_scan.grid(row=0, column=1, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
         frm_wp_power_cal.grid(row=2, column=0, padx=5,pady=5)
         frm_wp_scans.grid(row=3, column=0, padx=5, pady=5)
@@ -601,21 +613,32 @@ class Feedbacker(object):
         but_pid_enbl.grid(row=1, column=2)
         but_pid_stop.grid(row=2, column=2)
 
-        # setting up frm_meas
+
+        #setting up frm_measure
+
+        lbl_mcp.grid(row=2, column=0, sticky='w')
+        self.ent_mcp.grid(row=2, column=1, padx=5, pady=5)
+
+        lbl_avgs.grid(row=3, column=0, sticky='w')
+        self.ent_avgs.grid(row=3, column=1)
+
+        lbl_comment.grid(row=4, column=0, sticky='w')
+        self.ent_comment.grid(row=4, column=1, padx=5, pady=5)
+
+        self.but_meas_all.grid(row=5, column=0)
+        self.but_meas_scan.grid(row=5, column=1)
+        self.but_meas_simple.grid(row=5, column=2)
+
+        # setting up frm_phase_scan
         lbl_from.grid(row=0, column=0, sticky='w')
         lbl_to.grid(row=1, column=0, sticky='w')
         lbl_steps.grid(row=2, column=0, sticky='w')
-        lbl_avgs.grid(row=3, column=0, sticky='w')
-        lbl_comment.grid(row=4, column=0, sticky='w')
         self.ent_from.grid(row=0, column=1)
         self.ent_to.grid(row=1, column=1)
         self.ent_steps.grid(row=2, column=1)
-        self.ent_avgs.grid(row=3, column=1)
-        self.ent_comment.grid(row=4, column=1)
         self.cb_phasescan.grid(row=5, column=1)
 
-        self.but_meas_scan.grid(row=6, column=0)
-        self.but_meas_simple.grid(row=6, column=1)
+
 
         # setting up frm_stage
         lbl_Stage.grid(row=1, column=1)
@@ -1221,7 +1244,7 @@ class Feedbacker(object):
         # this is the image taking part
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
-            image = np.zeros([1000, 1600])
+            image = np.zeros([1200, 1600])
             global meas_has_started
             self.d_phase = deque()
             meas_has_started = True
@@ -1373,20 +1396,20 @@ class Feedbacker(object):
         """
         self.but_meas_scan.config(fg='red')
 
-        if self.var_phasescan.get() == 1 and self.var_wpgscan.get() == 1:
-            print("A phase scan for each green power!")
-            wpg_values = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()),
-                                     int(self.ent_WPG_steps.get()))
-            for ind, green in enumerate(wpg_values):
-                self.strvar_WPG_should.set(str(green))
-                self.move_WPG()
-                self.read_WPG()
-                self.f = open(self.autolog, "a+")
-                self.f.write("# Waveplate Scan, " + str(self.ent_WPG_is.get()))
-                self.f.write(
-                    "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
-                self.phase_scan()
-                self.f.close()
+        #if self.var_phasescan.get() == 1 and self.var_wpgscan.get() == 1:
+        #    print("A phase scan for each green power!")
+        #    wpg_values = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()),
+        #                             int(self.ent_WPG_steps.get()))
+        #    for ind, green in enumerate(wpg_values):
+        #        self.strvar_WPG_should.set(str(green))
+        #        self.move_WPG()
+        #        self.read_WPG()
+        #        self.f = open(self.autolog, "a+")
+        #        self.f.write("# Waveplate Scan, " + str(self.ent_WPG_is.get()))
+        #        self.f.write(
+        #            "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
+        #        self.phase_scan()
+        #        self.f.close()
 
         if self.var_phasescan.get() == 1:
             self.f = open(self.autolog, "a+")
