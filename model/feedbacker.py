@@ -288,6 +288,8 @@ class Feedbacker(object):
             frm_stage, width=9, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_Nr)
+
+
         # scan parameters
         self.strvar_WPR_from = tk.StringVar(self.win, '0')
         self.ent_WPR_from = tk.Entry(
@@ -313,6 +315,11 @@ class Feedbacker(object):
         self.but_WPR_Read = tk.Button(frm_stage, text='Read', command=self.read_WPR)
         self.but_WPR_Move = tk.Button(frm_stage, text='Move', command=self.move_WPR)
 
+        self.var_wprpower = tk.IntVar()
+        self.cb_wprpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
+                                          command=None)
+
+
         lbl_WPG = tk.Label(frm_stage, text='WP green:')
         self.strvar_WPG_is = tk.StringVar(self.win, '')
         self.ent_WPG_is = tk.Entry(
@@ -333,6 +340,11 @@ class Feedbacker(object):
         self.but_WPG_Home = tk.Button(frm_stage, text='Home', command=self.home_WPG)
         self.but_WPG_Read = tk.Button(frm_stage, text='Read', command=self.read_WPG)
         self.but_WPG_Move = tk.Button(frm_stage, text='Move', command=self.move_WPG)
+
+        self.var_wpgpower = tk.IntVar()
+        self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
+                                          command=None)
+
         # scan parameters
         self.strvar_WPG_from = tk.StringVar(self.win, '0')
         self.ent_WPG_from = tk.Entry(
@@ -560,9 +572,9 @@ class Feedbacker(object):
         lbl_is.grid(row=1, column=3)
         lbl_should.grid(row=1, column=4)
 
-        lbl_stage_scan_from.grid(row=1, column=9)
-        lbl_stage_scan_to.grid(row=1, column=10)
-        lbl_stage_scan_steps.grid(row=1, column=11)
+        #lbl_stage_scan_from.grid(row=1, column=9)
+        #lbl_stage_scan_to.grid(row=1, column=10)
+        #lbl_stage_scan_steps.grid(row=1, column=11)
 
         lbl_WPR.grid(row=2, column=1)
         lbl_WPG.grid(row=3, column=1)
@@ -595,21 +607,24 @@ class Feedbacker(object):
         self.but_Delay_Read.grid(row=4, column=7)
         self.but_Delay_Move.grid(row=4, column=8)
 
-        self.ent_WPR_from.grid(row=2, column=9)
-        self.ent_WPR_to.grid(row=2, column=10)
-        self.ent_WPR_steps.grid(row=2, column=11)
+        #self.ent_WPR_from.grid(row=2, column=9)
+        #self.ent_WPR_to.grid(row=2, column=10)
+        #self.ent_WPR_steps.grid(row=2, column=11)
 
-        self.ent_WPG_from.grid(row=3, column=9)
-        self.ent_WPG_to.grid(row=3, column=10)
-        self.ent_WPG_steps.grid(row=3, column=11)
+        #self.ent_WPG_from.grid(row=3, column=9)
+        #self.ent_WPG_to.grid(row=3, column=10)
+        #self.ent_WPG_steps.grid(row=3, column=11)
 
-        self.ent_Delay_from.grid(row=4, column=9)
-        self.ent_Delay_to.grid(row=4, column=10)
-        self.ent_Delay_steps.grid(row=4, column=11)
+        #self.ent_Delay_from.grid(row=4, column=9)
+        #self.ent_Delay_to.grid(row=4, column=10)
+        #self.ent_Delay_steps.grid(row=4, column=11)
 
-        self.cb_wprscan.grid(row=2, column=12)
-        self.cb_wpgscan.grid(row=3, column=12)
-        self.cb_delayscan.grid(row=4, column=12)
+        #self.cb_wprscan.grid(row=2, column=12)
+        #self.cb_wpgscan.grid(row=3, column=12)
+        #self.cb_delayscan.grid(row=4, column=12)
+
+        self.cb_wprpower.grid(row=2, column=9)
+        self.cb_wpgpower.grid(row=3, column=9)
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0)
@@ -748,7 +763,8 @@ class Feedbacker(object):
         return power
 
     def power_to_angle(self, power, maxA, phase):
-        angle = -(45*np.arccos(power/maxA/2-1))/np.pi + phase
+        A = maxA/2
+        angle = -(45*np.arccos(power/A-1))/np.pi + phase
         return angle
 
 
@@ -811,7 +827,7 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())))
+            self.strvar_red_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())),2))
         except:
             print("Impossible to read WPR position")
 
@@ -829,7 +845,15 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = float(self.strvar_WPR_should.get())
+            if self.var_wprpower.get() == 1:
+                power = float(self.strvar_WPR_should.get())
+                if power > float(self.ent_red_power.get()):
+                    power = float(self.ent_red_power.get())
+                    print("Value above maximum! Desired power set to maximum instead")
+                pos = self.power_to_angle(power, float(self.ent_red_power.get()), float(self.ent_red_phase.get())) + 90
+            else:
+                pos = float(self.strvar_WPR_should.get())
+
             print("WPR is moving..")
             self.WPR.move_to(pos, True)
 
@@ -894,7 +918,7 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())))
+            self.strvar_green_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),2))
 
         except:
             print("Impossible to read WPG position")
@@ -913,7 +937,15 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = float(self.strvar_WPG_should.get())
+            if self.var_wpgpower.get() == 1:
+                power = float(self.strvar_WPG_should.get())
+                if power > float(self.ent_green_power.get()):
+                    power = float(self.ent_green_power.get())
+                    print("Value above maximum! Desired power set to maximum instead")
+                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))
+            else:
+                pos = float(self.strvar_WPG_should.get())
+
             print("WPG is moving..")
             self.WPG.move_to(pos, True)
 
