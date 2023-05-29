@@ -811,7 +811,7 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(self.angle_to_power(pos, self.ent_red_power.get(), self.ent_red_phase.get()))
+            self.strvar_red_current_power.set(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())))
         except:
             print("Impossible to read WPR position")
 
@@ -894,7 +894,7 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(self.angle_to_power(pos, self.ent_green_power.get(), self.ent_green_phase.get()))
+            self.strvar_green_current_power.set(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())))
 
         except:
             print("Impossible to read WPG position")
