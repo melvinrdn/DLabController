@@ -439,9 +439,6 @@ class Feedbacker(object):
         self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green", text = "Only Green")
         self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing", text = "Nothing")
 
-        lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
-        lbl_int_ratio_constant = tk.Label(frm_wp_scans, text='Constant:')
-
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
         lbl_stage_scan_steps = tk.Label(frm_wp_scans, text='steps:')
@@ -457,13 +454,16 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_int_ratio_constant)
 
+        lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
+        lbl_int_ratio_constant = tk.Label(frm_wp_scans,
+                                          text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
         #scan paramters RATIO
         self.strvar_ratio_from = tk.StringVar(self.win, '0')
         self.ent_ratio_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_from)
-        self.strvar_ratio_to = tk.StringVar(self.win, '45')
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(float(self.ent_int_ratio_focus.get())**2/(float(self.ent_int_ratio_constant.get())-float(self.ent_green_power.get())*1e-3), 2)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -474,6 +474,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_steps)
 
+        self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
 
         # scan parameters ONLY RED
         self.strvar_WPR_from = tk.StringVar(self.win, '0')
@@ -481,7 +482,7 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_from)
-        self.strvar_WPR_to = tk.StringVar(self.win, '45')
+        self.strvar_WPR_to = tk.StringVar(self.win, self.ent_red_power.get())
         self.ent_WPR_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -503,7 +504,7 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_from)
-        self.strvar_WPG_to = tk.StringVar(self.win, '45')
+        self.strvar_WPG_to = tk.StringVar(self.win, self.ent_green_power.get())
         self.ent_WPG_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -702,6 +703,8 @@ class Feedbacker(object):
         self.rb_int_ratio.grid(row=1, column=0, sticky='w')
         self.rb_wpr.grid(row=2, column=0, sticky='w')
         self.rb_wpg.grid(row=3, column=0, sticky='w')
+        self.rb_nothing.grid(row=4, column=0, sticky='w')
+
 
         lbl_int_ratio_focus.grid(row=1, column=1)
         lbl_int_ratio_constant.grid(row=1, column=3)
@@ -829,6 +832,12 @@ class Feedbacker(object):
         if not self.CAMERA:
             self.spec_interface_initialized = False
             self.active_spec_handle = None
+
+    def update_maxgreenratio(self,var,index,mode):
+        try:
+            self.strvar_ratio_to.set(str(np.round(float(self.ent_int_ratio_focus.get())**2/(float(self.ent_int_ratio_constant.get())-float(self.ent_green_power.get())*1e-3), 2)))
+        except:
+            print("pls enter a reasonable value")
 
     def angle_to_power(self, angle, maxA, phase):
         power = maxA/2 * np.cos(2 * np.pi / 90 * angle - 2*np.pi/90*phase) + maxA/2
