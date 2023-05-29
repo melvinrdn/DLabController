@@ -466,7 +466,7 @@ class Feedbacker(object):
             textvariable=self.strvar_int_ratio_constant)
 
         lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
-        lbl_int_ratio_constant = tk.Label(frm_wp_scans,
+        self.lbl_int_ratio_constant = tk.Label(frm_wp_scans,
                                           text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
         lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
 
@@ -488,6 +488,7 @@ class Feedbacker(object):
             textvariable=self.strvar_ratio_steps)
 
         self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
+        self.strvar_int_ratio_focus.trace_add('write', self.update_maxgreenratio)
 
         lbl_int_red = tk.Label(frm_wp_scans, text="Red Power (W)")
         # scan parameters ONLY RED
@@ -731,7 +732,7 @@ class Feedbacker(object):
         self.rb_nothing.grid(row=4, column=0, sticky='w')
 
         lbl_int_ratio_focus.grid(row=1, column=1)
-        lbl_int_ratio_constant.grid(row=1, column=3)
+        self.lbl_int_ratio_constant.grid(row=1, column=3)
 
         lbl_stage_scan_from.grid(row=0, column=8)
         lbl_stage_scan_to.grid(row=0, column=9)
@@ -863,6 +864,7 @@ class Feedbacker(object):
 
     def update_maxgreenratio(self,var,index,mode):
         try:
+            self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
             self.strvar_ratio_to.set(str(np.round(float(self.ent_int_ratio_focus.get())**2/(float(self.ent_int_ratio_constant.get())-float(self.ent_green_power.get())*1e-3), 2)))
         except:
             print("pls enter a reasonable value")
@@ -1396,27 +1398,12 @@ class Feedbacker(object):
         """
         self.but_meas_scan.config(fg='red')
 
-        #if self.var_phasescan.get() == 1 and self.var_wpgscan.get() == 1:
-        #    print("A phase scan for each green power!")
-        #    wpg_values = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()),
-        #                             int(self.ent_WPG_steps.get()))
-        #    for ind, green in enumerate(wpg_values):
-        #        self.strvar_WPG_should.set(str(green))
-        #        self.move_WPG()
-        #        self.read_WPG()
-        #        self.f = open(self.autolog, "a+")
-        #        self.f.write("# Waveplate Scan, " + str(self.ent_WPG_is.get()))
-        #        self.f.write(
-        #            "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
-        #        self.phase_scan()
-        #        self.f.close()
-
-        if self.var_phasescan.get() == 1:
-            self.f = open(self.autolog, "a+")
-            self.f.write(
-                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get() + "\n")
-            self.phase_scan()
-            self.f.close()
+        #if self.var_phasescan.get() == 1:
+        self.f = open(self.autolog, "a+")
+        self.f.write(
+                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, " + " comment: " + self.ent_comment.get() + "\n")
+        self.phase_scan()
+        self.f.close()
 
         self.but_meas_scan.config(fg='green')
 
