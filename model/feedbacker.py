@@ -457,6 +457,8 @@ class Feedbacker(object):
         lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
         lbl_int_ratio_constant = tk.Label(frm_wp_scans,
                                           text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
+        lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
+
         #scan paramters RATIO
         self.strvar_ratio_from = tk.StringVar(self.win, '0')
         self.ent_ratio_from = tk.Entry(
@@ -476,6 +478,7 @@ class Feedbacker(object):
 
         self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
 
+        lbl_int_red = tk.Label(frm_wp_scans, text="Red Power (W)")
         # scan parameters ONLY RED
         self.strvar_WPR_from = tk.StringVar(self.win, '0')
         self.ent_WPR_from = tk.Entry(
@@ -496,8 +499,7 @@ class Feedbacker(object):
         #self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
         #                                 command=None)
 
-
-
+        lbl_int_green = tk.Label(frm_wp_scans, text="Green Power (mW)")
         # scan parameters ONLY GREEN
         self.strvar_WPG_from = tk.StringVar(self.win, '0')
         self.ent_WPG_from = tk.Entry(
@@ -705,7 +707,6 @@ class Feedbacker(object):
         self.rb_wpg.grid(row=3, column=0, sticky='w')
         self.rb_nothing.grid(row=4, column=0, sticky='w')
 
-
         lbl_int_ratio_focus.grid(row=1, column=1)
         lbl_int_ratio_constant.grid(row=1, column=3)
 
@@ -716,14 +717,18 @@ class Feedbacker(object):
         self.ent_int_ratio_focus.grid(row=1, column=2, padx=3, pady=3)
         self.ent_int_ratio_constant.grid(row=1, column=4, padx=3, pady=3)
 
+        lbl_int_green_ratio.grid(row=1, column=7,sticky='w')
+
         self.ent_ratio_from.grid(row=1, column=8)
         self.ent_ratio_to.grid(row=1, column=9)
         self.ent_ratio_steps.grid(row=1, column=10)
 
+        lbl_int_red.grid(row=2, column=7,sticky='w')
         self.ent_WPR_from.grid(row=2, column=8)
         self.ent_WPR_to.grid(row=2, column=9)
         self.ent_WPR_steps.grid(row=2, column=10)
 
+        lbl_int_green.grid(row=3, column=7,sticky='w')
         self.ent_WPG_from.grid(row=3, column=8)
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
