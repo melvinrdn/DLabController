@@ -479,7 +479,7 @@ class Feedbacker(object):
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
         maxG = float(self.ent_green_power.get()) * 1e-3
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x*maxG), 2)))
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x*maxG), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -871,7 +871,7 @@ class Feedbacker(object):
             c = float(self.ent_int_ratio_constant.get())
             maxG = float(self.ent_green_power.get())*1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
-            self.strvar_ratio_to.set(str(np.round(x*maxG/(c-x*maxG), 2)))
+            self.strvar_ratio_to.set(str(np.round(x*maxG/(c-x*maxG), 3)))
 
             #print(x)
             #print(c)
@@ -948,7 +948,7 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())),2))
+            self.strvar_red_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())),3))
         except:
             print("Impossible to read WPR position")
 
@@ -1039,7 +1039,7 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),2))
+            self.strvar_green_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),3))
 
         except:
             print("Impossible to read WPG position")
@@ -1433,14 +1433,18 @@ class Feedbacker(object):
             else:
                 print("Would you please select something to actually scan")
         elif status == "Red/Green Ratio":
+            steps = int(self.ent_ratio_steps.get())
             pr, pg = self.get_power_values_for_ratio_scan()
-            print(pr)
-            print(pg)
-            #c = float(self.strvar_int_ratio_constant.get())
-            #x = float(self.ent_int_ratio_focus.get())**2
-            #Pr + xPg = C
-            #xPG/Pr = from...to
-            print(status)
+            self.var_wprpower.set(1)
+            for i in np.arange(0, steps):
+                r = pr[i]
+                g = pg[i]
+                self.strvar_WPR_should.set(str(r))
+                self.move_WPR()
+                self.strvar_WPG_should.set(str(1e3*g))
+                self.move_WPG()
+                print(r,g)
+
         elif status == "Only Red":
             print(status)
         elif status == "Only Green":
