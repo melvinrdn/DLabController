@@ -1276,6 +1276,18 @@ class Feedbacker(object):
         #            g.close()
         return image
 
+    def save_im(self, image):
+        """
+        Saves the captured image to a file and writes in the log file
+        """
+        nr = self.get_start_image()
+        self.f = open(self.autolog, "a+")
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
+        cv2.imwrite(filename, image)
+        self.f.write(str(int(nr)) + '\t' + self.strvar_red_current_power.get() + '\t' + self.strvar_green_current_power.get() + '\t' + self.strvar_setp.get() + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
+                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\n')
+        self.f.close()
+        return 1
     def save_image(self, image, image_nr, image_info="Test"):
         """
         Saves the captured image to a file.
@@ -1374,6 +1386,27 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
+
+    def red_green_ratio_scan(self):
+        steps = int(self.ent_ratio_steps.get())
+        pr, pg = self.get_power_values_for_ratio_scan()
+        self.var_wprpower.set(1)
+        for i in np.arange(0, steps):
+            r = pr[i]
+            g = pg[i]
+            self.strvar_WPR_should.set(str(r))
+            self.move_WPR()
+            self.strvar_WPG_should.set(str(1e3 * g))
+            self.move_WPG()
+            if self.var_phasescan.get() == 1:
+                self.phase_scan()
+            else:
+                print("uff")
+                #im = self.take_image(int(self.ent_avgs.get()))
+                #info = str(round(r, 2)) + "\t" + str(np.round(g, 2)) + "\t" + str()
+                #self.save_image(im, start_image + ind, info)
+                #self.plot_MCP(im)
+
     def phase_scan(self):
         """
         Scans the phase and captures images.
@@ -1398,10 +1431,11 @@ class Feedbacker(object):
             self.strvar_setp.set(phi)
             self.set_setpoint()
             im = self.take_image(int(self.ent_avgs.get()))
-            info = str(round(phi, 2)) + "\t" + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + "\t" + str(
-                np.round(np.std(np.unwrap(self.d_phase)), 2))
+            #info = str(round(phi, 2)) + "\t" + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + "\t" + str(
+            #    np.round(np.std(np.unwrap(self.d_phase)), 2))
             print(len(self.d_phase))
-            self.save_image(im, start_image + ind, info)
+            #self.save_image(im, start_image + ind, info)
+            self.save_im(im)
             self.plot_MCP(im)
             end_time = time.time()
             elapsed_time = end_time - start_time
@@ -1433,18 +1467,7 @@ class Feedbacker(object):
             else:
                 print("Would you please select something to actually scan")
         elif status == "Red/Green Ratio":
-            steps = int(self.ent_ratio_steps.get())
-            pr, pg = self.get_power_values_for_ratio_scan()
-            self.var_wprpower.set(1)
-            for i in np.arange(0, steps):
-                r = pr[i]
-                g = pg[i]
-                self.strvar_WPR_should.set(str(r))
-                self.move_WPR()
-                self.strvar_WPG_should.set(str(1e3*g))
-                self.move_WPG()
-                print(r,g)
-
+            print(status)
         elif status == "Only Red":
             print(status)
         elif status == "Only Green":
