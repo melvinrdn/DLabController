@@ -1287,7 +1287,7 @@ class Feedbacker(object):
         self.f.write(str(int(nr)) + '\t' + self.strvar_red_current_power.get() + '\t' + self.strvar_green_current_power.get() + '\t' + self.strvar_setp.get() + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
                 np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\n')
         self.f.close()
-        return 1
+
     def save_image(self, image, image_nr, image_info="Test"):
         """
         Saves the captured image to a file.
