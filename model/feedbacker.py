@@ -253,6 +253,9 @@ class Feedbacker(object):
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
 
+        self.var_background = tk.IntVar()
+        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1, offvalue=0,
+                                           command=None)
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
@@ -620,14 +623,16 @@ class Feedbacker(object):
 
         #setting up frm_measure
 
-        lbl_mcp.grid(row=2, column=0, sticky='w')
-        self.ent_mcp.grid(row=2, column=1, padx=5, pady=5)
+        lbl_mcp.grid(row=1, column=0, sticky='w')
+        self.ent_mcp.grid(row=1, column=1, padx=5, pady=5)
 
-        lbl_avgs.grid(row=3, column=0, sticky='w')
-        self.ent_avgs.grid(row=3, column=1)
+        lbl_avgs.grid(row=2, column=0, sticky='w')
+        self.ent_avgs.grid(row=2, column=1)
 
-        lbl_comment.grid(row=4, column=0, sticky='w')
-        self.ent_comment.grid(row=4, column=1, padx=5, pady=5)
+        lbl_comment.grid(row=3, column=0, sticky='w')
+        self.ent_comment.grid(row=3, column=1, padx=5, pady=5)
+
+        self.cb_background.grid(row=4, column=0, sticky='w')
 
         self.but_meas_all.grid(row=5, column=0)
         self.but_meas_scan.grid(row=5, column=1)
@@ -1386,10 +1391,18 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
+    def red_only_scan(self):
+        return 1
+
+    def green_only_scan(self):
+        return 1
+
     def red_green_ratio_scan(self):
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
         self.var_wprpower.set(1)
+        self.var_wpgpower.set(1)
+
         for i in np.arange(0, steps):
             r = pr[i]
             g = pg[i]
@@ -1397,7 +1410,7 @@ class Feedbacker(object):
             self.move_WPR()
             self.strvar_WPG_should.set(str(1e3 * g))
             self.move_WPG()
-            if self.var_phasescan.get() == 1:
+            if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
                 im = self.take_image(int(self.ent_avgs.get()))
@@ -1453,19 +1466,35 @@ class Feedbacker(object):
 
         if status == "Nothing":
             if self.var_phasescan.get() == 1:
-                self.f.write("# PhaseScan, " + self.ent_comment.get() + "\n")
-                self.phase_scan()
+                if self.var_background.get() == 1:
+                    self.f.write(
+                        "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
+                    im = self.take_image(int(self.ent_avgs.get()))
+                    self.save_im(im)
+                    self.plot_MCP(im)
+                else:
+                    self.f.write(
+                        "# PhaseScan, " + self.ent_comment.get() + "\n")
+                    self.phase_scan()
             else:
                 print("Would you please select something to actually scan")
         elif status == "Red/Green Ratio":
             if self.var_phasescan.get() == 1:
-                self.f.write("# RedGreenRatioScan, " + self.ent_comment.get() + "\n")
-                self.red_green_ratio_scan()
+                if self.var_background.get() == 1:
+                    self.f.write("# BACKGROUND RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                    self.red_green_ratio_scan()
+                else:
+                    self.f.write("# RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                    self.red_green_ratio_scan()
             else:
                 print("Are you sure you do not want to scan the phase for each ratio?")
         elif status == "Only Red":
+            self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
+            self.red_only_scan()
             print(status)
         elif status == "Only Green":
+            self.f.write("# GreenOnlyScan, " + self.ent_comment.get() + "\n")
+            self.green_only_scan()
             print(status)
         else:
             print("something fishy is going on")
@@ -1485,9 +1514,16 @@ class Feedbacker(object):
 
         #if self.var_phasescan.get() == 1:
         self.f = open(self.autolog, "a+")
-        self.f.write(
+        if self.var_background.get() == 1:
+            self.f.write(
+                "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
+            im = self.take_image(int(self.ent_avgs.get()))
+            self.save_im(im)
+            self.plot_MCP(im)
+        else:
+            self.f.write(
                 "# PhaseScan, " + self.ent_comment.get() + "\n")
-        self.phase_scan()
+            self.phase_scan()
         self.f.close()
 
         self.but_meas_scan.config(fg='green')
@@ -1511,10 +1547,13 @@ class Feedbacker(object):
 
         #start_image = self.get_start_image()
 
-        im = self.take_image(int(self.ent_avgs.get()))
-        self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
+        if self.var_background.get() == 1:
+            self.f.write("# BACKGROUND SingleImage, " + self.ent_comment.get() + '\n')
+        else:
+            self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
         #info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
         #self.save_image(im, start_image, info)
+        im = self.take_image(int(self.ent_avgs.get()))
         self.save_im(im)
         self.plot_MCP(im)
         self.but_meas_simple.config(fg='green')
