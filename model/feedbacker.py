@@ -253,6 +253,9 @@ class Feedbacker(object):
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
 
+        self.var_background = tk.IntVar()
+        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1, offvalue=0,
+                                           command=None)
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
@@ -620,14 +623,16 @@ class Feedbacker(object):
 
         #setting up frm_measure
 
-        lbl_mcp.grid(row=2, column=0, sticky='w')
-        self.ent_mcp.grid(row=2, column=1, padx=5, pady=5)
+        lbl_mcp.grid(row=1, column=0, sticky='w')
+        self.ent_mcp.grid(row=1, column=1, padx=5, pady=5)
 
-        lbl_avgs.grid(row=3, column=0, sticky='w')
-        self.ent_avgs.grid(row=3, column=1)
+        lbl_avgs.grid(row=2, column=0, sticky='w')
+        self.ent_avgs.grid(row=2, column=1)
 
-        lbl_comment.grid(row=4, column=0, sticky='w')
-        self.ent_comment.grid(row=4, column=1, padx=5, pady=5)
+        lbl_comment.grid(row=3, column=0, sticky='w')
+        self.ent_comment.grid(row=3, column=1, padx=5, pady=5)
+
+        self.cb_background.grid(row=4, column=0,sticky='w')
 
         self.but_meas_all.grid(row=5, column=0)
         self.but_meas_scan.grid(row=5, column=1)
