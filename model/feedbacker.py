@@ -1284,8 +1284,8 @@ class Feedbacker(object):
         self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
-        self.f.write(str(int(nr)) + '\t' + self.strvar_red_current_power.get() + '\t' + self.strvar_green_current_power.get() + '\t' + self.strvar_setp.get() + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
-                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\n')
+        self.f.write(str(int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
+                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\n')
         self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
@@ -1386,7 +1386,6 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
-
     def red_green_ratio_scan(self):
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
@@ -1401,11 +1400,9 @@ class Feedbacker(object):
             if self.var_phasescan.get() == 1:
                 self.phase_scan()
             else:
-                print("uff")
-                #im = self.take_image(int(self.ent_avgs.get()))
-                #info = str(round(r, 2)) + "\t" + str(np.round(g, 2)) + "\t" + str()
-                #self.save_image(im, start_image + ind, info)
-                #self.plot_MCP(im)
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.save_im(im)
+                self.plot_MCP(im)
 
     def phase_scan(self):
         """
@@ -1419,7 +1416,6 @@ class Feedbacker(object):
         None
         """
         start_image = self.get_start_image()
-        print("Start image: " + str(start_image))
         self.phis = np.linspace(float(self.ent_from.get()), float(self.ent_to.get()), int(self.ent_steps.get()))
         print("getting to scan starting point...")
         self.strvar_setp.set(self.phis[0])
@@ -1431,10 +1427,6 @@ class Feedbacker(object):
             self.strvar_setp.set(phi)
             self.set_setpoint()
             im = self.take_image(int(self.ent_avgs.get()))
-            #info = str(round(phi, 2)) + "\t" + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + "\t" + str(
-            #    np.round(np.std(np.unwrap(self.d_phase)), 2))
-            print(len(self.d_phase))
-            #self.save_image(im, start_image + ind, info)
             self.save_im(im)
             self.plot_MCP(im)
             end_time = time.time()
@@ -1461,13 +1453,16 @@ class Feedbacker(object):
 
         if status == "Nothing":
             if self.var_phasescan.get() == 1:
-                self.f.write(
-                    "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, Red power: " + self.strvar_red_current_power.get() + " W, Green power: " + self.strvar_green_current_power.get() + " mW \n" + "# comment: " + self.ent_comment.get() + "\n")
+                self.f.write("# PhaseScan, " + self.ent_comment.get() + "\n")
                 self.phase_scan()
             else:
                 print("Would you please select something to actually scan")
         elif status == "Red/Green Ratio":
-            print(status)
+            if self.var_phasescan.get() == 1:
+                self.f.write("# RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                self.red_green_ratio_scan()
+            else:
+                print("Are you sure you do not want to scan the phase for each ratio?")
         elif status == "Only Red":
             print(status)
         elif status == "Only Green":
@@ -1491,7 +1486,7 @@ class Feedbacker(object):
         #if self.var_phasescan.get() == 1:
         self.f = open(self.autolog, "a+")
         self.f.write(
-                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, Red power: " + self.strvar_red_current_power.get() + " W, Green power: "+ self.strvar_green_current_power.get() +" mW \n" + "# comment: " + self.ent_comment.get() + "\n")
+                "# PhaseScan, " + self.ent_comment.get() + "\n")
         self.phase_scan()
         self.f.close()
 
@@ -1512,12 +1507,18 @@ class Feedbacker(object):
         None
         """
         self.but_meas_simple.config(fg='red')
-        start_image = self.get_start_image()
+        self.f = open(self.autolog, "a+")
+
+        #start_image = self.get_start_image()
+
         im = self.take_image(int(self.ent_avgs.get()))
-        info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
-        self.save_image(im, start_image, info)
+        self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
+        #info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
+        #self.save_image(im, start_image, info)
+        self.save_im(im)
         self.plot_MCP(im)
         self.but_meas_simple.config(fg='green')
+        self.f.close()
 
     def feedback(self):
         """
