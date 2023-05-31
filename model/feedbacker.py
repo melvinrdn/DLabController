@@ -1386,6 +1386,11 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
+    def red_only_scan(self):
+        return 1
+
+    def green_only_scan(self):
+        return 1
     def red_green_ratio_scan(self):
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
@@ -1464,8 +1469,12 @@ class Feedbacker(object):
             else:
                 print("Are you sure you do not want to scan the phase for each ratio?")
         elif status == "Only Red":
+            self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
+            self.red_only_scan()
             print(status)
         elif status == "Only Green":
+            self.f.write("# GreenOnlyScan, " + self.ent_comment.get() + "\n")
+            self.green_only_scan()
             print(status)
         else:
             print("something fishy is going on")
