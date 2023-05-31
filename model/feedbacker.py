@@ -251,7 +251,7 @@ class Feedbacker(object):
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
-        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp)
+        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
 
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
@@ -476,7 +476,10 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_from)
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(float(self.ent_int_ratio_focus.get())**2/(float(self.ent_int_ratio_constant.get())-float(self.ent_green_power.get())*1e-3), 2)))
+        x = float(self.ent_int_ratio_focus.get()) ** 2
+        c = float(self.ent_int_ratio_constant.get())
+        maxG = float(self.ent_green_power.get()) * 1e-3
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x*maxG), 2)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -864,8 +867,15 @@ class Feedbacker(object):
 
     def update_maxgreenratio(self,var,index,mode):
         try:
-            self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
-            self.strvar_ratio_to.set(str(np.round(float(self.ent_int_ratio_focus.get())**2/(float(self.ent_int_ratio_constant.get())-float(self.ent_green_power.get())*1e-3), 2)))
+            x = float(self.ent_int_ratio_focus.get()) ** 2
+            c = float(self.ent_int_ratio_constant.get())
+            maxG = float(self.ent_green_power.get())*1e-3
+            self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
+            self.strvar_ratio_to.set(str(np.round(x*maxG/(c-x*maxG), 2)))
+
+            #print(x)
+            #print(c)
+            #print(maxG)
         except:
             print("pls enter a reasonable value")
 
@@ -1291,6 +1301,20 @@ class Feedbacker(object):
         self.f.close()
         return 1
 
+    def enabl_mcp_all(self):
+        """
+        Enables the MCP measurement.
+
+        Returns
+        -------
+        None
+        """
+        global stop_mcp
+        stop_mcp = False
+        self.mcp_thread = threading.Thread(target=self.measure_all)
+        self.mcp_thread.daemon = True
+        self.mcp_thread.start()
+
     def enabl_mcp(self):
         """
         Enables the MCP measurement.
@@ -1383,14 +1407,53 @@ class Feedbacker(object):
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
 
+    def get_power_values_for_ratio_scan(self):
+        c = float(self.strvar_int_ratio_constant.get())
+        x = float(self.ent_int_ratio_focus.get()) ** 2
+        ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()), int(self.ent_ratio_steps.get()))
+        pr = c/(1+ratios)
+        pg = ratios*pr/x
+        print(x)
+        print(c)
+        print(ratios)
+        return pr, pg
+
+    def measure_all(self):
+        self.but_meas_all.config(fg='red')
+        self.f = open(self.autolog, "a+")
+
+        status = self.var_scan_wp_option.get()
+        print(status)
+
+        if status == "Nothing":
+            if self.var_phasescan.get() == 1:
+                self.f.write(
+                    "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, Red power: " + self.strvar_red_current_power.get() + " W, Green power: " + self.strvar_green_current_power.get() + " mW \n" + "# comment: " + self.ent_comment.get() + "\n")
+                self.phase_scan()
+            else:
+                print("Would you please select something to actually scan")
+        elif status == "Red/Green Ratio":
+            pr, pg = self.get_power_values_for_ratio_scan()
+            print(pr)
+            print(pg)
+            #c = float(self.strvar_int_ratio_constant.get())
+            #x = float(self.ent_int_ratio_focus.get())**2
+            #Pr + xPg = C
+            #xPG/Pr = from...to
+            print(status)
+        elif status == "Only Red":
+            print(status)
+        elif status == "Only Green":
+            print(status)
+        else:
+            print("something fishy is going on")
+
+        self.f.close()
+        self.but_meas_all.config(fg='green')
+
     def measure(self):
         """
-        Performs a measurement.
-
-        If `var_phasescan` and `var_wpgscan` are both 1, performs a phase scan for each green power value specified in the GUI.
-        Otherwise, if `var_phasescan` is 1, performs a phase scan.
-        The scan parameters are specified in the GUI.
-        The captured images are saved to a file and the MCP signal is plotted.
+        Performs a phase scan
 
         Returns
         -------
@@ -1401,7 +1464,7 @@ class Feedbacker(object):
         #if self.var_phasescan.get() == 1:
         self.f = open(self.autolog, "a+")
         self.f.write(
-                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, " + " comment: " + self.ent_comment.get() + "\n")
+                "# Phase scan from " + self.ent_from.get() + " to " + self.ent_to.get() + " in " + self.ent_steps.get() + " with " + self.ent_avgs.get() + " averages, Red power: " + self.strvar_red_current_power.get() + " W, Green power: "+ self.strvar_green_current_power.get() +" mW \n" + "# comment: " + self.ent_comment.get() + "\n")
         self.phase_scan()
         self.f.close()
 
@@ -1422,22 +1485,11 @@ class Feedbacker(object):
         None
         """
         self.but_meas_simple.config(fg='red')
-        self.f = open(self.autolog, "a+")
-        lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
-        if lines.size > 0:
-            try:
-                start_image = lines[-1] + 1
-            except:
-                start_image = lines + 1
-            print("The last image had index " + str(int(start_image - 1)))
-        else:
-            start_image = 0
-
+        start_image = self.get_start_image()
         im = self.take_image(int(self.ent_avgs.get()))
         info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
         self.save_image(im, start_image, info)
         self.plot_MCP(im)
-        self.f.close()
         self.but_meas_simple.config(fg='green')
 
     def feedback(self):
