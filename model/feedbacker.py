@@ -48,6 +48,7 @@ class Feedbacker(object):
         matplotlib.use("TkAgg")
         self.CAMERA = CAMERA  # True for Camera Mode, False for Spectrometer Mode
         self.parent = parent
+        self.lens = self.parent.phase_refs[4]
         self.slm_lib = slm_lib
         self.win = tk.Toplevel()
         self.set_point = 0
@@ -452,6 +453,8 @@ class Feedbacker(object):
         self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red", text="Only Red")
         self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green", text = "Only Green")
         self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing", text = "Nothing")
+        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus", text = "Green Focus")
+
 
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
@@ -534,6 +537,24 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_steps)
+
+        lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (1/m)")
+        # scan parameters GREEN FOCUS POSITIOM
+        self.strvar_GFP_from = tk.StringVar(self.win, '0.02')
+        self.ent_GFP_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_GFP_from)
+        self.strvar_GFP_to = tk.StringVar(self.win, '0.05')
+        self.ent_GFP_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_GFP_to)
+        self.strvar_GFP_steps = tk.StringVar(self.win, '10')
+        self.ent_GFP_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_GFP_steps)
         #self.var_wpgscan = tk.IntVar()
         #self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
         #command=None)
@@ -738,6 +759,7 @@ class Feedbacker(object):
         self.rb_wpr.grid(row=2, column=0, sticky='w')
         self.rb_wpg.grid(row=3, column=0, sticky='w')
         self.rb_nothing.grid(row=4, column=0, sticky='w')
+        self.rb_green_focus_SLM.grid(row=5, column=0, sticky='w')
 
         lbl_int_ratio_focus.grid(row=1, column=1)
         self.lbl_int_ratio_constant.grid(row=1, column=3)
@@ -764,6 +786,11 @@ class Feedbacker(object):
         self.ent_WPG_from.grid(row=3, column=8)
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
+
+        lbl_GFP_green.grid(row=5, column=7, sticky='w')
+        self.ent_GFP_from.grid(row=5, column=8)
+        self.ent_GFP_to.grid(row=5, column=9)
+        self.ent_GFP_steps.grid(row=5, column=10)
 
         # lbl_WPR.grid(row=2,column = 1)
 
@@ -1261,7 +1288,7 @@ class Feedbacker(object):
         # this is the image taking part
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
-            image = np.zeros([1200, 1600])
+            image = np.zeros([1000, 1600])
             global meas_has_started
             self.d_phase = deque()
             meas_has_started = True
@@ -1285,12 +1312,13 @@ class Feedbacker(object):
         """
         Saves the captured image to a file and writes in the log file
         """
+
         nr = self.get_start_image()
         self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
         self.f.write(str(int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
-                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\n')
+                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(np.round(float(self.lens.strvar_ben.get()),3)) +'\n')
         self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
@@ -1457,6 +1485,24 @@ class Feedbacker(object):
         print(ratios)
         return pr, pg
 
+    def focus_position_scan(self):
+        start = float(self.ent_GFP_from.get())
+        end = float(self.ent_GFP_to.get())
+        steps = float(self.ent_GFP_steps.get())
+
+        for ind, b in enumerate(np.linspace(start, end, int(steps))):
+            #things go to hell if division by zero
+            if b == 0:
+                b = 0.00001
+            self.lens.strvar_ben.set(str(b))
+            self.parent.open_pub()
+            if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
+                self.phase_scan()
+            else:
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.save_im(im)
+                self.plot_MCP(im)
+
     def measure_all(self):
         self.but_meas_all.config(fg='red')
         self.f = open(self.autolog, "a+")
@@ -1464,7 +1510,25 @@ class Feedbacker(object):
         status = self.var_scan_wp_option.get()
         print(status)
 
-        if status == "Nothing":
+        if status == "Green Focus":
+            if self.var_phasescan.get() == 1:
+                if self.var_background.get() == 1:
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan()
+                else:
+                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan()
+            else:
+                print("Are you sure you do not want to scan the phase for each focus position?")
+                if self.var_background.get() == 1:
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan()
+                else:
+                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan()
+
+
+        elif status == "Nothing":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
                     self.f.write(
