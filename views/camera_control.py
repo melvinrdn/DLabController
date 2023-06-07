@@ -4,7 +4,9 @@ from drivers import gxipy_driver as gx
 from PIL import Image, ImageTk
 import time
 import threading
-
+import cv2
+import os
+from datetime import date
 
 class CameraControl(object):
     def __init__(self, parent):
@@ -30,6 +32,7 @@ class CameraControl(object):
 
         but_cam_init = ttk.Button(frm_cam_but, text='Start', command=self.cam_img)
         but_cam_stop = ttk.Button(frm_cam_but, text='Stop', command=self.cam_stop)
+        but_cam_save = ttk.Button(frm_cam_but, text='Save', command=self.cam_save)
 
         lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
         self.strvar_cam_ind = tk.StringVar(self.win, '1')
@@ -57,6 +60,7 @@ class CameraControl(object):
 
         but_cam_init.grid(row=0, column=0)
         but_cam_stop.grid(row=0, column=1)
+        but_cam_save.grid(row=1, column=0, sticky='nsew')
 
         frm_cam_but_set.grid(row=0, column=2, sticky='nsew')
         lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
@@ -163,6 +167,31 @@ class CameraControl(object):
     def cam_stop(self):
         self.cam_live = False
         print('Acquisition stopped')
+
+    def cam_save(self):
+        folder_path = 'C:/data/' + str(date.today()) + '/' + 'camera' + str(int(self.ent_cam_ind.get())) + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        base_filename = str(date.today())
+
+        filename = base_filename + '.bmp'
+        i = 1
+        while os.path.exists(os.path.join(folder_path, filename)):
+            filename = f"{base_filename}_{i}.bmp"
+            i += 1
+
+        full_path = os.path.join(folder_path, filename)
+
+        self.img_canvas.itemconfig(self.image)
+        last_image = self.img_canvas.image
+
+        if last_image is not None:
+            pil_image = ImageTk.getimage(last_image)
+            pil_image.save(full_path)
+            print(f"Image saved as {full_path}")
+        else:
+            print("No image to save")
 
     def on_close(self):
         self.win.destroy()
