@@ -206,9 +206,9 @@ class AberrationWindow(object):
         interpolate and send to the main window the retrieved phase pattern.
         """
         # create a 1200 x 1920 grid (slm size)
-        x_new = np.linspace(0, 1, 1920)
-        y_new = np.linspace(0, 1, 1200)
-        interp_func = interp2d(np.linspace(0, 1, 256), np.linspace(0, 1, 256), self.pattern_to_resize, kind='linear')
+        x_new = x_slm
+        y_new = y_slm
+        interp_func = interp2d(np.linspace(-chip_width / 2, chip_width / 2, 256), np.linspace(-chip_height / 2, chip_height / 2, 256), self.pattern_to_resize, kind='linear')
         self.pattern = interp_func(x_new, y_new)
 
         self.parent.img = self.pattern / (2 * np.pi) * bit_depth
