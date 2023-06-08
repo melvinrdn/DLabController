@@ -250,7 +250,7 @@ class CameraControl(object):
         self.render_thread_mono.start()
 
     def cam_save(self):
-        folder_path = 'C:/data/' + str(date.today()) + '/' + 'camera' + str(int(self.ent_cam_ind.get())) + '/'
+        folder_path = 'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 

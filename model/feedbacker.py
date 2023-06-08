@@ -46,6 +46,7 @@ class Feedbacker(object):
 
         """
         matplotlib.use("TkAgg")
+        self.cam = None
         self.CAMERA = CAMERA  # True for Camera Mode, False for Spectrometer Mode
         self.parent = parent
         self.lens = self.parent.phase_refs[4]
@@ -1419,6 +1420,113 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
+    def init_focus_cam_mono(self):
+
+        print('Mono acquisition mode - on ')
+
+        # create a device manager
+        device_manager = gx.DeviceManager()
+        dev_num, dev_info_list = device_manager.update_device_list()
+
+        if dev_num == 0:
+            print("No connected devices")
+            return
+
+        # open the first device
+        self.cam = device_manager.open_device_by_index(int(1))
+
+        # set exposure
+        self.cam.ExposureTime.set(float(1000))#TODO exposure box
+
+        # set gain
+        self.cam.Gain.set(float(1))#TODO gain box
+
+        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
+            # set trigger mode
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
+        else:
+            # set trigger mode and trigger source
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+
+        self.cam.stream_on()
+        self.focus_cam_acq_mono(int(1)) #TODO average box
+        self.cam.stream_off()
+        self.cam.close_device()
+
+        print('Mono acquisition mode - off ')
+
+    def focus_cam_acq_mono(self, num):
+        """
+        acquisition function for camera in single picture mode
+        """
+        sum_image = None
+
+        for i in range(num):
+            self.cam.TriggerSoftware.send_command()
+            self.cam.ExposureTime.set(float(10000))#TODO gain box
+            self.cam.Gain.set(float(1))#TODO exposure box
+
+            raw_image = self.cam.data_stream[0].get_image()
+            if raw_image is None:
+                print('oups')
+                continue
+            numpy_image = raw_image.get_numpy_array()
+            if numpy_image is None:
+                print('oups')
+                continue
+
+            if sum_image is None:
+                sum_image = numpy_image.astype('float64')
+            else:
+                sum_image += numpy_image.astype('float64')
+
+        average_image = (sum_image / num).astype('uint8')
+        print(average_image)
+
+        picture = Image.fromarray(average_image)
+        picture = picture.resize((800, 600), resample=0)
+        picture = ImageTk.PhotoImage(picture)
+
+        #self.img_canvas.itemconfig(self.image, image=picture)
+        #self.img_canvas.image = picture
+
+        self.focus_cam_save = True
+
+        if self.focus_cam_save:
+            folder_path =  'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+
+            nr = self.get_start_image()
+            base_filename = 'focus_camera' + str(date.today()) + '-' + str(int(nr))
+
+            filename = base_filename + '.bmp'
+
+            i = 1
+            while os.path.exists(os.path.join(folder_path, filename)):
+                filename = f"{base_filename}_{i}.bmp"
+                i += 1
+
+            full_path = os.path.join(folder_path, filename)
+
+            #self.img_canvas.itemconfig(self.image)
+            last_image = picture
+
+            if last_image is not None:
+                pil_image = ImageTk.getimage(last_image)
+                pil_image.save(full_path)
+                print(f"Image saved as {full_path}")
+            else:
+                print("No image to save")
+
+        print(f'Mono acquisition mode - Image taken over {num} averages')
+
+    def focus_cam_mono_acq(self):
+        self.render_thread_mono = threading.Thread(target=self.init_focus_cam_mono)
+        self.render_thread_mono.daemon = True
+        self.render_thread_mono.start()
+
     def red_only_scan(self):
         return 1
 
@@ -1470,6 +1578,7 @@ class Feedbacker(object):
             im = self.take_image(int(self.ent_avgs.get()))
             self.save_im(im)
             self.plot_MCP(im)
+            self.focus_cam_mono_acq()
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -1499,9 +1608,10 @@ class Feedbacker(object):
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
-                im = self.take_image(int(self.ent_avgs.get()))
-                self.save_im(im)
-                self.plot_MCP(im)
+                #im = self.take_image(int(self.ent_avgs.get()))
+                #self.save_im(im)
+                #self.plot_MCP(im) # TODO j'ai pas l'acces au mcp depuis mon ordinateur
+                self.focus_cam_mono_acq()
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')
