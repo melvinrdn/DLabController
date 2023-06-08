@@ -4,9 +4,9 @@ from drivers import gxipy_driver as gx
 from PIL import Image, ImageTk
 import time
 import threading
-import cv2
 import os
 from datetime import date
+
 
 class CameraControl(object):
     def __init__(self, parent):
@@ -36,25 +36,25 @@ class CameraControl(object):
 
         lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
         self.strvar_cam_ind = tk.StringVar(self.win, '1')
-        self.ent_cam_ind = ttk.Entry(frm_cam_but_set, width=11, validate='all',
+        self.ent_cam_ind = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                      validatecommand=(vcmd, '%d', '%P', '%S'),
                                      textvariable=self.strvar_cam_ind)
 
         lbl_cam_exp = ttk.Label(frm_cam_but_set, text='Exposure (µs):')
         self.strvar_cam_exp = tk.StringVar(self.win, '10000')
-        self.ent_cam_exp = ttk.Entry(frm_cam_but_set, width=11, validate='all',
+        self.ent_cam_exp = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                      validatecommand=(vcmd, '%d', '%P', '%S'),
                                      textvariable=self.strvar_cam_exp)
 
         lbl_cam_gain = ttk.Label(frm_cam_but_set, text='Gain (0-24):')
         self.strvar_cam_gain = tk.StringVar(self.win, '1')
-        self.ent_cam_gain = ttk.Entry(frm_cam_but_set, width=11, validate='all',
+        self.ent_cam_gain = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                       validatecommand=(vcmd, '%d', '%P', '%S')
                                       , textvariable=self.strvar_cam_gain)
 
         lbl_cam_time = ttk.Label(frm_cam_but_set, text='Nbr of averages :')
         self.strvar_cam_time = tk.StringVar(self.win, '1')
-        self.ent_cam_time = ttk.Entry(frm_cam_but_set, width=11, validate='all',
+        self.ent_cam_time = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                       validatecommand=(vcmd, '%d', '%P', '%S')
                                       , textvariable=self.strvar_cam_time)
 
@@ -166,13 +166,14 @@ class CameraControl(object):
 
     def cam_stop(self):
         self.cam_live = False
-        print('Continuous acquisition - off')
+        print('Continuous acquisition mode - off')
 
     def init_cam_mono(self):
 
         if self.cam_live is True:
             self.cam_live = False
-            print('Continuous acquisition - off')
+            self.cam.stream_off()
+            print('Continuous acquisition mode - off')
 
         print('Mono acquisition mode - on ')
 
@@ -273,6 +274,7 @@ class CameraControl(object):
             print(f"Image saved as {full_path}")
         else:
             print("No image to save")
+
 
     def on_close(self):
         self.win.destroy()

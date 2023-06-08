@@ -18,8 +18,9 @@ from simple_pid import PID
 import threading
 from datetime import date
 from collections import deque
-from . import  calibrator as cal
+from . import calibrator as cal
 import os
+from views import camera_control
 
 
 class Feedbacker(object):
@@ -68,8 +69,7 @@ class Feedbacker(object):
         self.WPR = None
         self.Delay = None
 
-        global meas_has_started
-        meas_has_started = False
+        self.meas_has_started = False
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
@@ -890,8 +890,7 @@ class Feedbacker(object):
 
         # setting up a listener for catchin esc from cam1 or spec
         self.stop_acquire = 0
-        global stop_pid
-        stop_pid = False
+        self.stop_pid = False
 
         # class attributes to store spectrometer state
         if not self.CAMERA:
@@ -1212,8 +1211,7 @@ class Feedbacker(object):
             print('Delay disconnected')
 
     def enable_calibrator(self):
-        global stop_calib
-        stop_calib = False
+        self.stop_calib = False
         self.calib_thread = threading.Thread(target=self.open_calibrator)
         self.calib_thread.daemon = True
         self.calib_thread.start()
@@ -1290,9 +1288,8 @@ class Feedbacker(object):
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
             image = np.zeros([1000, 1600])
-            global meas_has_started
             self.d_phase = deque()
-            meas_has_started = True
+            self.meas_has_started = True
             nr = avgs
             with cams[0] as cam:
                 for frame in cam.get_frame_generator(limit=avgs):
@@ -1303,7 +1300,7 @@ class Feedbacker(object):
                     numpy_image = img
                     image = image + numpy_image
                 image = image / nr
-                meas_has_started = False
+                self.meas_has_started = False
         # image taking part ends here
         #        if record_phase:
         #            g.close()
@@ -1355,8 +1352,7 @@ class Feedbacker(object):
         -------
         None
         """
-        global stop_mcp
-        stop_mcp = False
+        self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure_all)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
@@ -1369,8 +1365,7 @@ class Feedbacker(object):
         -------
         None
         """
-        global stop_mcp
-        stop_mcp = False
+        self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
@@ -1383,8 +1378,7 @@ class Feedbacker(object):
         -------
         None
         """
-        global stop_mcp
-        stop_mcp = False
+        self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure_simple)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
@@ -1503,11 +1497,6 @@ class Feedbacker(object):
 
             filename = base_filename + '.bmp'
 
-            i = 1
-            while os.path.exists(os.path.join(folder_path, filename)):
-                filename = f"{base_filename}_{i}.bmp"
-                i += 1
-
             full_path = os.path.join(folder_path, filename)
 
             #self.img_canvas.itemconfig(self.image)
@@ -1608,9 +1597,9 @@ class Feedbacker(object):
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
-                #im = self.take_image(int(self.ent_avgs.get()))
-                #self.save_im(im)
-                #self.plot_MCP(im) # TODO j'ai pas l'acces au mcp depuis mon ordinateur
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.save_im(im)
+                self.plot_MCP(im)
                 self.focus_cam_mono_acq()
 
     def measure_all(self):
@@ -1936,7 +1925,7 @@ class Feedbacker(object):
             if self.stop_acquire == 1:
                 self.stop_acquire = 0
                 break
-            if meas_has_started:
+            if self.meas_has_started:
                 self.d_phase.append(self.im_angl)
                 # print("phase saving should be activated")
                 # g.write(str(self.im_angl)+"\n")
@@ -2286,8 +2275,7 @@ class Feedbacker(object):
             self.strvar_flat.set(correction)
             self.feedback()
             # print(self.pid.components)
-            global stop_pid
-            if stop_pid:
+            if self.stop_pid:
                 break
 
     def enbl_pid(self):
@@ -2300,9 +2288,7 @@ class Feedbacker(object):
         -------
         None
         """
-        # setting up a listener for new im_phase
-        global stop_pid
-        stop_pid = False
+        self.stop_pid = False
         self.pid_thread = threading.Thread(target=self.pid_strt)
         self.pid_thread.daemon = True
         self.pid_thread.start()
@@ -2317,8 +2303,7 @@ class Feedbacker(object):
         -------
         None
         """
-        global stop_pid
-        stop_pid = True
+        self.stop_pid = True
 
     def on_close(self):
         """
