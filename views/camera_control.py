@@ -98,13 +98,13 @@ class CameraControl(object):
         frm_cam_but_set.grid(row=0, column=2, sticky='nsew')
         lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
         self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
-        lbl_cam_exp.grid(row=1, column=0, sticky='nsew')
-        self.ent_cam_exp.grid(row=1, column=1, padx=(0, 10))
-        lbl_cam_gain.grid(row=2, column=0, sticky='nsew')
-        self.ent_cam_gain.grid(row=2, column=1, padx=(0, 10))
+        lbl_cam_exp.grid(row=6, column=0, sticky='nsew')
+        self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10))
+        lbl_cam_gain.grid(row=7, column=0, sticky='nsew')
+        self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10))
         frm_cam_but.grid(row=1, column=0, sticky='nsew')
-        lbl_cam_time.grid(row=3, column=0, sticky='nsew')
-        self.ent_cam_time.grid(row=3, column=1, padx=(0, 10))
+        lbl_cam_time.grid(row=8, column=0, sticky='nsew')
+        self.ent_cam_time.grid(row=8, column=1, padx=(0, 10))
 
         self.img_canvas = tk.Canvas(frm_cam, height=540, width=720)
         self.img_canvas.grid(row=0, sticky='nsew')
@@ -122,10 +122,10 @@ class CameraControl(object):
         but_cam_stop_timer = ttk.Button(frm_bottom, text='Stop auto acquisition', command=self.stop_timed_mono_acq)
         but_cam_stop_timer.grid(row=3, column=3, padx=5, pady=5, ipadx=5, ipady=5)
 
-        self.status_bar = ttk.Label(self.win, text="Cursor Position: (0,0) pixels", anchor=tk.W)
-        self.status_bar.grid(row=4, column=0, columnspan=2, sticky='we')
+        #self.status_bar = ttk.Label(self.win, text="Cursor Position: (0,0) pixels", anchor=tk.W)
+        #self.status_bar.grid(row=4, column=0, columnspan=2, sticky='we')
         # Bind the mouse motion event to the update_status_bar method
-        self.img_canvas.bind("<Motion>", self.update_status_bar)
+        #self.img_canvas.bind("<Motion>", self.update_status_bar)
 
         self.cam_live = True
         self.timer_running = False

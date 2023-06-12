@@ -5,7 +5,7 @@ import matplotlib
 import numpy as np
 from scipy.optimize import curve_fit
 
-from tkinter import ttk
+
 class Calibrator(object):
     def __init__(self):
         #self.parent = parent
