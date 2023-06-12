@@ -20,7 +20,7 @@ from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
 from ressources.settings import slm_size, bit_depth
-from views import draw_polygon
+from views import draw_polygon, camera_control
 from . import calibrator as cal
 
 

@@ -241,7 +241,7 @@ class DLabController(object):
         -------
         None
         """
-        self.camera_win = camera_control.CameraControl(self)
+        self.camera_win = camera_control.CameraControl()
 
     def open_xuv_camera(self):
         """
