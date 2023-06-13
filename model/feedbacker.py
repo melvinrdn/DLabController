@@ -1458,7 +1458,7 @@ class Feedbacker(object):
         None
         """
         self.var_wpgpower.set(1)
-        WPG_steps = int(self.ent_WPR_steps.get())
+        WPG_steps = int(self.ent_WPG_steps.get())
         WPG_scan_list = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()), WPG_steps)
         print(WPG_scan_list)
 
