@@ -1770,19 +1770,22 @@ class Feedbacker(object):
         """
         self.axMCP.clear()
         self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
+        self.axMCP.set_aspect('equal')
+
+        self.axMCP.set_xlabel("X (px)")
+        self.axMCP.set_ylabel("Y (px)")
+        self.axMCP.set_xlim(0, 1600)
+        self.axMCP.set_ylim(0, 1000)
+
         self.axHarmonics.clear()
         self.axHarmonics.plot(np.arange(1600), np.sum(mcpimage, 0))
         self.axHarmonics.set_xlabel("X (px)")
         self.axHarmonics.set_ylabel("Counts (arb.u.)")
-        self.axMCP.set_xlabel("X (px)")
-        self.axMCP.set_ylabel("Y (px)")
-        self.axMCP.set_xlim(0, 1600)
 
-        self.axMCP.set_ylim(0, 1000)
         self.axHarmonics.set_xlim(0, 1600)
-        self.axHarmonics.set_aspect(1600 / 1000)
-        self.figrMCP.tight_layout()
+        #self.axHarmonics.set_aspect('equal')
 
+        self.figrMCP.tight_layout()
         self.imgMCP.draw()
 
     def plot_fft(self):
