@@ -4,6 +4,7 @@ import time
 import tkinter as tk
 from collections import deque
 from datetime import date
+import datetime
 
 import cv2
 import matplotlib
@@ -1216,13 +1217,16 @@ class Feedbacker(object):
         self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
-        self.f.write(str(int(
-            nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
+
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        log_entry = str(
+            int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
             np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),
                      2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
-            np.round(float(self.lens.strvar_ben.get()), 3)) + '\n')
+            np.round(float(self.lens.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
+        self.f.write(log_entry)
         self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
