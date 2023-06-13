@@ -4,11 +4,10 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
 from ressources.settings import slm_size, bit_depth, chip_width, chip_height, wavelength
-import model.hologram_generation as gs
-import model.aberration_correction as aberration
+import model.hologram_and_aberration.hologram_generation as gs
+import model.hologram_and_aberration.aberration_correction as aberration
 
-types = ['Backgr', 'Flat', 'Tilt', 'Binary', 'Lens',
-         'Multi', 'Vortex', 'Zernike', 'Image', 'Holo', 'Aberr']
+types = ['Background', 'Lens', 'Vortex', 'Zernike']
 
 
 def new_type(frm_mid, typ):
@@ -34,7 +33,7 @@ def new_type(frm_mid, typ):
         return TypeTilt(frm_mid)
     elif typ == 'Binary':
         return TypeBinary(frm_mid)
-    elif typ == 'Backgr':
+    elif typ == 'Background':
         return TypeBackground(frm_mid)
     elif typ == 'Lens':
         return TypeLens(frm_mid)
@@ -186,7 +185,7 @@ class TypeBackground(BaseType):
             The parent window for the frame.
 
         """
-        self.name = 'Backgr'
+        self.name = 'Background'
         self.parent = parent
         self.frm_ = ttk.Frame(self.parent)
         self.frm_.grid(row=0, column=0, sticky='nsew')
