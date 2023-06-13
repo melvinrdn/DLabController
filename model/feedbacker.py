@@ -1469,7 +1469,7 @@ class Feedbacker(object):
             im = self.take_image(int(self.ent_avgs.get()))
             self.save_im(im)
             self.plot_MCP(im)
-            self.focus_cam_mono_acq()
+            #self.focus_cam_mono_acq()
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -1503,7 +1503,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                self.focus_cam_mono_acq()
+                #self.focus_cam_mono_acq()
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')
