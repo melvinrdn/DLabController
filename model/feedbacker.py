@@ -914,7 +914,7 @@ class Feedbacker(object):
 
             print("WPR is moving..")
             self.WPR.move_to(pos, True)
-
+            print(f"WPR moved to {str(self.WPR.position)}")
             self.read_WPR()
         except:
             print("Impossible to move WPR :(")
@@ -955,10 +955,11 @@ class Feedbacker(object):
         try:
             self.WPG.move_home(blocking=True)
             self.but_WPG_Home.config(fg='green')
+            print("WPG homed!")
             self.read_WPG()
         except:
             self.but_WPG_Home.config(fg='red')
-            print("Not able to home WPR")
+            print("Not able to home WPG")
 
     def read_WPG(self):
         """
@@ -1008,7 +1009,7 @@ class Feedbacker(object):
 
             print("WPG is moving..")
             self.WPG.move_to(pos, True)
-
+            print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
         except:
             print("Impossible to move WPG :(")
@@ -1092,7 +1093,7 @@ class Feedbacker(object):
             pos = float(self.strvar_Delay_should.get())
             print("Delay is moving..")
             self.Delay.move_to(pos, True)
-
+            print(f"Delay moved to {str(self.Delay.position)}")
             self.read_Delay()
         except:
             print("Impossible to move Delay :(")
@@ -1453,7 +1454,7 @@ class Feedbacker(object):
         it sets the 'strvar_WPG_should' variable to the current value, moves the WPG  accordingly, takes an image
         with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
 
-        Returns
+        ReturnsW
         -------
         None
         """
