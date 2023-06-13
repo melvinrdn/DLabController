@@ -21,7 +21,7 @@ from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
 from ressources.settings import slm_size, bit_depth
-from views import draw_polygon, camera_control
+from views import draw_polygon
 from . import calibrator as cal
 
 
@@ -1423,12 +1423,61 @@ class Feedbacker(object):
         self.render_thread_mono.start()
 
     def red_only_scan(self):
-        return 1
+        """
+        Perform a scan of the red power. It sets the 'var_wprpower' variable to 1, which indicates that we use the
+        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
+        it sets the 'strvar_WPR_should' variable to the current value, moves the WPR  accordingly, takes an image
+        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
+
+        Returns
+        -------
+        None
+        """
+        self.var_wprpower.set(1)
+        WPR_steps = int(self.ent_WPR_steps.get())
+        WPR_scan_list = np.linspace(float(self.ent_WPR_from.get()), float(self.ent_WPR_to.get()), WPR_steps)
+        print(WPR_scan_list)
+
+        for i in np.arange(0, WPR_steps):
+            r = WPR_scan_list[i]
+            self.strvar_WPR_should.set(str(r))
+            self.move_WPR()
+            im = self.take_image(int(self.ent_avgs.get()))
+            self.save_im(im)
+            self.plot_MCP(im)
 
     def green_only_scan(self):
-        return 1
+        """
+        Perform a scan of the green power. It sets the 'var_wpgpower' variable to 1, which indicates that we use the
+        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
+        it sets the 'strvar_WPG_should' variable to the current value, moves the WPG  accordingly, takes an image
+        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
+
+        Returns
+        -------
+        None
+        """
+        self.var_wpgpower.set(1)
+        WPG_steps = int(self.ent_WPR_steps.get())
+        WPG_scan_list = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()), WPG_steps)
+        print(WPG_scan_list)
+
+        for i in np.arange(0, WPG_steps):
+            g = WPG_scan_list[i]
+            self.strvar_WPG_should.set(str(g))
+            self.move_WPG()
+            im = self.take_image(int(self.ent_avgs.get()))
+            self.save_im(im)
+            self.plot_MCP(im)
 
     def red_green_ratio_scan(self):
+        """
+        Perform a scan of the red and green ratio.
+
+        Returns
+        -------
+        None
+        """
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
         self.var_wprpower.set(1)
@@ -1557,6 +1606,7 @@ class Feedbacker(object):
                     self.red_green_ratio_scan()
             else:
                 print("Are you sure you do not want to scan the phase for each ratio?")
+
         elif status == "Only Red":
             self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
             self.red_only_scan()
