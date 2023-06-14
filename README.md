@@ -1,5 +1,5 @@
 # D-Lab Controller
-A GUI application for controlling the hardrware of the D-Lab.
+A GUI application for controlling the hardware of the D-Lab.
 
 To run the program, execute "DLabController.py", it will load all the other files as it needs to.
 
