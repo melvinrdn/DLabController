@@ -1,282 +1,140 @@
 import tkinter as tk
-from tkinter.simpledialog import askstring
 from tkinter import ttk
 from drivers import gxipy_driver as gx
 from PIL import Image, ImageTk
 import time
 import threading
-import numpy as np
 import os
+from datetime import date
 
 
 class CameraControl(object):
-    def __init__(self, parent):
-        self.cam1 = None
-        self.cam2 = None
-        self.cam3 = None
+    def __init__(self):
+        self.cam = None
+        self.roi = None
 
-        self.parent = parent
+
+        self.initial_roi = (0, 1440, 0, 1080)
+
         self.win = tk.Toplevel()
 
         title = 'SLM Phase Control - Camera control'
 
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
-        vcmd = (self.win.register(self.parent.callback))
 
-        frm_cam1 = ttk.LabelFrame(self.win, text="Focus view")
-        frm_controls1 = ttk.LabelFrame(self.win, text="Camera control")
+        frm_cam = ttk.LabelFrame(self.win, text="Camera 1")
+        frm_controls = ttk.LabelFrame(self.win, text="Camera control")
 
-        frm_cam2 = ttk.LabelFrame(self.win, text="Top nozzle view")
-        frm_controls2 = ttk.LabelFrame(self.win, text="Camera control")
+        frm_cam.grid(row=0, column=0, sticky='nsew')
+        frm_controls.grid(row=0, column=1, sticky='nsew')
 
-        frm_cam3 = ttk.LabelFrame(self.win, text="Side nozzle view")
-        frm_controls3 = ttk.LabelFrame(self.win, text="Camera control")
+        frm_cam_but = ttk.Frame(frm_controls)
+        frm_cam_but_set = ttk.Frame(frm_cam_but)
 
-        frm_cam1.grid(row=0, column=0, sticky='nsew')
-        frm_controls1.grid(row=0, column=1, sticky='nsew')
+        but_cam_init = ttk.Button(frm_cam_but, text='Live', command=self.cam_cont_acq)
+        but_cam_stop = ttk.Button(frm_cam_but, text='Stop', command=self.cam_stop)
+        but_cam_mono_acq = ttk.Button(frm_cam_but, text='Single image acquisition', command=self.cam_mono_acq)
+        but_roi_select = ttk.Button(frm_cam_but, text='Select ROI', command=self.select_roi)  # New button
+        but_roi_reset = ttk.Button(frm_cam_but, text='Reset ROI', command=self.reset_roi)  # New button
 
-        frm_cam2.grid(row=1, column=0, sticky='nsew')
-        frm_controls2.grid(row=1, column=1, sticky='nsew')
+        lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
+        self.strvar_cam_ind = tk.StringVar(self.win, '1')
+        self.ent_cam_ind = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                     textvariable=self.strvar_cam_ind)
 
-        frm_cam3.grid(row=2, column=0, sticky='nsew')
-        frm_controls3.grid(row=2, column=1, sticky='nsew')
+        lbl_cam_exp = ttk.Label(frm_cam_but_set, text='Exposure (µs):')
+        self.strvar_cam_exp = tk.StringVar(self.win, '10000')
+        self.ent_cam_exp = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                     textvariable=self.strvar_cam_exp)
 
-        frm_cam_but1 = ttk.Frame(frm_controls1)
-        frm_cam_but_set1 = ttk.Frame(frm_cam_but1)
+        lbl_cam_gain = ttk.Label(frm_cam_but_set, text='Gain (0-24):')
+        self.strvar_cam_gain = tk.StringVar(self.win, '1')
+        self.ent_cam_gain = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                      textvariable=self.strvar_cam_gain)
 
-        frm_cam_but2 = ttk.Frame(frm_controls2)
-        frm_cam_but_set2 = ttk.Frame(frm_cam_but2)
+        lbl_cam_time = ttk.Label(frm_cam_but_set, text='Nbr of averages :')
+        self.strvar_cam_time = tk.StringVar(self.win, '1')
+        self.ent_cam_time = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                      textvariable=self.strvar_cam_time)
 
-        frm_cam_but3 = ttk.Frame(frm_controls3)
-        frm_cam_but_set3 = ttk.Frame(frm_cam_but3)
+        lbl_roi_x1 = ttk.Label(frm_cam_but_set, text='ROI x1:')
+        self.strvar_roi_x1 = tk.StringVar(self.win, str(self.initial_roi[0]))
+        self.ent_roi_x1 = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                   textvariable=self.strvar_roi_x1)
 
-        but_cam_img1 = ttk.Button(frm_cam_but1, text='Initialize camera 1', command=self.cam_img1)
-        but_cam_save1 = ttk.Button(frm_cam_but1, text='Save', command=self.cam_save)
+        lbl_roi_x2 = ttk.Label(frm_cam_but_set, text='ROI x2:')
+        self.strvar_roi_x2 = tk.StringVar(self.win, str(self.initial_roi[1]))
+        self.ent_roi_x2 = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                   textvariable=self.strvar_roi_x2)
 
-        but_cam_img2 = ttk.Button(frm_cam_but2, text='Initialize camera 2', command=self.cam_img2)
-        but_cam_save2 = ttk.Button(frm_cam_but2, text='Save', command=self.cam_save)
+        lbl_roi_y1 = ttk.Label(frm_cam_but_set, text='ROI y1:')
+        self.strvar_roi_y1 = tk.StringVar(self.win, str(self.initial_roi[2]))
+        self.ent_roi_y1 = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                   textvariable=self.strvar_roi_y1)
 
-        but_cam_img3 = ttk.Button(frm_cam_but3, text='Initialize camera 3', command=self.cam_img3)
-        but_cam_save3 = ttk.Button(frm_cam_but3, text='Save', command=self.cam_save)
+        lbl_roi_y2 = ttk.Label(frm_cam_but_set, text='ROI y2:')
+        self.strvar_roi_y2 = tk.StringVar(self.win, str(self.initial_roi[3]))
+        self.ent_roi_y2 = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                   textvariable=self.strvar_roi_y2)
 
-        lbl_cam_ind1 = ttk.Label(frm_cam_but_set1, text='Camera index:')
-        self.strvar_cam_ind1 = tk.StringVar(self.win, '1')
-        self.ent_cam_ind1 = ttk.Entry(frm_cam_but_set1, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_ind1)
+        but_roi_select.grid(row=1, column=1)
+        but_roi_reset.grid(row=1, column=2)
+        lbl_roi_x1.grid(row=2, column=0, sticky='nsew')
+        self.ent_roi_x1.grid(row=2, column=1, padx=(0, 10))
+        lbl_roi_x2.grid(row=3, column=0, sticky='nsew')
+        self.ent_roi_x2.grid(row=3, column=1, padx=(0, 10))
+        lbl_roi_y1.grid(row=4, column=0, sticky='nsew')
+        self.ent_roi_y1.grid(row=4, column=1, padx=(0, 10))
+        lbl_roi_y2.grid(row=5, column=0, sticky='nsew')
+        self.ent_roi_y2.grid(row=5, column=1, padx=(0, 10))
 
-        lbl_cam_ind2 = ttk.Label(frm_cam_but_set2, text='Camera index:')
-        self.strvar_cam_ind2 = tk.StringVar(self.win, '2')
-        self.ent_cam_ind2 = ttk.Entry(frm_cam_but_set2, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_ind2)
+        but_cam_init.grid(row=0, column=0)
+        but_cam_stop.grid(row=0, column=1)
+        but_cam_mono_acq.grid(row=1, column=0)
+        but_roi_select.grid(row=1, column=1)
+        but_roi_reset.grid(row=1, column=2)
 
-        lbl_cam_ind3 = ttk.Label(frm_cam_but_set3, text='Camera index:')
-        self.strvar_cam_ind3 = tk.StringVar(self.win, '3')
-        self.ent_cam_ind3 = ttk.Entry(frm_cam_but_set3, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_ind3)
+        frm_cam_but_set.grid(row=0, column=2, sticky='nsew')
+        lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
+        self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
+        lbl_cam_exp.grid(row=6, column=0, sticky='nsew')
+        self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10))
+        lbl_cam_gain.grid(row=7, column=0, sticky='nsew')
+        self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10))
+        frm_cam_but.grid(row=1, column=0, sticky='nsew')
+        lbl_cam_time.grid(row=8, column=0, sticky='nsew')
+        self.ent_cam_time.grid(row=8, column=1, padx=(0, 10))
 
-        lbl_cam_exp1 = ttk.Label(frm_cam_but_set1, text='Camera exposure (µs):')
-        self.strvar_cam_exp1 = tk.StringVar(self.win, '100000')
-        self.ent_cam_exp1 = ttk.Entry(frm_cam_but_set1, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_exp1)
-
-        lbl_cam_exp2 = ttk.Label(frm_cam_but_set2, text='Camera exposure (µs):')
-        self.strvar_cam_exp2 = tk.StringVar(self.win, '100000')
-        self.ent_cam_exp2 = ttk.Entry(frm_cam_but_set2, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_exp2)
-
-        lbl_cam_exp3 = ttk.Label(frm_cam_but_set3, text='Camera exposure (µs):')
-        self.strvar_cam_exp3 = tk.StringVar(self.win, '100000')
-        self.ent_cam_exp3 = ttk.Entry(frm_cam_but_set3, width=11, validate='all',
-                                      validatecommand=(vcmd, '%d', '%P', '%S'),
-                                      textvariable=self.strvar_cam_exp3)
-
-        lbl_cam_gain1 = ttk.Label(frm_cam_but_set1, text='Camera gain (0-24):')
-        self.strvar_cam_gain1 = tk.StringVar(self.win, '24')
-        self.ent_cam_gain1 = ttk.Entry(frm_cam_but_set1, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_gain1)
-
-        lbl_cam_gain2 = ttk.Label(frm_cam_but_set2, text='Camera gain (0-24):')
-        self.strvar_cam_gain2 = tk.StringVar(self.win, '24')
-        self.ent_cam_gain2 = ttk.Entry(frm_cam_but_set2, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_gain2)
-
-        lbl_cam_gain3 = ttk.Label(frm_cam_but_set3, text='Camera gain (0-24):')
-        self.strvar_cam_gain3 = tk.StringVar(self.win, '24')
-        self.ent_cam_gain3 = ttk.Entry(frm_cam_but_set3, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_gain3)
-
-        lbl_cam_time1 = ttk.Label(frm_cam_but_set1, text='Acquisition "time" (1-inf):')
-        self.strvar_cam_time1 = tk.StringVar(self.win, '1000')
-        self.ent_cam_time1 = ttk.Entry(frm_cam_but_set1, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_time1)
-
-        lbl_cam_time2 = ttk.Label(frm_cam_but_set2, text='Acquisition "time" (1-inf):')
-        self.strvar_cam_time2 = tk.StringVar(self.win, '1000')
-        self.ent_cam_time2 = ttk.Entry(frm_cam_but_set2, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_time2)
-
-        lbl_cam_time3 = ttk.Label(frm_cam_but_set3, text='Acquisition "time" (1-inf):')
-        self.strvar_cam_time3 = tk.StringVar(self.win, '1000')
-        self.ent_cam_time3 = ttk.Entry(frm_cam_but_set3, width=11, validate='all',
-                                       validatecommand=(vcmd, '%d', '%P', '%S')
-                                       , textvariable=self.strvar_cam_time3)
-
-        but_cam_img1.grid(row=0, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        but_cam_save1.grid(row=0, column=1, padx=5, pady=5, ipadx=5, ipady=5)
-
-        but_cam_img2.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        but_cam_save2.grid(row=1, column=1, padx=5, pady=5, ipadx=5, ipady=5)
-
-        but_cam_img3.grid(row=2, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        but_cam_save3.grid(row=2, column=1, padx=5, pady=5, ipadx=5, ipady=5)
-
-        frm_cam_but_set1.grid(row=0, column=2, sticky='nsew')
-        lbl_cam_ind1.grid(row=0, column=0)
-        self.ent_cam_ind1.grid(row=0, column=1, padx=(0, 10))
-        lbl_cam_exp1.grid(row=1, column=0)
-        self.ent_cam_exp1.grid(row=1, column=1, padx=(0, 10))
-        lbl_cam_gain1.grid(row=2, column=0)
-        self.ent_cam_gain1.grid(row=2, column=1, padx=(0, 10))
-        frm_cam_but1.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        lbl_cam_time1.grid(row=3, column=0)
-        self.ent_cam_time1.grid(row=3, column=1, padx=(0, 10))
-
-        frm_cam_but_set2.grid(row=0, column=2, sticky='nsew')
-        lbl_cam_ind2.grid(row=0, column=0)
-        self.ent_cam_ind2.grid(row=0, column=1, padx=(0, 10))
-        lbl_cam_exp2.grid(row=1, column=0)
-        self.ent_cam_exp2.grid(row=1, column=1, padx=(0, 10))
-        lbl_cam_gain2.grid(row=2, column=0)
-        self.ent_cam_gain2.grid(row=2, column=1, padx=(0, 10))
-        frm_cam_but2.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        lbl_cam_time2.grid(row=3, column=0)
-        self.ent_cam_time2.grid(row=3, column=1, padx=(0, 10))
-
-        frm_cam_but_set3.grid(row=0, column=2, sticky='nsew')
-        lbl_cam_ind3.grid(row=0, column=0)
-        self.ent_cam_ind3.grid(row=0, column=1, padx=(0, 10))
-        lbl_cam_exp3.grid(row=1, column=0)
-        self.ent_cam_exp3.grid(row=1, column=1, padx=(0, 10))
-        lbl_cam_gain3.grid(row=2, column=0)
-        self.ent_cam_gain3.grid(row=2, column=1, padx=(0, 10))
-        frm_cam_but3.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        lbl_cam_time3.grid(row=3, column=0)
-        self.ent_cam_time3.grid(row=3, column=1, padx=(0, 10))
-
-        self.img_canvas1 = tk.Canvas(frm_cam1, height=300, width=450)
-        self.img_canvas1.grid(row=0, sticky='nsew')
-        self.img_canvas1.configure(bg='grey')
-        self.image1 = self.img_canvas1.create_image(0, 0, anchor="nw")
-
-        self.img_canvas2 = tk.Canvas(frm_cam2, height=300, width=450)
-        self.img_canvas2.grid(row=0, sticky='nsew')
-        self.img_canvas2.configure(bg='grey')
-        self.image2 = self.img_canvas2.create_image(0, 0, anchor="nw")
-
-        self.img_canvas3 = tk.Canvas(frm_cam3, height=300, width=450)
-        self.img_canvas3.grid(row=0, sticky='nsew')
-        self.img_canvas3.configure(bg='grey')
-        self.image3 = self.img_canvas3.create_image(0, 0, anchor="nw")
+        self.img_canvas = tk.Canvas(frm_cam, height=540, width=720)
+        self.img_canvas.grid(row=0, sticky='nsew')
+        self.img_canvas.configure(bg='grey')
+        self.image = self.img_canvas.create_image(0, 0, anchor="nw")
 
         frm_bottom = ttk.Frame(self.win)
         frm_bottom.grid(row=3, column=0, columnspan=2)
         but_exit = ttk.Button(frm_bottom, text='Exit', command=self.on_close)
         but_exit.grid(row=3, column=0, padx=5, pady=5, ipadx=5, ipady=5)
+        but_cam_save = ttk.Button(frm_bottom, text='Save', command=self.cam_save)
+        but_cam_save.grid(row=3, column=1, padx=5, pady=5, ipadx=5, ipady=5)
+        but_cam_start_timer = ttk.Button(frm_bottom, text='Start auto acquisition', command=self.start_timed_mono_acq)
+        but_cam_start_timer.grid(row=3, column=2, padx=5, pady=5, ipadx=5, ipady=5)
+        but_cam_stop_timer = ttk.Button(frm_bottom, text='Stop auto acquisition', command=self.stop_timed_mono_acq)
+        but_cam_stop_timer.grid(row=3, column=3, padx=5, pady=5, ipadx=5, ipady=5)
 
-    def init_cam1(self):
-        print("")
-        print("Initializing...")
-        print("")
+        #self.status_bar = ttk.Label(self.win, text="Cursor Position: (0,0) pixels", anchor=tk.W)
+        #self.status_bar.grid(row=4, column=0, columnspan=2, sticky='we')
+        # Bind the mouse motion event to the update_status_bar method
+        #self.img_canvas.bind("<Motion>", self.update_status_bar)
 
-        # create a device manager
-        device_manager = gx.DeviceManager()
-        dev_num, dev_info_list = device_manager.update_device_list()
+        self.cam_live = True
+        self.timer_running = False
+        self.reset_roi()
 
-        if dev_num == 0:
-            print("No connected devices")
-            return
+    def init_cam_cont(self):
+        print('Continuous acquisition mode - on')
 
-        # open the first device
-        self.cam1 = device_manager.open_device_by_index(int(self.ent_cam_ind1.get()))
-
-        # set exposure
-        self.cam1.ExposureTime.set(float(self.ent_cam_exp1.get()))
-
-        # set gain
-        self.cam1.Gain.set(float(self.ent_cam_gain1.get()))
-
-        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
-            # set trigger mode
-            self.cam1.TriggerMode.set(gx.GxSwitchEntry.ON)
-        else:
-            # set trigger mode and trigger source
-            self.cam1.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam1.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
-
-
-        # start data acquisition
-        self.cam1.stream_on()
-        print('Streaming...')
-        self.acq_mono_1(int(self.ent_cam_time1.get()))
-        self.cam1.stream_off()
-        self.cam1.close_device()
-        print('...Re-initialisation needed')
-
-    def acq_mono_1(self, num):
-        """
-        acquisition function for camera
-               :brief      acquisition function of mono device
-               :param      num:        number of acquisition images[int]
-        """
-        for i in range(num):
-            time.sleep(0.001)
-
-            # send software trigger command
-            self.cam1.TriggerSoftware.send_command()
-
-            # set exposure
-            self.cam1.ExposureTime.set(float(self.ent_cam_exp1.get()))
-
-            # set gain
-            self.cam1.Gain.set(float(self.ent_cam_gain1.get()))
-
-            # get raw image
-            raw_image = self.cam1.data_stream[0].get_image()
-            if raw_image is None:
-                continue
-
-            # create numpy array with data from raw image
-            numpy_image = raw_image.get_numpy_array()
-            if numpy_image is None:
-                continue
-
-            # Show images
-            picture = Image.fromarray(numpy_image)
-            picture = ImageTk.PhotoImage(picture)
-
-            self.img_canvas1.itemconfig(self.image1, image=picture)
-            self.img_canvas1.image1 = picture  # keep a reference!
-
-    def cam_img1(self):
-        self.render_thread1 = threading.Thread(target=self.init_cam1)
-        self.render_thread1.daemon = True
-        self.render_thread1.start()
-
-    def init_cam2(self):
-        print("")
-        print("Initializing...")
-        print("")
+        self.cam_live = True
 
         # create a device manager
         device_manager = gx.DeviceManager()
@@ -287,74 +145,90 @@ class CameraControl(object):
             return
 
         # open the first device
-        self.cam2 = device_manager.open_device_by_index(int(self.ent_cam_ind2.get()))
+        self.cam = device_manager.open_device_by_index(int(self.ent_cam_ind.get()))
 
         # set exposure
-        self.cam2.ExposureTime.set(float(self.ent_cam_exp2.get()))
+        self.cam.ExposureTime.set(float(self.ent_cam_exp.get()))
 
         # set gain
-        self.cam2.Gain.set(float(self.ent_cam_gain2.get()))
+        self.cam.Gain.set(float(self.ent_cam_gain.get()))
 
         if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
             # set trigger mode
-            self.cam2.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
         else:
             # set trigger mode and trigger source
-            self.cam2.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam2.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
 
-        # start data acquisition
-        self.cam2.stream_on()
-        print('Streaming...')
-        self.acq_mono_2(int(self.ent_cam_time2.get()))
-        self.cam2.stream_off()
-        self.cam2.close_device()
-        print('...Re-initialisation needed')
+        self.cam.stream_on()
+        self.acq_cont(int(self.ent_cam_time.get()))
+        self.cam.stream_off()
+        self.cam.close_device()
 
-    def acq_mono_2(self, num):
+    def acq_cont(self, num):
         """
-        acquisition function for camera
-               :brief      acquisition function of mono device
-               :param      num:        number of acquisition images[int]
+        acquisition function for camera in continuous mode
         """
-        for i in range(num):
+        while self.cam_live:
+
             time.sleep(0.001)
+            sum_image = None
 
-            # send software trigger command
-            self.cam2.TriggerSoftware.send_command()
+            for i in range(num):
+                self.cam.TriggerSoftware.send_command()
+                self.cam.ExposureTime.set(float(self.ent_cam_exp.get()))
+                self.cam.Gain.set(float(self.ent_cam_gain.get()))
 
-            # set exposure
-            self.cam2.ExposureTime.set(float(self.ent_cam_exp2.get()))
+                raw_image = self.cam.data_stream[0].get_image()
+                if raw_image is None:
+                    print('oups')
+                    continue
+                numpy_image = raw_image.get_numpy_array()
+                if numpy_image is None:
+                    print('oups')
+                    continue
 
-            # set gain
-            self.cam2.Gain.set(float(self.ent_cam_gain2.get()))
+                if sum_image is None:
+                    sum_image = numpy_image.astype('float64')
+                else:
+                    sum_image += numpy_image.astype('float64')
 
-            # get raw image
-            raw_image = self.cam2.data_stream[0].get_image()
-            if raw_image is None:
-                continue
+            average_image = (sum_image / num).astype('uint8')
 
-            # create numpy array with data from raw image
-            numpy_image = raw_image.get_numpy_array()
-            if numpy_image is None:
-                continue
+            full_average_image = Image.fromarray(average_image)
+            full_picture = full_average_image.resize((720, 540), resample=0)
+            full_picture = ImageTk.PhotoImage(full_picture)
+            self.img_canvas.full_image = full_picture
 
-            # Show images
-            picture = Image.fromarray(numpy_image)
-            picture = ImageTk.PhotoImage(picture)
+            if self.roi is not None:
+                average_image = average_image[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
 
-            self.img_canvas2.itemconfig(self.image2, image=picture)
-            self.img_canvas2.image2 = picture  # keep a reference!
+            if self.img_canvas.full_image is not None:
+                picture = Image.fromarray(average_image)
+                picture = picture.resize((720, 540), resample=0)
+                picture = ImageTk.PhotoImage(picture)
 
-    def cam_img2(self):
-        self.render_thread2 = threading.Thread(target=self.init_cam2)
-        self.render_thread2.daemon = True
-        self.render_thread2.start()
+            self.img_canvas.itemconfig(self.image, image=picture)
+            self.img_canvas.image = picture
 
-    def init_cam3(self):
-        print("")
-        print("Initializing...")
-        print("")
+    def cam_cont_acq(self):
+        self.render_thread_cont = threading.Thread(target=self.init_cam_cont)
+        self.render_thread_cont.daemon = True
+        self.render_thread_cont.start()
+
+    def cam_stop(self):
+        self.cam_live = False
+        print('Continuous acquisition mode - off')
+
+    def init_cam_mono(self):
+
+        if self.cam_live is True:
+            self.cam_live = False
+            self.cam.stream_off()
+            print('Continuous acquisition mode - off')
+
+        print('Mono acquisition mode - on ')
 
         # create a device manager
         device_manager = gx.DeviceManager()
@@ -365,122 +239,160 @@ class CameraControl(object):
             return
 
         # open the first device
-        self.cam3 = device_manager.open_device_by_index(int(self.ent_cam_ind3.get()))
+        self.cam = device_manager.open_device_by_index(int(self.ent_cam_ind.get()))
 
         # set exposure
-        self.cam3.ExposureTime.set(float(self.ent_cam_exp3.get()))
+        self.cam.ExposureTime.set(float(self.ent_cam_exp.get()))
 
         # set gain
-        self.cam3.Gain.set(float(self.ent_cam_gain3.get()))
+        self.cam.Gain.set(float(self.ent_cam_gain.get()))
 
         if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
             # set trigger mode
-            self.cam3.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
         else:
             # set trigger mode and trigger source
-            self.cam3.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam3.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
 
-        # start data acquisition
-        self.cam3.stream_on()
-        print('Streaming...')
-        self.acq_mono_3(int(self.ent_cam_time3.get()))
-        self.cam3.stream_off()
-        self.cam3.close_device()
-        print('...Re-initialisation needed')
+        self.cam.stream_on()
+        self.acq_mono(int(self.ent_cam_time.get()))
+        self.cam.stream_off()
+        self.cam.close_device()
 
-    def acq_mono_3(self, num):
+        print('Mono acquisition mode - off ')
+
+    def acq_mono(self, num):
         """
-        acquisition function for camera
-               :brief      acquisition function of mono device
-               :param      num:        number of acquisition images[int]
+        acquisition function for camera in single picture mode
         """
+        sum_image = None
+
         for i in range(num):
-            time.sleep(0.001)
+            self.cam.TriggerSoftware.send_command()
+            self.cam.ExposureTime.set(float(self.ent_cam_exp.get()))
+            self.cam.Gain.set(float(self.ent_cam_gain.get()))
 
-            # send software trigger command
-            self.cam3.TriggerSoftware.send_command()
-
-            # set exposure
-            self.cam3.ExposureTime.set(float(self.ent_cam_exp3.get()))
-
-            # set gain
-            self.cam3.Gain.set(float(self.ent_cam_gain3.get()))
-
-            # get raw image
-            raw_image = self.cam3.data_stream[0].get_image()
+            raw_image = self.cam.data_stream[0].get_image()
             if raw_image is None:
+                print('oups')
                 continue
-
-            # create numpy array with data from raw image
             numpy_image = raw_image.get_numpy_array()
             if numpy_image is None:
+                print('oups')
                 continue
 
-            # Show images
-            picture = Image.fromarray(numpy_image)
+            if sum_image is None:
+                sum_image = numpy_image.astype('float64')
+            else:
+                sum_image += numpy_image.astype('float64')
+
+        average_image = (sum_image / num).astype('uint8')
+
+        full_average_image = Image.fromarray(average_image)
+        full_picture = full_average_image.resize((720, 540), resample=0)
+        full_picture = ImageTk.PhotoImage(full_picture)
+        self.img_canvas.full_image = full_picture
+
+        if self.roi is not None:
+            average_image = average_image[self.roi[0]:self.roi[1], self.roi[2]:self.roi[3]]
+
+        if self.img_canvas.full_image is not None:
+            picture = Image.fromarray(average_image)
+            picture = picture.resize((720, 540), resample=0)
             picture = ImageTk.PhotoImage(picture)
 
-            self.img_canvas3.itemconfig(self.image3, image=picture)
-            self.img_canvas3.image3 = picture  # keep a reference!
+            self.img_canvas.itemconfig(self.image, image=picture)
+            self.img_canvas.image = picture
 
-    def cam_img3(self):
-        self.render_thread3 = threading.Thread(target=self.init_cam3)
-        self.render_thread3.daemon = True
-        self.render_thread3.start()
+        print(f'Mono acquisition mode - Image taken over {num} averages')
+
+    def cam_mono_acq(self):
+        self.render_thread_mono = threading.Thread(target=self.init_cam_mono)
+        self.render_thread_mono.daemon = True
+        self.render_thread_mono.start()
+
+
+    def start_timed_mono_acq(self):
+        self.timer_running = True
+        self.timed_mono_acq()
+
+    def stop_timed_mono_acq(self):
+        self.timer_running = False
+
+    def timed_mono_acq(self):
+        if self.timer_running:
+            self.cam_mono_acq()
+            self.cam_save()
+            print('image saved')
+            self.win.after(15000, self.timed_mono_acq)
 
     def cam_save(self):
-        # send software trigger command
-        self.cam.TriggerSoftware.send_command()
+        folder_path = 'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
 
-        # get raw image
-        raw_image = self.cam.data_stream[0].get_image()
-        if raw_image is None:
-            print("Getting image failed.")
+        base_filename = str(date.today())
 
-        # create numpy array with data from raw image
-        numpy_image = raw_image.get_numpy_array()
-        print(f'Value of the maximum pixel : {np.max(numpy_image)}')
+        filename = base_filename + '.bmp'
+        i = 1
+        while os.path.exists(os.path.join(folder_path, filename)):
+            filename = f"{base_filename}_{i}.bmp"
+            i += 1
 
-        bmp_image = Image.fromarray(numpy_image)
+        full_path = os.path.join(folder_path, filename)
 
-        file_name = askstring(title="Save As", prompt="Enter a file name (without the extension) :")
-        file_name += '.bmp'
+        last_image = self.img_canvas.full_image
 
-        if file_name:
-            folder_path = os.path.join(os.getcwd(), "beam_profiles")
-            if not os.path.exists(folder_path):
-                os.mkdir(folder_path)
-            file_path = os.path.join(folder_path, file_name)
-            bmp_image.save(file_path)
-            print(f"Beam profile saved as {file_path}")
+        if last_image is not None:
+            pil_image = ImageTk.getimage(last_image)
+            pil_image.save(full_path)
+            print(f"Image saved as {full_path}")
         else:
-            print("File save cancelled.")
+            print("No image to save")
 
-    def cam_on_close1(self):
-        if self.cam1 is not None:
-            self.cam1.close_device()
-            print('Camera 1 closed')
-        else:
-            pass
+    def select_roi(self):
+        # Get the ROI coordinates from the entry fields
+        x1 = int(self.ent_roi_x1.get())
+        x2 = int(self.ent_roi_x2.get())
+        y1 = int(self.ent_roi_y1.get())
+        y2 = int(self.ent_roi_y2.get())
 
-    def cam_on_close2(self):
-        if self.cam2 is not None:
-            self.cam2.close_device()
-            print('Camera 2 closed')
-        else:
-            pass
+        self.roi = (x1, x2, y1, y2)
 
-    def cam_on_close3(self):
-        if self.cam3 is not None:
-            self.cam3.close_device()
-            print('Camera 3 closed')
-        else:
-            pass
+    def reset_roi(self):
+        self.roi = self.initial_roi  # Reset ROI coordinates to initial values
+        self.apply_roi()  # Apply the ROI
+
+    def apply_roi(self):
+        if self.roi is not None:
+            self.ent_roi_x1.delete(0, tk.END)
+            self.ent_roi_x2.delete(0, tk.END)
+            self.ent_roi_y1.delete(0, tk.END)
+            self.ent_roi_y2.delete(0, tk.END)
+            self.ent_roi_x1.insert(0, str(self.roi[0]))
+            self.ent_roi_x2.insert(0, str(self.roi[1]))
+            self.ent_roi_y1.insert(0, str(self.roi[2]))
+            self.ent_roi_y2.insert(0, str(self.roi[3]))
+
+    def update_status_bar(self, event):
+        x = self.img_canvas.canvasx(event.x)
+        y = self.img_canvas.canvasy(event.y)
+
+        pixel_value = self.get_pixel_value(x, y)
+        self.status_bar.config(text=f"Cursor Position: ({int(2*x)},{int(2*y)}) pixels, Value: {pixel_value[0]}")
+
+    def get_pixel_value(self, x, y):
+        # Retrieve the pixel value at the given x, y coordinates from the image
+        if self.img_canvas.image is not None:
+            pil_image = ImageTk.getimage(self.img_canvas.image)
+            try:
+                if pil_image:
+                    pixel_value = pil_image.getpixel((int(x), int(y)))
+                    return pixel_value
+            except IndexError:
+                return 0
+        return 0
 
     def on_close(self):
-        self.cam_on_close1()
-        self.cam_on_close2()
-        self.cam_on_close3()
         self.win.destroy()
-        self.parent.camera_win = None

@@ -1,16 +1,15 @@
 print('Importing the libraries...')
 import json
 import os
-
-import numpy as np
-import matplotlib
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
 import tkinter as tk
-from tkinter import ttk
 import tkinter.messagebox as tkMbox
+from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
+
+import matplotlib
+import numpy as np
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
@@ -67,7 +66,7 @@ class DLabController(object):
         # but_mcp = ttk.Button(frm_bot, text='MCP', command=self.open_mcp)
         but_camera = ttk.Button(self.frm_bot, text='Camera control', command=self.open_camera)
         but_xuv_camera = ttk.Button(self.frm_bot, text='XUV Camera', command=self.open_xuv_camera)
-        but_feedback = ttk.Button(self.frm_bot, text='Feedbacker', command=self.open_feedback)
+        but_feedback = ttk.Button(self.frm_bot, text='Feedbacker', command=self.open_feedback_window)
         # but_prev = ttk.Button(frm_bot, text='Preview', command=self.open_prev)
         but_pub = ttk.Button(self.frm_bot, text='Publish', command=self.open_pub)
         but_exit = ttk.Button(self.frm_bot, text='EXIT', command=self.exit_prog)
@@ -224,20 +223,15 @@ class DLabController(object):
             questionbox.PopupQuestion(self.open_feedback_window, 'Choose feedback method',
                                       q_str, 'Open Camera', 'Open Spectrometer')
 
-    def open_feedback_window(self, answer):
+    def open_feedback_window(self):
         """
-        Open the feedback window using the specified feedback method.
-
-        Parameters
-        ----------
-        answer : str
-            The feedback method to use - 'Open Camera' for spatial fringes or 'Open Spectrometer' for spectral fringes.
+        Open the feedback window.
 
         Returns
         -------
         None
         """
-        self.feedback_win = feedbacker.Feedbacker(self, slm, answer)
+        self.feedback_win = feedbacker.Feedbacker(self)
 
     def open_camera(self):
         """
@@ -247,7 +241,7 @@ class DLabController(object):
         -------
         None
         """
-        self.camera_win = camera_control.CameraControl(self)
+        self.camera_win = camera_control.CameraControl()
 
     def open_xuv_camera(self):
         """

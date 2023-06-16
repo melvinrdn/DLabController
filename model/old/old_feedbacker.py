@@ -1,36 +1,34 @@
-import os
-import threading
-import time
-import tkinter as tk
-from collections import deque
-from datetime import date
-import datetime
-
-import cv2
-import matplotlib
-import numpy as np
-from PIL import Image, ImageTk
-from matplotlib import pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-from simple_pid import PID
-
+from ressources.settings import slm_size, bit_depth
 import drivers.avaspec_driver._avs_py as avs
 from drivers import gxipy_driver as gx
+from views import draw_polygon
 from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
-import drivers.santec_driver._slm_py as slm
-from ressources.settings import slm_size, bit_depth
-from views import draw_polygon
+import tkinter as tk
+from tkinter import ttk
+import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib import pyplot as plt
+import matplotlib
+from PIL import Image, ImageTk
+import time
+import cv2
+from simple_pid import PID
+import threading
+from datetime import date
+from collections import deque
 from . import calibrator as cal
+import os
+from views import camera_control
 
 
 class Feedbacker(object):
     """
-    A class for controlling the overlap between the green and the red, using spectral fringes.
+    A class for controlling the overlap between the green and the red, using spectral fringes or spatial fringes
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent, slm_lib, CAMERA):
         """
         Initialize the object.
 
@@ -38,6 +36,10 @@ class Feedbacker(object):
         ----------
         parent : object
             The parent object.
+        slm_lib : object
+            The SLMLib object for controlling the spatial light modulator.
+        CAMERA : str
+            The name or identifier of the camera.
 
         Returns
         -------
@@ -46,14 +48,18 @@ class Feedbacker(object):
         """
         matplotlib.use("TkAgg")
         self.cam = None
+        self.CAMERA = CAMERA  # True for Camera Mode, False for Spectrometer Mode
         self.parent = parent
         self.lens = self.parent.phase_refs[4]
-        self.slm_lib = slm
+        self.slm_lib = slm_lib
         self.win = tk.Toplevel()
         self.set_point = 0
-
-        title = 'SLM Phase Control - Feedbacker'
-        print('Opening feedbacker...')
+        if self.CAMERA:
+            title = 'SLM Phase Control - Feedbacker (spatial)'
+            print('Opening spatial feedbacker...')
+        else:
+            title = 'SLM Phase Control - Feedbacker (spectral)'
+            print('Opening spectral feedbacker...')
 
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -78,9 +84,14 @@ class Feedbacker(object):
         # new frame for scan related parameters
         frm_scans = tk.Frame(self.win)
 
-        frm_spc_but = tk.Frame(self.win)
-        frm_spc_but_set = tk.Frame(frm_spc_but)
-        frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
+        if self.CAMERA:
+            frm_cam = tk.Frame(self.win)
+            frm_cam_but = tk.Frame(frm_cam)
+            frm_cam_but_set = tk.Frame(frm_cam_but)
+        else:
+            frm_spc_but = tk.Frame(self.win)
+            frm_spc_but_set = tk.Frame(frm_spc_but)
+            frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
 
         frm_ratio = tk.LabelFrame(frm_mid, text='Phase extraction')
         frm_pid = tk.LabelFrame(frm_mid, text='PID controller')
@@ -96,41 +107,63 @@ class Feedbacker(object):
         # creating buttons n labels
         but_exit = tk.Button(frm_bot, text='EXIT', command=self.on_close)
         but_feedback = tk.Button(frm_bot, text='Feedback', command=self.feedback)
-
-        lbl_spc_ind = tk.Label(frm_spc_but_set, text='Spectrometer index:')
-        self.strvar_spc_ind = tk.StringVar(self.win, '1')
-        self.ent_spc_ind = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_spc_ind)
-        lbl_spc_exp = tk.Label(frm_spc_but_set, text='Exposure time (ms):')
-        self.strvar_spc_exp = tk.StringVar(self.win, '50')
-        self.ent_spc_exp = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_spc_exp)
-        lbl_spc_gain = tk.Label(frm_spc_but_set, text='Nr. of averages:')
-        self.strvar_spc_avg = tk.StringVar(self.win, '1')
-        self.ent_spc_avg = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_spc_avg)
-        but_spc_activate = tk.Button(frm_spc_but_set, text='Activate',
-                                     command=self.spec_activate, width=8)
-        but_spc_deactivate = tk.Button(frm_spc_but_set, text='Deactivate',
-                                       command=self.spec_deactivate, width=8)
-        but_spc_start = tk.Button(frm_spc_but, text='Start\nSpectrometer',
-                                  command=self.spc_img, height=2)
-        but_spc_stop = tk.Button(frm_spc_but, text='Stop\nSpectrometer',
-                                 command=self.stop_measure, height=2)
-        but_spc_phi = tk.Button(frm_spc_but, text='fast 2pi',
-                                command=self.fast_scan, height=2)
-        but_auto_scale = tk.Button(frm_plt_set, text='auto-scale',
-                                   command=self.auto_scale_spec_axis, width=13)
-        but_bck = tk.Button(frm_plt_set, text='take background',
-                            command=self.take_background, width=13)
-        lbl_std = tk.Label(frm_plt_set, text='sigma:', width=6)
-        self.lbl_std_val = tk.Label(frm_plt_set, text='None', width=6)
+        if self.CAMERA:
+            but_cam_img = tk.Button(frm_cam_but, text='Get image', command=self.cam_img)
+            but_cam_line = tk.Button(frm_cam_but, text='Plot fft', command=self.plot_fft)
+            but_cam_phi = tk.Button(frm_cam_but, text='scan 2pi fast', command=self.fast_scan)
+            lbl_cam_ind = tk.Label(frm_cam_but_set, text='Camera index:')
+            self.strvar_cam_ind = tk.StringVar(self.win, '2')
+            self.ent_cam_ind = tk.Entry(
+                frm_cam_but_set, width=11, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_cam_ind)
+            lbl_cam_exp = tk.Label(frm_cam_but_set, text='Camera exposure (µs):')
+            self.strvar_cam_exp = tk.StringVar(self.win, '1000')
+            self.ent_cam_exp = tk.Entry(
+                frm_cam_but_set, width=11, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_cam_exp)
+            lbl_cam_gain = tk.Label(frm_cam_but_set, text='Camera gain (0-24):')
+            self.strvar_cam_gain = tk.StringVar(self.win, '20')
+            self.ent_cam_gain = tk.Entry(
+                frm_cam_but_set, width=11, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_cam_gain)
+        else:
+            lbl_spc_ind = tk.Label(frm_spc_but_set, text='Spectrometer index:')
+            self.strvar_spc_ind = tk.StringVar(self.win, '1')
+            self.ent_spc_ind = tk.Entry(
+                frm_spc_but_set, width=9, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_spc_ind)
+            lbl_spc_exp = tk.Label(frm_spc_but_set, text='Exposure time (ms):')
+            self.strvar_spc_exp = tk.StringVar(self.win, '50')
+            self.ent_spc_exp = tk.Entry(
+                frm_spc_but_set, width=9, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_spc_exp)
+            lbl_spc_gain = tk.Label(frm_spc_but_set, text='Nr. of averages:')
+            self.strvar_spc_avg = tk.StringVar(self.win, '1')
+            self.ent_spc_avg = tk.Entry(
+                frm_spc_but_set, width=9, validate='all',
+                validatecommand=(vcmd, '%d', '%P', '%S'),
+                textvariable=self.strvar_spc_avg)
+            but_spc_activate = tk.Button(frm_spc_but_set, text='Activate',
+                                         command=self.spec_activate, width=8)
+            but_spc_deactivate = tk.Button(frm_spc_but_set, text='Deactivate',
+                                           command=self.spec_deactivate, width=8)
+            but_spc_start = tk.Button(frm_spc_but, text='Start\nSpectrometer',
+                                      command=self.spc_img, height=2)
+            but_spc_stop = tk.Button(frm_spc_but, text='Stop\nSpectrometer',
+                                     command=self.stop_measure, height=2)
+            but_spc_phi = tk.Button(frm_spc_but, text='fast 2pi',
+                                    command=self.fast_scan, height=2)
+            but_auto_scale = tk.Button(frm_plt_set, text='auto-scale',
+                                       command=self.auto_scale_spec_axis, width=13)
+            but_bck = tk.Button(frm_plt_set, text='take background',
+                                command=self.take_background, width=13)
+            lbl_std = tk.Label(frm_plt_set, text='sigma:', width=6)
+            self.lbl_std_val = tk.Label(frm_plt_set, text='None', width=6)
         lbl_phi = tk.Label(frm_ratio, text='Phase shift:')
         lbl_phi_2 = tk.Label(frm_ratio, text='pi')
         self.strvar_flat = tk.StringVar()
@@ -138,8 +171,8 @@ class Feedbacker(object):
             frm_ratio, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_flat)
-
-        text = '17'
+        text = '4'
+        if not CAMERA: text = '17'
         self.strvar_indexfft = tk.StringVar(self.win, text)
         lbl_indexfft = tk.Label(frm_ratio, text='Index fft:')
         lbl_angle = tk.Label(frm_ratio, text='Phase:')
@@ -147,18 +180,27 @@ class Feedbacker(object):
             frm_ratio, width=11,
             textvariable=self.strvar_indexfft)
         self.lbl_angle = tk.Label(frm_ratio, text='angle')
-
-        text = '1950'
+        text = '400, 1050'
+        if not CAMERA: text = '1950'
         self.strvar_area1x = tk.StringVar(self.win, text)
         self.ent_area1x = tk.Entry(
             frm_ratio, width=11,
             textvariable=self.strvar_area1x)
-
-        text = '2100'
+        text = '630, 650'
+        if not CAMERA: text = '2100'
         self.strvar_area1y = tk.StringVar(self.win, text)
         self.ent_area1y = tk.Entry(
             frm_ratio, width=11,
             textvariable=self.strvar_area1y)
+        if self.CAMERA:
+            self.intvar_area = tk.IntVar()
+            self.cbox_area = tk.Checkbutton(frm_ratio, text='view area',
+                                            variable=self.intvar_area,
+                                            onvalue=1, offvalue=0)
+            lbl_direction = tk.Label(frm_ratio, text='Integration direction:')
+            self.cbx_dir = tk.ttk.Combobox(frm_ratio, width=10,
+                                           values=['horizontal', 'vertical'])
+            self.cbx_dir.current(0)
 
         lbl_setp = tk.Label(frm_pid, text='Setpoint:')
         self.strvar_setp = tk.StringVar(self.win, '0')
@@ -204,9 +246,9 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_steps)
 
+
         self.var_phasescan = tk.IntVar()
-        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
-                                           offvalue=0,
+        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1, offvalue=0,
                                            command=None)
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
@@ -214,9 +256,8 @@ class Feedbacker(object):
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
 
         self.var_background = tk.IntVar()
-        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
-                                            offvalue=0,
-                                            command=None)
+        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1, offvalue=0,
+                                           command=None)
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
@@ -235,6 +276,8 @@ class Feedbacker(object):
         self.ent_comment = tk.Entry(
             frm_measure, width=25, validate='none',
             textvariable=self.strvar_comment)
+
+
 
         lbl_Stage = tk.Label(frm_stage, text='Stage')
         lbl_Nr = tk.Label(frm_stage, text='#')
@@ -258,6 +301,8 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_Nr)
 
+
+
         # buttons
         self.but_WPR_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPR)
         self.but_WPR_Home = tk.Button(frm_stage, text='Home', command=self.home_WPR)
@@ -267,6 +312,7 @@ class Feedbacker(object):
         self.var_wprpower = tk.IntVar()
         self.cb_wprpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
                                           command=None)
+
 
         lbl_WPG = tk.Label(frm_stage, text='WP green:')
         self.strvar_WPG_is = tk.StringVar(self.win, '')
@@ -292,6 +338,8 @@ class Feedbacker(object):
         self.var_wpgpower = tk.IntVar()
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
+
+
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -355,7 +403,7 @@ class Feedbacker(object):
             textvariable=self.strvar_red_power)
 
         self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open Calibrator!', command=self.enable_calibrator)
-        # self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
+        #self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red Max Power (W):')
         self.strvar_red_power = tk.StringVar(self.win, '4.5')
@@ -399,18 +447,15 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_current_power)
 
-        # frm_wp_scans
+        #frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
         self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
-        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red/Green Ratio",
-                                           text="Red/Green Ratio")
+        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value= "Red/Green Ratio", text="Red/Green Ratio")
         self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red", text="Only Red")
-        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green",
-                                     text="Only Green")
-        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing",
-                                         text="Nothing")
-        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus",
-                                                 text="Green Focus")
+        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green", text = "Only Green")
+        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing", text = "Nothing")
+        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus", text = "Green Focus")
+
 
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
@@ -429,11 +474,10 @@ class Feedbacker(object):
 
         lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
         self.lbl_int_ratio_constant = tk.Label(frm_wp_scans,
-                                               text='Pr+{:.2f}*PG='.format(
-                                                   (float(self.ent_int_ratio_focus.get())) ** 2))
+                                          text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
         lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
 
-        # scan paramters RATIO
+        #scan paramters RATIO
         self.strvar_ratio_from = tk.StringVar(self.win, '0')
         self.ent_ratio_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
@@ -442,7 +486,7 @@ class Feedbacker(object):
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
         maxG = float(self.ent_green_power.get()) * 1e-3
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x * maxG), 3)))
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x*maxG), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -473,8 +517,8 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_steps)
-        # self.var_wprscan = tk.IntVar()
-        # self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
+        #self.var_wprscan = tk.IntVar()
+        #self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
         #                                 command=None)
 
         lbl_int_green = tk.Label(frm_wp_scans, text="Green Power (mW)")
@@ -512,11 +556,17 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_steps)
-        # self.var_wpgscan = tk.IntVar()
-        # self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
-        # command=None)
+        #self.var_wpgscan = tk.IntVar()
+        #self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
+        #command=None)
 
-        frm_spc_but.grid(row=0, column=0, sticky='nsew')
+
+        # setting up
+        if self.CAMERA:
+            frm_cam.grid(row=0, column=0, sticky='nsew')
+            frm_cam_but.grid(row=1, column=0, sticky='nsew')
+        else:
+            frm_spc_but.grid(row=0, column=0, sticky='nsew')
 
         frm_plt.grid(row=1, column=0, sticky='nsew')
         frm_mcp_image.grid(row=1, column=2, sticky='nsew')
@@ -524,39 +574,57 @@ class Feedbacker(object):
         frm_measure.grid(row=0, column=0, padx=5)
         frm_phase_scan.grid(row=0, column=1, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
-        frm_wp_power_cal.grid(row=2, column=0, padx=5, pady=5)
+        frm_wp_power_cal.grid(row=2, column=0, padx=5,pady=5)
         frm_wp_scans.grid(row=3, column=0, padx=5, pady=5)
 
         frm_mid.grid(row=2, column=0, sticky='nsew')
         frm_bot.grid(row=3, column=0)
 
-        frm_plt_set.grid(row=0, column=0, padx=5)
-        frm_ratio.grid(row=0, column=1, padx=5)
-        frm_pid.grid(row=0, column=2, padx=5)
+        if self.CAMERA:
+            frm_ratio.grid(row=0, column=0, padx=5)
+            frm_pid.grid(row=0, column=1, padx=5)
+            frm_ratio.config(width=282, height=108)
+        else:
+            frm_plt_set.grid(row=0, column=0, padx=5)
+            frm_ratio.grid(row=0, column=1, padx=5)
+            frm_pid.grid(row=0, column=2, padx=5)
 
-        frm_ratio.config(width=162, height=104)
+            frm_ratio.config(width=162, height=104)
 
         frm_ratio.grid_propagate(False)
 
-        # setting up buttons frm_spc
-        frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
-        but_spc_start.grid(row=0, column=1, padx=5, pady=5, ipadx=5, ipady=5)
-        but_spc_stop.grid(row=0, column=2, padx=5, pady=5, ipadx=5, ipady=5)
-        but_spc_phi.grid(row=0, column=3, padx=5, pady=5, ipadx=5, ipady=5)
-        lbl_spc_ind.grid(row=0, column=0)
-        self.ent_spc_ind.grid(row=0, column=1)
-        but_spc_activate.grid(row=0, column=2, padx=(1, 5))
-        lbl_spc_exp.grid(row=1, column=0)
-        self.ent_spc_exp.grid(row=1, column=1)
-        but_spc_deactivate.grid(row=1, column=2, padx=(1, 5))
-        lbl_spc_gain.grid(row=2, column=0)
-        self.ent_spc_avg.grid(row=2, column=1)
+        # setting up buttons frm_cam / frm_spc
+        if self.CAMERA:
+            but_cam_img.grid(row=0, column=0, padx=5, pady=5, ipadx=5, ipady=5)
+            but_cam_line.grid(row=0, column=1, padx=5, pady=5, ipadx=5, ipady=5)
+            but_cam_phi.grid(row=0, column=2, padx=5, pady=5, ipadx=5, ipady=5)
+            frm_cam_but_set.grid(row=0, column=3, sticky='nsew')
+            lbl_cam_ind.grid(row=0, column=0)
+            self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
+            lbl_cam_exp.grid(row=1, column=0)
+            self.ent_cam_exp.grid(row=1, column=1, padx=(0, 10))
+            lbl_cam_gain.grid(row=2, column=0)
+            self.ent_cam_gain.grid(row=2, column=1, padx=(0, 10))
+        else:
+            frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
+            but_spc_start.grid(row=0, column=1, padx=5, pady=5, ipadx=5, ipady=5)
+            but_spc_stop.grid(row=0, column=2, padx=5, pady=5, ipadx=5, ipady=5)
+            but_spc_phi.grid(row=0, column=3, padx=5, pady=5, ipadx=5, ipady=5)
+            lbl_spc_ind.grid(row=0, column=0)
+            self.ent_spc_ind.grid(row=0, column=1)
+            but_spc_activate.grid(row=0, column=2, padx=(1, 5))
+            lbl_spc_exp.grid(row=1, column=0)
+            self.ent_spc_exp.grid(row=1, column=1)
+            but_spc_deactivate.grid(row=1, column=2, padx=(1, 5))
+            lbl_spc_gain.grid(row=2, column=0)
+            self.ent_spc_avg.grid(row=2, column=1)
 
         # setting up frm_spc_set
-        but_auto_scale.grid(row=0, column=0, columnspan=2, padx=5, pady=(3, 10))
-        but_bck.grid(row=1, column=0, columnspan=2, padx=5)
-        lbl_std.grid(row=2, column=0, pady=5)
-        self.lbl_std_val.grid(row=2, column=1, pady=5)
+        if not self.CAMERA:
+            but_auto_scale.grid(row=0, column=0, columnspan=2, padx=5, pady=(3, 10))
+            but_bck.grid(row=1, column=0, columnspan=2, padx=5)
+            lbl_std.grid(row=2, column=0, pady=5)
+            self.lbl_std_val.grid(row=2, column=1, pady=5)
 
         # setting up buttons frm_bot
         but_exit.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
@@ -574,7 +642,9 @@ class Feedbacker(object):
         but_pid_enbl.grid(row=1, column=2)
         but_pid_stop.grid(row=2, column=2)
 
-        # setting up frm_measure
+
+        #setting up frm_measure
+
         lbl_mcp.grid(row=1, column=0, sticky='w')
         self.ent_mcp.grid(row=1, column=1, padx=5, pady=5)
 
@@ -599,11 +669,15 @@ class Feedbacker(object):
         self.ent_steps.grid(row=2, column=1)
         self.cb_phasescan.grid(row=5, column=1)
 
+
+
         # setting up frm_stage
         lbl_Stage.grid(row=1, column=1)
         lbl_Nr.grid(row=1, column=2)
         lbl_is.grid(row=1, column=3)
         lbl_should.grid(row=1, column=4)
+
+
 
         lbl_WPR.grid(row=2, column=1)
         lbl_WPG.grid(row=3, column=1)
@@ -636,21 +710,21 @@ class Feedbacker(object):
         self.but_Delay_Read.grid(row=4, column=7)
         self.but_Delay_Move.grid(row=4, column=8)
 
-        # self.ent_WPR_from.grid(row=2, column=9)
-        # self.ent_WPR_to.grid(row=2, column=10)
-        # self.ent_WPR_steps.grid(row=2, column=11)
+        #self.ent_WPR_from.grid(row=2, column=9)
+        #self.ent_WPR_to.grid(row=2, column=10)
+        #self.ent_WPR_steps.grid(row=2, column=11)
 
-        # self.ent_WPG_from.grid(row=3, column=9)
-        # self.ent_WPG_to.grid(row=3, column=10)
-        # self.ent_WPG_steps.grid(row=3, column=11)
+        #self.ent_WPG_from.grid(row=3, column=9)
+        #self.ent_WPG_to.grid(row=3, column=10)
+        #self.ent_WPG_steps.grid(row=3, column=11)
 
-        # self.ent_Delay_from.grid(row=4, column=9)
-        # self.ent_Delay_to.grid(row=4, column=10)
-        # self.ent_Delay_steps.grid(row=4, column=11)
+        #self.ent_Delay_from.grid(row=4, column=9)
+        #self.ent_Delay_to.grid(row=4, column=10)
+        #self.ent_Delay_steps.grid(row=4, column=11)
 
-        # self.cb_wprscan.grid(row=2, column=12)
-        # self.cb_wpgscan.grid(row=3, column=12)
-        # self.cb_delayscan.grid(row=4, column=12)
+        #self.cb_wprscan.grid(row=2, column=12)
+        #self.cb_wpgscan.grid(row=3, column=12)
+        #self.cb_delayscan.grid(row=4, column=12)
 
         self.cb_wprpower.grid(row=2, column=9)
         self.cb_wpgpower.grid(row=3, column=9)
@@ -698,18 +772,18 @@ class Feedbacker(object):
         self.ent_int_ratio_focus.grid(row=1, column=2, padx=3, pady=3)
         self.ent_int_ratio_constant.grid(row=1, column=4, padx=3, pady=3)
 
-        lbl_int_green_ratio.grid(row=1, column=7, sticky='w')
+        lbl_int_green_ratio.grid(row=1, column=7,sticky='w')
 
         self.ent_ratio_from.grid(row=1, column=8)
         self.ent_ratio_to.grid(row=1, column=9)
         self.ent_ratio_steps.grid(row=1, column=10)
 
-        lbl_int_red.grid(row=2, column=7, sticky='w')
+        lbl_int_red.grid(row=2, column=7,sticky='w')
         self.ent_WPR_from.grid(row=2, column=8)
         self.ent_WPR_to.grid(row=2, column=9)
         self.ent_WPR_steps.grid(row=2, column=10)
 
-        lbl_int_green.grid(row=3, column=7, sticky='w')
+        lbl_int_green.grid(row=3, column=7,sticky='w')
         self.ent_WPG_from.grid(row=3, column=8)
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
@@ -721,29 +795,37 @@ class Feedbacker(object):
 
         # lbl_WPR.grid(row=2,column = 1)
 
+        # setting up cam image
+        if self.CAMERA:
+            self.img_canvas = tk.Canvas(frm_cam, height=350, width=500)
+            self.img_canvas.grid(row=0, sticky='nsew')
+            self.img_canvas.configure(bg='grey')
+            self.image = self.img_canvas.create_image(0, 0, anchor="nw")
+        else:
+            self.figrMCP = Figure(figsize=(5, 5), dpi=100)
+            self.axMCP = self.figrMCP.add_subplot(211)
+            self.axHarmonics = self.figrMCP.add_subplot(212)
+            self.axMCP.set_xlim(0, 1600)
+            self.axMCP.set_ylim(0, 1000)
+            self.axHarmonics.set_xlim(0, 1600)
+            # self.axHarmonics.set_aspect(1600/1000)
 
+            # self.axHarmonics.set_ylim(0,100)
+            # self.harmonics, = self.axHarmonics.plot([])
+            self.figrMCP.tight_layout()
+            self.figrMCP.canvas.draw()
+            self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
+            # self.imgMCP=FigureCanvasTkAgg(self.figrMCP, frm_plt)
+            self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
+            self.tk_widget_figrMCP.grid(row=0, column=0, sticky='nsew')
+            # self.tk_widget_figrMCP.grid(row=0, column=1, sticky='nsew')
+            self.imgMCP.draw()
 
-        self.figrMCP = Figure(figsize=(5, 5), dpi=100)
-        self.axMCP = self.figrMCP.add_subplot(211)
-        self.axHarmonics = self.figrMCP.add_subplot(212)
-        self.axMCP.set_xlim(0, 1600)
-        self.axMCP.set_ylim(0, 1000)
-        self.axHarmonics.set_xlim(0, 1600)
-        # self.axHarmonics.set_aspect(1600/1000)
-
-        # self.axHarmonics.set_ylim(0,100)
-        # self.harmonics, = self.axHarmonics.plot([])
-        self.figrMCP.tight_layout()
-        self.figrMCP.canvas.draw()
-        self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
-        # self.imgMCP=FigureCanvasTkAgg(self.figrMCP, frm_plt)
-        self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
-        self.tk_widget_figrMCP.grid(row=0, column=0, sticky='nsew')
-        # self.tk_widget_figrMCP.grid(row=0, column=1, sticky='nsew')
-        self.imgMCP.draw()
-
-
-        sizefactor = 1.05
+        # setting up frm_plt
+        if self.CAMERA:
+            sizefactor = 1
+        else:
+            sizefactor = 1.05
 
         self.figr = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
         self.ax1r = self.figr.add_subplot(211)
@@ -783,47 +865,61 @@ class Feedbacker(object):
         # setting up frm_ratio
         self.ent_area1x.grid(row=0, column=0)
         self.ent_area1y.grid(row=0, column=1)
-
-
-        lbl_indexfft.grid(row=1, column=0, sticky='e')
-        self.ent_indexfft.grid(row=1, column=1)
-        lbl_angle.grid(row=2, column=0)
-        self.lbl_angle.grid(row=2, column=1)
-        lbl_phi.grid(row=3, column=0, sticky='e')
-        self.ent_flat.grid(row=3, column=1)
-        lbl_phi_2.grid(row=3, column=2, sticky='w')
+        if self.CAMERA:
+            self.cbox_area.grid(row=0, column=2)
+            lbl_direction.grid(row=1, column=0, columnspan=2)
+            self.cbx_dir.grid(row=1, column=2, columnspan=2, sticky='w')
+            lbl_indexfft.grid(row=2, column=0, sticky='e')
+            self.ent_indexfft.grid(row=2, column=1)
+            lbl_angle.grid(row=2, column=2)
+            self.lbl_angle.grid(row=2, column=3)
+            lbl_phi.grid(row=3, column=0, sticky='e')
+            self.ent_flat.grid(row=3, column=1)
+            lbl_phi_2.grid(row=3, column=2, sticky='w')
+        else:
+            lbl_indexfft.grid(row=1, column=0, sticky='e')
+            self.ent_indexfft.grid(row=1, column=1)
+            lbl_angle.grid(row=2, column=0)
+            self.lbl_angle.grid(row=2, column=1)
+            lbl_phi.grid(row=3, column=0, sticky='e')
+            self.ent_flat.grid(row=3, column=1)
+            lbl_phi_2.grid(row=3, column=2, sticky='w')
 
         self.im_phase = np.zeros(1000)
         self.pid = PID(0.35, 0, 0, setpoint=0)
 
+        # setting up a listener for catchin esc from cam1 or spec
         self.stop_acquire = 0
         self.stop_pid = False
 
-        self.spec_interface_initialized = False
-        self.active_spec_handle = None
+        # class attributes to store spectrometer state
+        if not self.CAMERA:
+            self.spec_interface_initialized = False
+            self.active_spec_handle = None
 
-    def update_maxgreenratio(self, var, index, mode):
+    def update_maxgreenratio(self,var,index,mode):
         try:
             x = float(self.ent_int_ratio_focus.get()) ** 2
             c = float(self.ent_int_ratio_constant.get())
-            maxG = float(self.ent_green_power.get()) * 1e-3
+            maxG = float(self.ent_green_power.get())*1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
-            self.strvar_ratio_to.set(str(np.round(x * maxG / (c - x * maxG), 3)))
+            self.strvar_ratio_to.set(str(np.round(x*maxG/(c-x*maxG), 3)))
 
-            # print(x)
-            # print(c)
-            # print(maxG)
+            #print(x)
+            #print(c)
+            #print(maxG)
         except:
             print("pls enter a reasonable value")
 
     def angle_to_power(self, angle, maxA, phase):
-        power = maxA / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * phase) + maxA / 2
+        power = maxA/2 * np.cos(2 * np.pi / 90 * angle - 2*np.pi/90*phase) + maxA/2
         return power
 
     def power_to_angle(self, power, maxA, phase):
-        A = maxA / 2
-        angle = -(45 * np.arccos(power / A - 1)) / np.pi + phase
+        A = maxA/2
+        angle = -(45*np.arccos(power/A-1))/np.pi + phase
         return angle
+
 
     def init_WPR(self):
         """
@@ -884,8 +980,7 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(
-                np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())), 3))
+            self.strvar_red_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())),3))
         except:
             print("Impossible to read WPR position")
 
@@ -976,9 +1071,7 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(
-                np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
-                         3))
+            self.strvar_green_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),3))
 
         except:
             print("Impossible to read WPG position")
@@ -1131,13 +1224,13 @@ class Feedbacker(object):
         -------
         None
         """
-        # try:
+        #try:
         self.calibrator = cal.Calibrator()
         self.strvar_red_power.set(str(self.calibrator.max_red))
         self.strvar_green_power.set(str(self.calibrator.max_green))
         self.strvar_red_phase.set(str(self.calibrator.phase_red))
         self.strvar_green_phase.set(str(self.calibrator.phase_green))
-        # except:
+        #except:
         #    print("Failure in opening the Calibrator")
 
     def read_red_power(self):
@@ -1163,17 +1256,22 @@ class Feedbacker(object):
         except:
             print('Impossible to read red power')
 
-    def take_image(self, avgs):
+
+    def take_image(self, avgs, record_phase=True):
         """
         Takes an image from the camera.
 
         This method takes an image from the camera using the specified number of averages,
-        and returns the captured image.
+        and returns the captured image. If `record_phase` is `True`, it records the phase
+        values as well.
+
 
         Parameters
         ----------
         avgs : int
             The number of images to average over.
+        record_phase : bool, optional
+            Indicates whether or not to record the phase values. The default is True.
 
         Returns
         -------
@@ -1181,6 +1279,12 @@ class Feedbacker(object):
             The captured image.
 
         """
+        # if record_phase:
+        #    phasefilename = 'C:/data/'+ str(date.today())+'/'+str(date.today()) + '-' +str(int(image_nr))+ '-' + 'phase_values.txt'
+        #    global g
+        #    g = open(phasefilename,"a+")
+
+        # this is the image taking part
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
             image = np.zeros([1000, 1600])
@@ -1197,36 +1301,22 @@ class Feedbacker(object):
                     image = image + numpy_image
                 image = image / nr
                 self.meas_has_started = False
-
+        # image taking part ends here
+        #        if record_phase:
+        #            g.close()
         return image
 
     def save_im(self, image):
         """
         Saves the captured image to a file and writes in the log file
-
-        Parameters
-        ----------
-        image : numpy.ndarray
-            The captured image.
-
-        Returns
-        -------
-        None
         """
+
         nr = self.get_start_image()
         self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
-
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        log_entry = str(
-            int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
-            np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
-            np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
-            np.round(np.std(np.unwrap(self.d_phase)),
-                     2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
-            np.round(float(self.lens.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
-        self.f.write(log_entry)
+        self.f.write(str(int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
+                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(np.round(float(self.lens.strvar_ben.get()),3)) +'\n')
         self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
@@ -1340,10 +1430,10 @@ class Feedbacker(object):
         self.cam = device_manager.open_device_by_index(int(1))
 
         # set exposure
-        self.cam.ExposureTime.set(float(1000))  # TODO exposure box
+        self.cam.ExposureTime.set(float(1000))#TODO exposure box
 
         # set gain
-        self.cam.Gain.set(float(1))  # TODO gain box
+        self.cam.Gain.set(float(1))#TODO gain box
 
         if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
             # set trigger mode
@@ -1354,7 +1444,7 @@ class Feedbacker(object):
             self.cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
 
         self.cam.stream_on()
-        self.focus_cam_acq_mono(int(1))  # TODO average box
+        self.focus_cam_acq_mono(int(1)) #TODO average box
         self.cam.stream_off()
         self.cam.close_device()
 
@@ -1368,8 +1458,8 @@ class Feedbacker(object):
 
         for i in range(num):
             self.cam.TriggerSoftware.send_command()
-            self.cam.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam.Gain.set(float(1))  # TODO exposure box
+            self.cam.ExposureTime.set(float(10000))#TODO gain box
+            self.cam.Gain.set(float(1))#TODO exposure box
 
             raw_image = self.cam.data_stream[0].get_image()
             if raw_image is None:
@@ -1392,10 +1482,13 @@ class Feedbacker(object):
         picture = picture.resize((800, 600), resample=0)
         picture = ImageTk.PhotoImage(picture)
 
-        self.focus_cam_save = True #TODO possibility to change
+        #self.img_canvas.itemconfig(self.image, image=picture)
+        #self.img_canvas.image = picture
+
+        self.focus_cam_save = True
 
         if self.focus_cam_save:
-            folder_path = 'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
+            folder_path =  'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
 
@@ -1406,6 +1499,7 @@ class Feedbacker(object):
 
             full_path = os.path.join(folder_path, filename)
 
+            #self.img_canvas.itemconfig(self.image)
             last_image = picture
 
             if last_image is not None:
@@ -1423,61 +1517,12 @@ class Feedbacker(object):
         self.render_thread_mono.start()
 
     def red_only_scan(self):
-        """
-        Perform a scan of the red power. It sets the 'var_wprpower' variable to 1, which indicates that we use the
-        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
-        it sets the 'strvar_WPR_should' variable to the current value, moves the WPR  accordingly, takes an image
-        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
-
-        Returns
-        -------
-        None
-        """
-        self.var_wprpower.set(1)
-        WPR_steps = int(self.ent_WPR_steps.get())
-        WPR_scan_list = np.linspace(float(self.ent_WPR_from.get()), float(self.ent_WPR_to.get()), WPR_steps)
-        print(WPR_scan_list)
-
-        for i in np.arange(0, WPR_steps):
-            r = WPR_scan_list[i]
-            self.strvar_WPR_should.set(str(r))
-            self.move_WPR()
-            im = self.take_image(int(self.ent_avgs.get()))
-            self.save_im(im)
-            self.plot_MCP(im)
+        return 1
 
     def green_only_scan(self):
-        """
-        Perform a scan of the green power. It sets the 'var_wpgpower' variable to 1, which indicates that we use the
-        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
-        it sets the 'strvar_WPG_should' variable to the current value, moves the WPG  accordingly, takes an image
-        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
-
-        Returns
-        -------
-        None
-        """
-        self.var_wpgpower.set(1)
-        WPG_steps = int(self.ent_WPG_steps.get())
-        WPG_scan_list = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()), WPG_steps)
-        print(WPG_scan_list)
-
-        for i in np.arange(0, WPG_steps):
-            g = WPG_scan_list[i]
-            self.strvar_WPG_should.set(str(g))
-            self.move_WPG()
-            im = self.take_image(int(self.ent_avgs.get()))
-            self.save_im(im)
-            self.plot_MCP(im)
+        return 1
 
     def red_green_ratio_scan(self):
-        """
-        Perform a scan of the red and green ratio.
-
-        Returns
-        -------
-        None
-        """
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
         self.var_wprpower.set(1)
@@ -1522,7 +1567,7 @@ class Feedbacker(object):
             im = self.take_image(int(self.ent_avgs.get()))
             self.save_im(im)
             self.plot_MCP(im)
-            #self.focus_cam_mono_acq()
+            self.focus_cam_mono_acq()
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -1530,10 +1575,9 @@ class Feedbacker(object):
     def get_power_values_for_ratio_scan(self):
         c = float(self.strvar_int_ratio_constant.get())
         x = float(self.ent_int_ratio_focus.get()) ** 2
-        ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()),
-                             int(self.ent_ratio_steps.get()))
-        pr = c / (1 + ratios)
-        pg = ratios * pr / x
+        ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()), int(self.ent_ratio_steps.get()))
+        pr = c/(1+ratios)
+        pg = ratios*pr/x
         print(x)
         print(c)
         print(ratios)
@@ -1545,7 +1589,7 @@ class Feedbacker(object):
         steps = float(self.ent_GFP_steps.get())
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
-            # things go to hell if division by zero
+            #things go to hell if division by zero
             if b == 0:
                 b = 0.00001
             self.lens.strvar_ben.set(str(b))
@@ -1556,7 +1600,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                #self.focus_cam_mono_acq()
+                self.focus_cam_mono_acq()
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')
@@ -1582,6 +1626,7 @@ class Feedbacker(object):
                     self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
                     self.focus_position_scan()
 
+
         elif status == "Nothing":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
@@ -1606,7 +1651,6 @@ class Feedbacker(object):
                     self.red_green_ratio_scan()
             else:
                 print("Are you sure you do not want to scan the phase for each ratio?")
-
         elif status == "Only Red":
             self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
             self.red_only_scan()
@@ -1631,7 +1675,7 @@ class Feedbacker(object):
         """
         self.but_meas_scan.config(fg='red')
 
-        # if self.var_phasescan.get() == 1:
+        #if self.var_phasescan.get() == 1:
         self.f = open(self.autolog, "a+")
         if self.var_background.get() == 1:
             self.f.write(
@@ -1664,14 +1708,14 @@ class Feedbacker(object):
         self.but_meas_simple.config(fg='red')
         self.f = open(self.autolog, "a+")
 
-        # start_image = self.get_start_image()
+        #start_image = self.get_start_image()
 
         if self.var_background.get() == 1:
             self.f.write("# BACKGROUND SingleImage, " + self.ent_comment.get() + '\n')
         else:
             self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
-        # info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
-        # self.save_image(im, start_image, info)
+        #info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
+        #self.save_image(im, start_image, info)
         im = self.take_image(int(self.ent_avgs.get()))
         self.save_im(im)
         self.plot_MCP(im)
@@ -1698,6 +1742,143 @@ class Feedbacker(object):
         self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr.get()))
         self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr.get()), phase_map,
                                    slm_size[1], slm_size[0])
+
+    def init_cam(self):
+        """
+        Initializes the camera.
+
+        Creates a device manager, opens the first available device, sets the exposure and gain, and sets the trigger mode and trigger source.
+        Then starts data acquisition and calls `acq_mono` and `cam_on_close` methods.
+
+        Returns
+        -------
+        None
+        """
+        print("")
+        print("Initializing......")
+        print("")
+        # create a device manager
+        device_manager = gx.DeviceManager()
+        dev_num, dev_info_list = device_manager.update_device_list()
+        if dev_num == 0:
+            print("Number of enumerated devices is 0")
+            return
+
+        # open the first device
+        cam1 = device_manager.open_device_by_index(int(self.ent_cam_ind.get()))
+
+        # set exposure
+        cam1.ExposureTime.set(float(self.ent_cam_exp.get()))
+
+        # set gain
+        cam1.Gain.set(float(self.ent_cam_gain.get()))
+
+        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
+            # set trigger mode
+            cam1.TriggerMode.set(gx.GxSwitchEntry.ON)
+        else:
+            # set trigger mode and trigger source
+            cam1.TriggerMode.set(gx.GxSwitchEntry.ON)
+            cam1.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+
+        # start data acquisition
+        cam1.stream_on()
+        self.acq_mono(cam1, 10000)
+        self.cam_on_close(cam1)
+
+    def acq_mono(self, device, num):
+        """
+        Acquisition function for the camera.
+
+        Sends a software trigger command to the device and gets a raw image.
+        Creates a numpy array with the data from the raw image and sums it to a specified area.
+        Extracts the spatial phase using FFT and updates the angle label.
+        Displays the image on the GUI and draws selection lines around the specified area.
+        Updates the phase vector.
+
+        Parameters
+        ----------
+        device : Device
+            The device object.
+        num : int
+            The number of acquisition images.
+
+        Returns
+        -------
+        None
+        """
+        for i in range(num):
+            time.sleep(0.001)
+
+            # send software trigger command
+            device.TriggerSoftware.send_command()
+
+            # get raw image
+            raw_image = device.data_stream[0].get_image()
+            if raw_image is None:
+                print("Getting image failed.")
+                continue
+
+            # create numpy array with data from raw image
+            numpy_image = raw_image.get_numpy_array()
+            if numpy_image is None:
+                continue
+
+            # # sum to area1
+            try:
+                xpoints = np.fromstring(self.ent_area1x.get(), sep=',')
+                ypoints = np.fromstring(self.ent_area1y.get(), sep=',')
+                assert len(xpoints) == len(ypoints) == 2
+            except:
+                xpoints = np.array([400, 1050])
+                ypoints = np.array([630, 650])
+
+            if xpoints[1] < xpoints[0]:
+                xpoints[1] = xpoints[0] + 2
+            if ypoints[1] < ypoints[0]:
+                ypoints[1] = ypoints[0] + 2
+
+            # trying spatial phase extraction
+            im_ = numpy_image[int(ypoints[0]):int(ypoints[1]), int(xpoints[0]):int(xpoints[1])]
+            if self.cbx_dir.get() == 'horizontal':
+                self.trace = np.sum(im_, axis=0)
+            else:
+                self.trace = np.sum(im_, axis=1)
+
+            im_fft = np.fft.fft(self.trace)
+            self.abs_im_fft = np.abs(im_fft)
+            ind = round(float(self.ent_indexfft.get()))
+            try:
+                self.im_angl = np.angle(im_fft[ind])
+            except:
+                self.im_angl = 0
+            self.lbl_angle.config(text=np.round(self.im_angl, 6))
+
+            # Show images
+            picture = Image.fromarray(numpy_image)
+            picture = picture.resize((500, 350), resample=0)
+            picture = ImageTk.PhotoImage(picture)
+
+            self.img_canvas.itemconfig(self.image, image=picture)
+            self.img_canvas.image = picture  # keep a reference!
+
+            # Draw selection lines
+            if self.intvar_area.get() == 1:
+                x1, x2 = xpoints * 500 / 1440
+                y1, y2 = ypoints * 350 / 1080
+                new_rect_id = self.img_canvas.create_rectangle(x1, y1, x2, y2, outline='orange')
+                self.img_canvas.delete(self.rect_id)
+                self.rect_id = new_rect_id
+            else:
+                self.img_canvas.delete(self.rect_id)
+
+                # creating the phase vector
+            self.im_phase[:-1] = self.im_phase[1:]
+            self.im_phase[-1] = self.im_angl
+
+            if self.stop_acquire == 1:
+                self.stop_acquire = 0
+                break
 
     def eval_spec(self):
         """
@@ -1749,6 +1930,35 @@ class Feedbacker(object):
                 # print("phase saving should be activated")
                 # g.write(str(self.im_angl)+"\n")
             self.plot_fft_blit()
+
+    def cam_on_close(self, device):
+        """
+        Closes camera device and stops acquisition.
+
+        Parameters:
+        -----------
+        device: Device object
+            Camera device object.
+
+        Returns:
+        --------
+        None
+        """
+        device.stream_off()  # stop acquisition
+        device.close_device()  # close device
+
+    def cam_img(self):
+        """
+        Starts camera image acquisition and plots the acquired image.
+
+        Returns:
+        --------
+        None
+        """
+        self.render_thread = threading.Thread(target=self.init_cam)
+        self.render_thread.daemon = True
+        self.render_thread.start()
+        self.plot_phase()
 
     def spc_img(self):
         """
@@ -1820,22 +2030,19 @@ class Feedbacker(object):
         """
         self.axMCP.clear()
         self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
-        self.axMCP.set_aspect('equal')
-
-        self.axMCP.set_xlabel("X (px)")
-        self.axMCP.set_ylabel("Y (px)")
-        self.axMCP.set_xlim(0, 1600)
-        self.axMCP.set_ylim(0, 1000)
-
         self.axHarmonics.clear()
         self.axHarmonics.plot(np.arange(1600), np.sum(mcpimage, 0))
         self.axHarmonics.set_xlabel("X (px)")
         self.axHarmonics.set_ylabel("Counts (arb.u.)")
+        self.axMCP.set_xlabel("X (px)")
+        self.axMCP.set_ylabel("Y (px)")
+        self.axMCP.set_xlim(0, 1600)
 
+        self.axMCP.set_ylim(0, 1000)
         self.axHarmonics.set_xlim(0, 1600)
-        #self.axHarmonics.set_aspect('equal')
-
+        self.axHarmonics.set_aspect(1600 / 1000)
         self.figrMCP.tight_layout()
+
         self.imgMCP.draw()
 
     def plot_fft(self):
@@ -2113,9 +2320,11 @@ class Feedbacker(object):
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()
-
-        self.spec_deactivate()
-        avs.AVS_Done()
+        if self.CAMERA:
+            None
+        else:
+            self.spec_deactivate()
+            avs.AVS_Done()
         self.win.destroy()
         self.parent.feedback_win = None
         print('Feedbacker closed')
