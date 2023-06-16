@@ -18,7 +18,7 @@ from simple_pid import PID
 import threading
 from datetime import date
 from collections import deque
-from . import  calibrator as cal
+from . import calibrator as cal
 import os
 
 
@@ -69,6 +69,9 @@ class Feedbacker(object):
 
         global meas_has_started
         meas_has_started = False
+
+        global scan_running
+        scan_running = False
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
@@ -245,9 +248,9 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_steps)
 
-
         self.var_phasescan = tk.IntVar()
-        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1, offvalue=0,
+        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
+                                           offvalue=0,
                                            command=None)
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
@@ -255,8 +258,9 @@ class Feedbacker(object):
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
 
         self.var_background = tk.IntVar()
-        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1, offvalue=0,
-                                           command=None)
+        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
+                                            offvalue=0,
+                                            command=None)
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
@@ -275,8 +279,6 @@ class Feedbacker(object):
         self.ent_comment = tk.Entry(
             frm_measure, width=25, validate='none',
             textvariable=self.strvar_comment)
-
-
 
         lbl_Stage = tk.Label(frm_stage, text='Stage')
         lbl_Nr = tk.Label(frm_stage, text='#')
@@ -300,8 +302,6 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_Nr)
 
-
-
         # buttons
         self.but_WPR_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPR)
         self.but_WPR_Home = tk.Button(frm_stage, text='Home', command=self.home_WPR)
@@ -311,7 +311,6 @@ class Feedbacker(object):
         self.var_wprpower = tk.IntVar()
         self.cb_wprpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
                                           command=None)
-
 
         lbl_WPG = tk.Label(frm_stage, text='WP green:')
         self.strvar_WPG_is = tk.StringVar(self.win, '')
@@ -337,8 +336,6 @@ class Feedbacker(object):
         self.var_wpgpower = tk.IntVar()
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
-
-
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -402,7 +399,7 @@ class Feedbacker(object):
             textvariable=self.strvar_red_power)
 
         self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open Calibrator!', command=self.enable_calibrator)
-        #self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
+        # self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red Max Power (W):')
         self.strvar_red_power = tk.StringVar(self.win, '4.5')
@@ -446,15 +443,18 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_green_current_power)
 
-        #frm_wp_scans
+        # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
         self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
-        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value= "Red/Green Ratio", text="Red/Green Ratio")
+        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red/Green Ratio",
+                                           text="Red/Green Ratio")
         self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red", text="Only Red")
-        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green", text = "Only Green")
-        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing", text = "Nothing")
-        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus", text = "Green Focus")
-
+        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green",
+                                     text="Only Green")
+        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing",
+                                         text="Nothing")
+        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus",
+                                                 text="Green Focus")
 
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
@@ -473,10 +473,11 @@ class Feedbacker(object):
 
         lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
         self.lbl_int_ratio_constant = tk.Label(frm_wp_scans,
-                                          text='Pr+{:.2f}*PG='.format((float(self.ent_int_ratio_focus.get())) ** 2))
+                                               text='Pr+{:.2f}*PG='.format(
+                                                   (float(self.ent_int_ratio_focus.get())) ** 2))
         lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
 
-        #scan paramters RATIO
+        # scan paramters RATIO
         self.strvar_ratio_from = tk.StringVar(self.win, '0')
         self.ent_ratio_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
@@ -485,7 +486,7 @@ class Feedbacker(object):
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
         maxG = float(self.ent_green_power.get()) * 1e-3
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x*maxG), 3)))
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x * maxG), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -516,8 +517,8 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_steps)
-        #self.var_wprscan = tk.IntVar()
-        #self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
+        # self.var_wprscan = tk.IntVar()
+        # self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
         #                                 command=None)
 
         lbl_int_green = tk.Label(frm_wp_scans, text="Green Power (mW)")
@@ -555,10 +556,9 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_steps)
-        #self.var_wpgscan = tk.IntVar()
-        #self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
-        #command=None)
-
+        # self.var_wpgscan = tk.IntVar()
+        # self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
+        # command=None)
 
         # setting up
         if self.CAMERA:
@@ -573,7 +573,7 @@ class Feedbacker(object):
         frm_measure.grid(row=0, column=0, padx=5)
         frm_phase_scan.grid(row=0, column=1, padx=5)
         frm_stage.grid(row=1, column=0, padx=5)
-        frm_wp_power_cal.grid(row=2, column=0, padx=5,pady=5)
+        frm_wp_power_cal.grid(row=2, column=0, padx=5, pady=5)
         frm_wp_scans.grid(row=3, column=0, padx=5, pady=5)
 
         frm_mid.grid(row=2, column=0, sticky='nsew')
@@ -641,8 +641,7 @@ class Feedbacker(object):
         but_pid_enbl.grid(row=1, column=2)
         but_pid_stop.grid(row=2, column=2)
 
-
-        #setting up frm_measure
+        # setting up frm_measure
 
         lbl_mcp.grid(row=1, column=0, sticky='w')
         self.ent_mcp.grid(row=1, column=1, padx=5, pady=5)
@@ -668,15 +667,11 @@ class Feedbacker(object):
         self.ent_steps.grid(row=2, column=1)
         self.cb_phasescan.grid(row=5, column=1)
 
-
-
         # setting up frm_stage
         lbl_Stage.grid(row=1, column=1)
         lbl_Nr.grid(row=1, column=2)
         lbl_is.grid(row=1, column=3)
         lbl_should.grid(row=1, column=4)
-
-
 
         lbl_WPR.grid(row=2, column=1)
         lbl_WPG.grid(row=3, column=1)
@@ -709,21 +704,21 @@ class Feedbacker(object):
         self.but_Delay_Read.grid(row=4, column=7)
         self.but_Delay_Move.grid(row=4, column=8)
 
-        #self.ent_WPR_from.grid(row=2, column=9)
-        #self.ent_WPR_to.grid(row=2, column=10)
-        #self.ent_WPR_steps.grid(row=2, column=11)
+        # self.ent_WPR_from.grid(row=2, column=9)
+        # self.ent_WPR_to.grid(row=2, column=10)
+        # self.ent_WPR_steps.grid(row=2, column=11)
 
-        #self.ent_WPG_from.grid(row=3, column=9)
-        #self.ent_WPG_to.grid(row=3, column=10)
-        #self.ent_WPG_steps.grid(row=3, column=11)
+        # self.ent_WPG_from.grid(row=3, column=9)
+        # self.ent_WPG_to.grid(row=3, column=10)
+        # self.ent_WPG_steps.grid(row=3, column=11)
 
-        #self.ent_Delay_from.grid(row=4, column=9)
-        #self.ent_Delay_to.grid(row=4, column=10)
-        #self.ent_Delay_steps.grid(row=4, column=11)
+        # self.ent_Delay_from.grid(row=4, column=9)
+        # self.ent_Delay_to.grid(row=4, column=10)
+        # self.ent_Delay_steps.grid(row=4, column=11)
 
-        #self.cb_wprscan.grid(row=2, column=12)
-        #self.cb_wpgscan.grid(row=3, column=12)
-        #self.cb_delayscan.grid(row=4, column=12)
+        # self.cb_wprscan.grid(row=2, column=12)
+        # self.cb_wpgscan.grid(row=3, column=12)
+        # self.cb_delayscan.grid(row=4, column=12)
 
         self.cb_wprpower.grid(row=2, column=9)
         self.cb_wpgpower.grid(row=3, column=9)
@@ -771,18 +766,18 @@ class Feedbacker(object):
         self.ent_int_ratio_focus.grid(row=1, column=2, padx=3, pady=3)
         self.ent_int_ratio_constant.grid(row=1, column=4, padx=3, pady=3)
 
-        lbl_int_green_ratio.grid(row=1, column=7,sticky='w')
+        lbl_int_green_ratio.grid(row=1, column=7, sticky='w')
 
         self.ent_ratio_from.grid(row=1, column=8)
         self.ent_ratio_to.grid(row=1, column=9)
         self.ent_ratio_steps.grid(row=1, column=10)
 
-        lbl_int_red.grid(row=2, column=7,sticky='w')
+        lbl_int_red.grid(row=2, column=7, sticky='w')
         self.ent_WPR_from.grid(row=2, column=8)
         self.ent_WPR_to.grid(row=2, column=9)
         self.ent_WPR_steps.grid(row=2, column=10)
 
-        lbl_int_green.grid(row=3, column=7,sticky='w')
+        lbl_int_green.grid(row=3, column=7, sticky='w')
         self.ent_WPG_from.grid(row=3, column=8)
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
@@ -897,29 +892,28 @@ class Feedbacker(object):
             self.spec_interface_initialized = False
             self.active_spec_handle = None
 
-    def update_maxgreenratio(self,var,index,mode):
+    def update_maxgreenratio(self, var, index, mode):
         try:
             x = float(self.ent_int_ratio_focus.get()) ** 2
             c = float(self.ent_int_ratio_constant.get())
-            maxG = float(self.ent_green_power.get())*1e-3
+            maxG = float(self.ent_green_power.get()) * 1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
-            self.strvar_ratio_to.set(str(np.round(x*maxG/(c-x*maxG), 3)))
+            self.strvar_ratio_to.set(str(np.round(x * maxG / (c - x * maxG), 3)))
 
-            #print(x)
-            #print(c)
-            #print(maxG)
+            # print(x)
+            # print(c)
+            # print(maxG)
         except:
             print("pls enter a reasonable value")
 
     def angle_to_power(self, angle, maxA, phase):
-        power = maxA/2 * np.cos(2 * np.pi / 90 * angle - 2*np.pi/90*phase) + maxA/2
+        power = maxA / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * phase) + maxA / 2
         return power
 
     def power_to_angle(self, power, maxA, phase):
-        A = maxA/2
-        angle = -(45*np.arccos(power/A-1))/np.pi + phase
+        A = maxA / 2
+        angle = -(45 * np.arccos(power / A - 1)) / np.pi + phase
         return angle
-
 
     def init_WPR(self):
         """
@@ -980,7 +974,8 @@ class Feedbacker(object):
         try:
             pos = self.WPR.position
             self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())),3))
+            self.strvar_red_current_power.set(
+                np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())), 3))
         except:
             print("Impossible to read WPR position")
 
@@ -1071,7 +1066,9 @@ class Feedbacker(object):
         try:
             pos = self.WPG.position
             self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),3))
+            self.strvar_green_current_power.set(
+                np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
+                         3))
 
         except:
             print("Impossible to read WPG position")
@@ -1225,13 +1222,13 @@ class Feedbacker(object):
         -------
         None
         """
-        #try:
+        # try:
         self.calibrator = cal.Calibrator()
         self.strvar_red_power.set(str(self.calibrator.max_red))
         self.strvar_green_power.set(str(self.calibrator.max_green))
         self.strvar_red_phase.set(str(self.calibrator.phase_red))
         self.strvar_green_phase.set(str(self.calibrator.phase_green))
-        #except:
+        # except:
         #    print("Failure in opening the Calibrator")
 
     def read_red_power(self):
@@ -1256,7 +1253,6 @@ class Feedbacker(object):
             self.strvar_red_power.set(str(red_power[0]))
         except:
             print('Impossible to read red power')
-
 
     def take_image(self, avgs, record_phase=True):
         """
@@ -1289,7 +1285,6 @@ class Feedbacker(object):
         with Vimba.get_instance() as vimba:
             cams = vimba.get_all_cameras()
             image = np.zeros([1000, 1600])
-            global meas_has_started
             self.d_phase = deque()
             meas_has_started = True
             nr = avgs
@@ -1317,8 +1312,13 @@ class Feedbacker(object):
         self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
-        self.f.write(str(int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
-                np.round(np.std(np.unwrap(self.d_phase)), 2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(np.round(float(self.lens.strvar_ben.get()),3)) +'\n')
+        self.f.write(str(int(
+            nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
+            np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
+            np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
+            np.round(np.std(np.unwrap(self.d_phase)),
+                     2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
+            np.round(float(self.lens.strvar_ben.get()), 3)) + '\n')
         self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
@@ -1477,9 +1477,10 @@ class Feedbacker(object):
     def get_power_values_for_ratio_scan(self):
         c = float(self.strvar_int_ratio_constant.get())
         x = float(self.ent_int_ratio_focus.get()) ** 2
-        ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()), int(self.ent_ratio_steps.get()))
-        pr = c/(1+ratios)
-        pg = ratios*pr/x
+        ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()),
+                             int(self.ent_ratio_steps.get()))
+        pr = c / (1 + ratios)
+        pg = ratios * pr / x
         print(x)
         print(c)
         print(ratios)
@@ -1491,7 +1492,7 @@ class Feedbacker(object):
         steps = float(self.ent_GFP_steps.get())
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
-            #things go to hell if division by zero
+            # things go to hell if division by zero
             if b == 0:
                 b = 0.00001
             self.lens.strvar_ben.set(str(b))
@@ -1504,6 +1505,10 @@ class Feedbacker(object):
                 self.plot_MCP(im)
 
     def measure_all(self):
+
+        global scan_running
+        scan_running = True
+
         self.but_meas_all.config(fg='red')
         self.f = open(self.autolog, "a+")
 
@@ -1564,6 +1569,7 @@ class Feedbacker(object):
             print("something fishy is going on")
 
         self.f.close()
+        scan_running = False
         self.but_meas_all.config(fg='green')
 
     def measure(self):
@@ -1576,7 +1582,7 @@ class Feedbacker(object):
         """
         self.but_meas_scan.config(fg='red')
 
-        #if self.var_phasescan.get() == 1:
+        # if self.var_phasescan.get() == 1:
         self.f = open(self.autolog, "a+")
         if self.var_background.get() == 1:
             self.f.write(
@@ -1609,14 +1615,14 @@ class Feedbacker(object):
         self.but_meas_simple.config(fg='red')
         self.f = open(self.autolog, "a+")
 
-        #start_image = self.get_start_image()
+        # start_image = self.get_start_image()
 
         if self.var_background.get() == 1:
             self.f.write("# BACKGROUND SingleImage, " + self.ent_comment.get() + '\n')
         else:
             self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
-        #info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
-        #self.save_image(im, start_image, info)
+        # info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
+        # self.save_image(im, start_image, info)
         im = self.take_image(int(self.ent_avgs.get()))
         self.save_im(im)
         self.plot_MCP(im)
