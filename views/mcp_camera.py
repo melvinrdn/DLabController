@@ -21,7 +21,7 @@ class Mcp(object):
         self.win = tk.Toplevel()
         matplotlib.use("TkAgg")
 
-        self.win.title("MCP camera - harmonics")
+        self.win.title("D-Lab Controller - MCP camera")
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
         self.rect_id = 0
         self.ready = 0

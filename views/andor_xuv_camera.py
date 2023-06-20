@@ -15,7 +15,7 @@ class AndorCameraViewer(object):
         self.parent = parent
         self.win = tk.Toplevel()
 
-        title = 'SLM Phase Control - Andor camera'
+        title = 'D-Lab Controller - Andor camera'
         pll.par["devices/dlls/andor_sdk2"] = "drivers/andor_driver/"
 
         self.win.title(title)
