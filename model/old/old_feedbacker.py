@@ -20,7 +20,7 @@ from datetime import date
 from collections import deque
 from . import calibrator as cal
 import os
-from views import camera_control
+from views import daheng_camera
 
 
 class Feedbacker(object):

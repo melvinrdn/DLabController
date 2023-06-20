@@ -21,8 +21,7 @@ from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
 from ressources.settings import slm_size, bit_depth
-from views import draw_polygon
-from . import calibrator as cal
+from model import calibrator as cal
 
 
 class Feedbacker(object):
@@ -47,12 +46,12 @@ class Feedbacker(object):
         matplotlib.use("TkAgg")
         self.cam = None
         self.parent = parent
-        self.lens = self.parent.phase_refs[4]
+        self.lens = self.parent.phase_refs_green[1]
         self.slm_lib = slm
         self.win = tk.Toplevel()
         self.set_point = 0
 
-        title = 'SLM Phase Control - Feedbacker'
+        title = 'D-Lab Controller - Feedbacker'
         print('Opening feedbacker...')
 
         self.win.title(title)
@@ -1550,7 +1549,7 @@ class Feedbacker(object):
             if b == 0:
                 b = 0.00001
             self.lens.strvar_ben.set(str(b))
-            self.parent.open_pub()
+            self.parent.open_pub_green()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
@@ -1694,10 +1693,10 @@ class Feedbacker(object):
             phi = float(self.ent_flat.get())
         else:
             phi = 0
-        phase_map = self.parent.phase_map + phi / 2 * bit_depth
+        phase_map = self.parent.phase_map_green + phi / 2 * bit_depth
 
-        self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr.get()))
-        self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr.get()), phase_map,
+        self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_green.get()))
+        self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_green.get()), phase_map,
                                    slm_size[1], slm_size[0])
 
     def eval_spec(self):
@@ -2006,19 +2005,6 @@ class Feedbacker(object):
         self.phi_ind = self.phi_ind + 1
         if self.phi_ind < 60:
             self.win.after(100, self.fast_scan_loop)
-
-    def set_area1(self):
-        """
-        Set area 1.
-
-        Calls the `draw_polygon()` method and prints the resulting polygon.
-
-        Returns
-        -------
-        None
-        """
-        poly_1 = draw_polygon.draw_polygon(self.ax1, self.fig)
-        print(poly_1)
 
     def set_setpoint(self):
         """
