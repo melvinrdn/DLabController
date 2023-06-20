@@ -1,227 +1,150 @@
 print('Importing the libraries...')
 import json
-import os
 import tkinter as tk
-import tkinter.messagebox as tkMbox
 from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
-import matplotlib
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
-from ressources.settings import slm_size, bit_depth
-from views import preview_window, questionbox, camera_control, andor_xuv_camera, mcp
+from ressources.slm_infos import slm_size, bit_depth
+from views import daheng_camera, andor_xuv_camera, mcp_camera
 
-print('Done !')
+print('Done')
 
 
 class DLabController(object):
     """
-    A class for controlling the Dlab hardware, test
+    A class for controlling the Dlab hardware
     """
 
     def __init__(self, parent):
         """
-        Initializes the DLabController object with its attributes.
-
-        Parameters
-        ----------
-        parent : tkinter.Tk
-            The tkinter parent window.
-
-        Returns
-        -------
-        None
+        Initializes the DLabController.
         """
-        print('Interface initialization...')
-        matplotlib.use("TkAgg")
+        print('Initialisation of the interface..')
+
         self.main_win = parent
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
-        self.main_win.title('D-Lab Controller')
+        self.main_win.title('D-Lab Controller - Main Interface')
         self.style = ttk.Style()
+        self.style.configure('lefttab.TNotebook',
+                             tabposition=tk.W + tk.N,
+                             tabplacement=tk.N + tk.EW)
 
-        self.pub_win = None
-        self.prev_win = None
+        self.publish_window_green = None
+        self.publish_window_red = None
+
         self.feedback_win = None
-        self.andor_camera = None
-        self.camera_win = None
-        self.mcp_win = None
-        self.phase_map = np.zeros(slm_size)
+        self.andor_camera_win = None
+        self.daheng_camera_win = None
+        self.mcp_camera_win = None
 
-        # creating frames
-        self.frm_top = ttk.Frame(self.main_win)
-        self.frm_mid = ttk.Notebook(self.main_win)
-        self.frm_bot = ttk.Frame(self.main_win)
-        self.frm_topb = ttk.Frame(self.frm_top)
-        self.frm_side = ttk.Frame(self.main_win)
+        self.phase_map_green = np.zeros(slm_size)
+        self.phase_map_red = np.zeros(slm_size)
 
-        # Creating labels
-        lbl_screen = ttk.Label(self.frm_top, text='SLM display number:')
+        self.frm_top_green = ttk.LabelFrame(self.main_win, text='Green SLM interface')
+        self.frm_top_b_green = ttk.LabelFrame(self.frm_top_green, text='Green SLM - Phase display')
+        self.frm_mid_green = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
+        self.frm_bottom_green = ttk.LabelFrame(self.main_win, text='Green SLM - Options')
 
-        # Creating buttons
-        # but_mcp = ttk.Button(frm_bot, text='MCP', command=self.open_mcp)
-        but_camera = ttk.Button(self.frm_bot, text='Camera control', command=self.open_camera)
-        but_xuv_camera = ttk.Button(self.frm_bot, text='XUV Camera', command=self.open_xuv_camera)
-        but_feedback = ttk.Button(self.frm_bot, text='Feedbacker', command=self.open_feedback_window)
-        # but_prev = ttk.Button(frm_bot, text='Preview', command=self.open_prev)
-        but_pub = ttk.Button(self.frm_bot, text='Publish', command=self.open_pub)
-        but_exit = ttk.Button(self.frm_bot, text='EXIT', command=self.exit_prog)
-        but_save = ttk.Button(self.frm_topb, text='Save Settings', command=self.save)
-        but_load = ttk.Button(self.frm_topb, text='Load Settings', command=self.load)
-        # but_clean_settings = tk.Button(frm_bot, text='Clean settings file', command=self.delete_last_settings_file)
+        self.frm_top_red = ttk.LabelFrame(self.main_win, text='Red SLM interface')
+        self.frm_top_b_red = ttk.LabelFrame(self.frm_top_red, text='Red SLM - Phase display')
+        self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
+        self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
 
-        # Creating entry
-        self.ent_scr = ttk.Spinbox(self.frm_top, width=5, from_=1, to=8)
+        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware - Cameras')
+        self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
-        # Setting up general structure
-        self.frm_top.grid(row=2, column=0, sticky='nsew')
-        self.frm_mid.grid(row=1, column=0, sticky='nsew')
-        self.frm_bot.grid(row=4, column=0, sticky='nsew')
-        self.frm_side.grid(row=3, column=0, sticky='nsew')
+        but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
+                                    command=self.save_green)
+        but_load_green = ttk.Button(self.frm_top_b_green, text='Load green settings', command=self.load_green)
+        but_save_green.grid(row=0, sticky='ew')
+        but_load_green.grid(row=1, sticky='ew')
 
-        # Setting up top frame
-        lbl_screen.grid(row=0, column=0, sticky='e', padx=10, pady=10)
-        self.ent_scr.grid(row=0, column=1, sticky='w', padx=(0, 10))
-        self.setup_box(self.frm_top)
-        self.frm_topb.grid(row=1, column=1, sticky='nsew')
-        but_save.grid(row=0, sticky='ew')
-        but_load.grid(row=1, sticky='ew')
+        but_save_red = ttk.Button(self.frm_top_b_red, text='Save red settings', command=self.save_red)
+        but_load_red = ttk.Button(self.frm_top_b_red, text='Load red settings', command=self.load_red)
+        but_save_red.grid(row=0, sticky='ew')
+        but_load_red.grid(row=1, sticky='ew')
 
-        # Setting up scan and phase figure
-        self.scan_options()
-        self.fig = Figure(figsize=(2.5, 2), dpi=110)
-        self.ax = self.fig.add_subplot(111)
+        lbl_screen_green = ttk.Label(self.frm_top_green, text='Display number :')
+        self.strvar_green = tk.StringVar(value='3')
+        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=5, from_=1, to=5, textvariable=self.strvar_green)
+        self.ent_scr_green.grid(row=0, column=1, sticky='w', padx=(0, 10))
 
-        self.img = FigureCanvasTkAgg(self.fig, self.frm_topb)
-        self.tk_widget_fig = self.img.get_tk_widget()
-        self.tk_widget_fig.grid(row=2, sticky='ew')
+        lbl_screen_red = ttk.Label(self.frm_top_red, text='Display number :')
+        self.strvar_red = tk.StringVar(value='2')
+        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=5, from_=1, to=5, textvariable=self.strvar_red)
+        self.ent_scr_red.grid(row=0, column=1, sticky='w', padx=(0, 10))
 
-        self.ax.axes.xaxis.set_visible(False)
-        self.ax.axes.yaxis.set_visible(False)
+        self.setup_box_green(self.frm_top_green)
+        self.setup_box_red(self.frm_top_red)
 
-        # Setting up bot frame
-        # but_mcp.grid(row=0, column=0, padx=5, pady=5)
-        but_xuv_camera.grid(row=0, column=0, padx=5, pady=5)
-        but_camera.grid(row=0, column=1, padx=5, pady=5)
-        but_feedback.grid(row=0, column=2, padx=5, pady=5)
-        # but_prev.grid(row=0, column=4, padx=5, pady=5)
-        but_pub.grid(row=0, column=3, padx=5, pady=5)
-        but_exit.grid(row=0, column=4, padx=5, pady=5)
+        # Set up general structure
+        self.frm_top_green.grid(row=0, column=0, sticky='nsew')
+        self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
+        self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
+        self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
 
-        # but_clean_settings.grid(row=0, column=6, padx=5, pady=5)
+        self.frm_top_red.grid(row=0, column=1, sticky='nsew')
+        self.frm_top_b_red.grid(row=1, column=1, sticky='nsew')
+        self.frm_mid_red.grid(row=2, column=1, sticky='nsew')
+        self.frm_bottom_red.grid(row=3, column=1, sticky='nsew')
 
-        print('Done !')
+        self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
+        self.frm_bottom_side_panel.grid(row=3, column=2, sticky='nsew')
 
-        # binding keys
-        def left_handler(event):
-            """
-            Handle the 'a' key press event.
+        lbl_screen_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        lbl_screen_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-            Parameters
-            ----------
-            event : tkinter.Event
-                The event object associated with the key press.
+        self.fig_green = Figure(figsize=(4, 3.5), dpi=110)
+        self.ax_green = self.fig_green.add_subplot(111)
 
-            Returns
-            -------
-            None
-            """
-            return self.left_arrow()
+        self.fig_red = Figure(figsize=(4, 3.5), dpi=110)
+        self.ax_red = self.fig_red.add_subplot(111)
 
-        self.main_win.bind('a', left_handler)
+        self.img_green = FigureCanvasTkAgg(self.fig_green, self.frm_top_b_green)
+        self.tk_widget_fig_green = self.img_green.get_tk_widget()
+        self.tk_widget_fig_green.grid(row=2, sticky='ew')
 
-        def right_handler(event):
-            """
-            Handle the 'd' key press event.
+        self.img_red = FigureCanvasTkAgg(self.fig_red, self.frm_top_b_red)
+        self.tk_widget_fig_red = self.img_red.get_tk_widget()
+        self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-            Parameters
-            ----------
-            event : tkinter.Event
-                The event object associated with the key press.
+        self.ax_green.axes.xaxis.set_visible(False)
+        self.ax_green.axes.yaxis.set_visible(False)
 
-            Returns
-            -------
-            None
-            """
-            return self.right_arrow()
+        self.ax_red.axes.xaxis.set_visible(False)
+        self.ax_red.axes.yaxis.set_visible(False)
 
-        self.main_win.bind('d', right_handler)
+        but_mcp_camera = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp_camera)
+        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
+        but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
+        but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
 
-        def up_handler(event):
-            """
-            Handle the 'w' key press event.
+        but_mcp_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        but_daheng_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        but_andor_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
-            Parameters
-            ----------
-            event : tkinter.Event
-                The event object associated with the key press.
+        but_exit = ttk.Button(self.frm_bottom_side_panel, text='EXIT', command=self.exit_prog)
+        but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-            Returns
-            -------
-            None
-            """
-            return self.up_arrow()
+        but_feedback = ttk.Button(self.frm_bottom_green, text='Feedbacker', command=self.open_feedback_window)
+        but_publish_green = ttk.Button(self.frm_bottom_green, text='Publish green', command=self.open_pub_green)
+        but_feedback.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
+        but_publish_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        self.main_win.bind('w', up_handler)
+        but_publish_red = ttk.Button(self.frm_bottom_red, text='Publish red', command=self.open_pub_red)
+        but_publish_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        def down_handler(event):
-            """
-            Handle the 's' key press event.
-
-            Parameters
-            ----------
-            event : tkinter.Event
-                The event object associated with the key press.
-
-            Returns
-            -------
-            None
-            """
-            return self.down_arrow()
-
-        self.main_win.bind('s', down_handler)
-
-        def escape_handler(event):
-            """
-            Handle the 'Escape' key press event.
-
-            Parameters
-            ----------
-            event : tkinter.Event
-                The event object associated with the key press.
-
-            Returns
-            -------
-            None
-            """
-            return self.escape_key()
-
-        self.main_win.bind('<Escape>', escape_handler)
-
-        # loading last settings
-        self.load('./last_settings.txt')
-
-    def open_feedback(self):
-        """
-        Open the feedback window for analyzing fringes between two beams.
-
-        If the feedback window is not already open, a question box will pop up asking the user to choose a feedback
-        method between using a camera with spatial fringes or a spectrometer with spectral fringes.
-
-        Returns
-        -------
-        None
-        """
-        if self.feedback_win is None:
-            q_str1 = 'The feedbacker needs to look at fringes between the two beams.'
-            q_str2 = 'Do you want to use a camera with spatial fringes or a spectrometer with spectral fringes?'
-            q_str = q_str1 + '\n' + q_str2
-            questionbox.PopupQuestion(self.open_feedback_window, 'Choose feedback method',
-                                      q_str, 'Open Camera', 'Open Spectrometer')
+        print("Done")
+        print("-----------")
+        print("Welcome to the D-Lab Controller !")
+        print("-----------")
 
     def open_feedback_window(self):
         """
@@ -233,7 +156,7 @@ class DLabController(object):
         """
         self.feedback_win = feedbacker.Feedbacker(self)
 
-    def open_camera(self):
+    def open_daheng_camera(self):
         """
         Opens the camera window to look at the beam profile.
 
@@ -241,9 +164,9 @@ class DLabController(object):
         -------
         None
         """
-        self.camera_win = camera_control.CameraControl()
+        self.daheng_camera_win = daheng_camera.CameraControl()
 
-    def open_xuv_camera(self):
+    def open_andor_camera(self):
         """
         Opens the XUV camera.
 
@@ -251,59 +174,9 @@ class DLabController(object):
         -------
         None
         """
-        self.andor_camera = andor_xuv_camera.AndorCameraViewer(self)
+        self.andor_camera_win = andor_xuv_camera.AndorCameraViewer(self)
 
-    def open_prev(self):
-        """
-        Opens the preview window or updates it if it is already open.
-
-        If the preview window is not open, it will be created. Otherwise, the update_plots() method of the existing
-        preview window will be called to update the plots.
-
-        Returns
-        -------
-        None
-        """
-        if self.prev_win is not None:
-            self.prev_win.update_plots()
-        else:
-            self.prev_win = preview_window.PrevScreen(self)
-
-    def prev_win_closed(self):
-        """
-        Handle the event of the preview window being closed.
-
-        When the preview window is closed, this method will be called to reset the prev_win attribute to None.
-
-        Returns
-        -------
-        None
-        """
-        print('Preview window closed')
-        self.prev_win = None
-
-    def open_pub(self):
-        """
-        Open the public display window and display the phase map.
-
-        This method will first disable the entry screen, then generate a phase map using the current phase values
-        and bit depth, and display it on the SLM using the SLM_Disp_Open() and SLM_Disp_Data() methods. Finally,
-        the update_phase_plot() method is called to update the phase plot.
-
-        Returns
-        -------
-        None
-        """
-        self.ent_scr.config(state='disabled')
-        self.phase_map = self.get_phase()
-
-        self.pub_win = int(self.ent_scr.get())
-        slm.SLM_Disp_Open(int(self.ent_scr.get()))
-        slm.SLM_Disp_Data(int(self.ent_scr.get()), self.phase_map, slm_size[1], slm_size[0])
-
-        self.update_phase_plot(self.phase_map)
-
-    def open_mcp(self):
+    def open_mcp_camera(self):
         """
         Open the MCP window.
 
@@ -311,68 +184,46 @@ class DLabController(object):
         -------
         None
         """
-        self.mcp_win = mcp.Mcp(self)
+        self.mcp_camera_win = mcp_camera.Mcp(self)
 
-    def do_scan(self):
+    def open_thorlabs_stages(self):
+        print('not available yet')
+
+    def open_pub_green(self):
         """
-        Perform a scan of the specified file list.
-
-        This method loads each file in the file list, opens the public display window, and waits for the specified delay
-        between files. The scan can be stopped by setting the var_stop_scan attribute to 1.
+        Open the publish display window and display the phase map.
 
         Returns
         -------
         None
         """
-        if self.strvar_delay.get() == '':
-            self.strvar_delay.set('1')
-        delay = float(self.strvar_delay.get())
-        filelist = self.load_filelist()
-        var = tk.IntVar()
+        self.ent_scr_green.config(state='disabled')
+        self.phase_map_green = self.get_phase_green()
 
-        for filepath in filelist:
-            if self.var_stop_scan.get():
-                self.var_stop_scan.set(0)
-                return
-            root.after(int(delay * 1000), var.set, 1)
-            self.load(filepath)
+        self.publish_window_green = int(self.ent_scr_green.get())
+        slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
+        slm.SLM_Disp_Data(int(self.ent_scr_green.get()), self.phase_map_green, slm_size[1], slm_size[0])
 
-            # keeps to one window and updates for each filepath
-            self.open_pub()
+        self.update_phase_plot_green(self.phase_map_green)
 
-            self.lbl_time['text'] = delay
-            self.countdown()
-            root.wait_variable(var)
-
-    def countdown(self):
+    def open_pub_red(self):
         """
-        Countdown the remaining time until the next file is loaded.
-
-        This method updates the lbl_time label to display the remaining time until the next file is loaded. It is called
-        by the do_scan() method.
+        Open the publish display window and display the phase map.
 
         Returns
         -------
         None
         """
-        self.lbl_time['text'] = int(self.lbl_time['text']) - 1
-        if int(self.lbl_time['text']):
-            self.lbl_time.after(1000, self.countdown)
+        self.ent_scr_red.config(state='disabled')
+        self.phase_map_red = self.get_phase_red()
 
-    def pub_win_closed(self):
-        """
-        Handle the event of the public display window being closed.
+        self.publish_window_red = int(self.ent_scr_red.get())
+        slm.SLM_Disp_Open(int(self.ent_scr_red.get()))
+        slm.SLM_Disp_Data(int(self.ent_scr_red.get()), self.phase_map_red, slm_size[1], slm_size[0])
 
-        This method re-enables the entry screen and closes the public display on the SLM.
+        self.update_phase_plot_red(self.phase_map_red)
 
-        Returns
-        -------
-        None
-        """
-        self.ent_scr.config(state='normal')
-        slm.SLM_Disp_Close(int(self.ent_scr.get()))
-
-    def setup_box(self, frm_):
+    def setup_box_green(self, frm_):
         """
         Set up a label frame containing check-buttons for enabling different types of phase.
 
@@ -381,25 +232,51 @@ class DLabController(object):
         frm_: tkinter.Frame
             The parent frame in which the label frame and check-buttons are to be placed.
         """
-        frm_box = ttk.LabelFrame(frm_, text='Phases enabled')
-        frm_box.grid(column=0)
-        self.types = phase_settings.types  # reads in  different phase types
-        self.vars = []  # init a list holding the variables from the boxes
-        self.phase_refs = []  # init a list to hold the references to types
-        self.tabs = []  # init a list to hold the tabs
-        for ind, typ in enumerate(self.types):
-            self.var_ = (tk.IntVar())
-            self.vars.append(self.var_)
-            self.tabs.append(ttk.Frame(self.frm_mid))
-            self.frm_mid.add(self.tabs[ind], text=typ)
-            self.phase_refs.append(phase_settings.new_type(self.tabs[ind],
-                                                           typ))
-            self.box_ = ttk.Checkbutton(frm_box, text=typ,
-                                        variable=self.vars[ind],
-                                        onvalue=1, offvalue=0)
-            self.box_.grid(row=ind, sticky='w')
+        frm_box_green = ttk.LabelFrame(frm_, text='Phases enabled')
+        frm_box_green.grid(column=0)
+        self.types_green = phase_settings.types  # reads in different phase types
+        self.vars_green = []  # init a list holding the variables from the boxes
+        self.phase_refs_green = []  # init a list to hold the references to types
+        self.tabs_green = []  # init a list to hold the tabs
+        for ind, typ in enumerate(self.types_green):
+            self.var_green_ = (tk.IntVar())
+            self.vars_green.append(self.var_green_)
+            self.tabs_green.append(ttk.Frame(self.frm_mid_green))
+            self.frm_mid_green.add(self.tabs_green[ind], text=typ)
+            self.phase_refs_green.append(phase_settings.new_type(self.tabs_green[ind],
+                                                                 typ))
+            self.box_green_ = ttk.Checkbutton(frm_box_green, text=typ,
+                                              variable=self.vars_green[ind],
+                                              onvalue=1, offvalue=0)
+            self.box_green_.grid(row=ind, sticky='w')
 
-    def get_phase(self):
+    def setup_box_red(self, frm_):
+        """
+        Set up a label frame containing check-buttons for enabling different types of phase.
+
+        Parameters:
+        -----------
+        frm_: tkinter.Frame
+            The parent frame in which the label frame and check-buttons are to be placed.
+        """
+        frm_box_red = ttk.LabelFrame(frm_, text='Phases enabled')
+        frm_box_red.grid(column=0)
+        self.types_red = phase_settings.types  # reads in different phase types
+        self.vars_red = []  # init a list holding the variables from the boxes
+        self.phase_refs_red = []  # init a list to hold the references to types
+        self.tabs_red = []  # init a list to hold the tabs
+        for ind, typ in enumerate(self.types_red):
+            self.var_red_ = (tk.IntVar())
+            self.vars_red.append(self.var_red_)
+            self.tabs_red.append(ttk.Frame(self.frm_mid_red))
+            self.frm_mid_red.add(self.tabs_red[ind], text=typ)
+            self.phase_refs_red.append(phase_settings.new_type(self.tabs_red[ind], typ))
+            self.box_red_ = ttk.Checkbutton(frm_box_red, text=typ,
+                                            variable=self.vars_red[ind],
+                                            onvalue=1, offvalue=0)
+            self.box_red_.grid(row=ind, sticky='w')
+
+    def get_phase_green(self):
         """
         Gets the phase from the active phase types.
 
@@ -408,151 +285,74 @@ class DLabController(object):
         phase: numpy.ndarray
             A 2D numpy array containing the phase values of the active phase types.
         """
-        phase = np.zeros(slm_size)
-        for ind, phase_types in enumerate(self.phase_refs):
-            if self.vars[ind].get() == 1:
-                print(phase_types)
-                phase += phase_types.phase()
-        return phase
+        phase_green = np.zeros(slm_size)
+        active_phase_types = []
+        for ind, phase_types_green in enumerate(self.phase_refs_green):
+            if self.vars_green[ind].get() == 1:
+                active_phase_types.append(phase_types_green.__class__.__name__)
+                phase_green += phase_types_green.phase()
+        print("Active phase(s) on the green SLM :", ', '.join(active_phase_types))
+        return phase_green
 
-    def save(self, filepath=None):
+    def get_phase_red(self):
         """
-        Save the current settings to a file.
+        Gets the phase from the active phase types.
+
+        Returns:
+        --------
+        phase: numpy.ndarray
+            A 2D numpy array containing the phase values of the active phase types.
+        """
+        phase_red = np.zeros(slm_size)
+        active_phase_types = []
+        for ind, phase_types_red in enumerate(self.phase_refs_red):
+            if self.vars_red[ind].get() == 1:
+                active_phase_types.append(phase_types_red.__class__.__name__)
+                phase_red += phase_types_red.phase()
+        print("Active phase(s) on the red SLM :", ', '.join(active_phase_types))
+        return phase_red
+
+    def update_phase_plot_green(self, phase):
+        """
+        Update the phase plot of the SLM.
+
+        This function clears the ax1, updates the phase with new values, and draws
+        the img1.
 
         Parameters
         ----------
-        filepath : str, optional
-            The path to the file to save. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
-
-        Notes
-        -----
-        The settings will be saved as a JSON-encoded dictionary to the specified
-        file. The dictionary will contain the enabled status and parameters for
-        each phase type
-        """
-        if filepath is None:
-            filepath = asksaveasfilename(
-                defaultextension='txt',
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
-            if not filepath:
-                return
-        dict = {}
-        with open(filepath, 'w') as f:
-            for num, phase in enumerate(self.phase_refs):
-                dict[phase.name_()] = {'Enabled': self.vars[num].get(),
-                                       'Params': phase.save_()}
-            dict['screen_pos'] = self.ent_scr.get()
-            f.write(json.dumps(dict))
-
-    def load(self, filepath=None):
-        """
-        Load settings from a file.
-
-        Parameters
-        ----------
-        filepath : str, optional
-            The path to the file to load. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
-
-        Notes
-        -----
-        The settings will be loaded from a JSON-encoded dictionary in the specified
-        file. The dictionary should contain the enabled status and parameters for
-        each phase type.
-        """
-        if filepath is None:
-            filepath = askopenfilename(
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
-            if not filepath:
-                return
-        try:
-            with open(filepath, 'r') as f:
-                dics = json.loads(f.read())
-            try:
-                for num, phase in enumerate(self.phase_refs):
-                    phase.load_(dics[phase.name_()]['Params'])
-                    self.vars[num].set(dics[phase.name_()]['Enabled'])
-                self.ent_scr.delete(0, tk.END)
-                self.ent_scr.insert(0, dics['screen_pos'])
-                print("File loaded successfully")
-            except ValueError:
-                print('Not able to load settings')
-        except FileNotFoundError:
-            print(f'No settings file found at {filepath}')
-
-    def scan_options(self):
-        """
-        Creates and sets up widgets for the scan options.
+        phase : np.ndarray
+            The new phase values to update.
 
         Returns
         -------
         None
         """
-        self.so_frm = ttk.LabelFrame(self.frm_side, text='Scan options')
-        self.so_frm.grid(row=0, sticky='nsew')
+        self.ax_green.clear()
+        self.ax_green.imshow(phase % (bit_depth + 1), cmap='RdBu',
+                             interpolation='None')
+        self.img_green.draw()
 
-        # creating frames
-        frm_file = ttk.Frame(self.so_frm)
+    def update_phase_plot_red(self, phase):
+        """
+        Update the phase plot of the SLM.
 
-        # creating labels
-        lbl_scpar = ttk.Label(self.so_frm, text='Scan parameter')
-        lbl_val = ttk.Label(self.so_frm, text='Value (strt:stop:num)')
-        lbl_actf = ttk.Label(frm_file, text='Active file:')
-        self.lbl_file = ttk.Label(frm_file, text='', wraplength=230,
-                                  justify='left', foreground='gray')
-        lbl_delay = ttk.Label(
-            self.so_frm, text='Delay between each phase [s]:')
-        self.lbl_time = ttk.Label(self.so_frm, text='0')
+        This function clears the ax1, updates the phase with new values, and draws
+        the img1.
 
-        # creating entries
-        self.cbx_scpar = ttk.Combobox(
-            self.so_frm, values=['Select'], postcommand=self.scan_params)
-        self.cbx_scpar.current(0)
-        vcmd = (self.frm_side.register(self.callback))
-        self.strvar_val = tk.StringVar()
-        ent_val = ttk.Entry(self.so_frm, width=10, validate='all',
-                            validatecommand=(vcmd, '%d', '%P', '%S'),
-                            textvariable=self.strvar_val)
-        self.strvar_delay = tk.StringVar()
-        ent_delay = ttk.Entry(self.so_frm, width=5, validate='all',
-                              validatecommand=(vcmd, '%d', '%P', '%S'),
-                              textvariable=self.strvar_delay)
+        Parameters
+        ----------
+        phase : np.ndarray
+            The new phase values to update.
 
-        # creating buttons
-        self.but_crt = ttk.Button(
-            self.so_frm, text='Create loading file',
-            command=self.create_loadingfile)
-        but_openload = ttk.Button(
-            self.so_frm, text='Open existing loading file',
-            command=self.open_loadingfile)
-        self.but_scan = ttk.Button(
-            self.so_frm, text='Scan', command=self.do_scan)
-        but_stop_scan = ttk.Button(
-            self.so_frm, text='Stop scan', command=self.stop_scan)
-        self.var_stop_scan = tk.IntVar(value=0)
-
-        # setup
-        frm_file.grid(row=3, sticky='w', columnspan=3)
-        self.but_crt.grid(row=2, column=0, sticky='ew')
-        but_openload.grid(row=2, column=1, columnspan=2, sticky='ew')
-
-        self.but_scan.grid(row=5, column=0, padx=5, pady=5, sticky='ew')
-        but_stop_scan.grid(row=5, column=1, columnspan=2, padx=5, pady=5, sticky='ew')
-
-        lbl_scpar.grid(row=0, column=0, sticky='e')
-        lbl_val.grid(row=1, column=0, sticky='e')
-        self.cbx_scpar.grid(row=0, column=1, columnspan=2, sticky='w')
-        ent_val.grid(row=1, column=1, columnspan=2, sticky='w')
-
-        lbl_actf.grid(row=3, column=0)
-        self.lbl_file.grid(row=3, column=1)
-
-        lbl_delay.grid(row=4, column=0, sticky='e')
-        ent_delay.grid(row=4, column=1, columnspan=2, sticky='w')
-        self.lbl_time.grid(row=4, column=2, sticky='w')
+        Returns
+        -------
+        None
+        """
+        self.ax_red.clear()
+        self.ax_red.imshow(phase % (bit_depth + 1), cmap='RdBu',
+                           interpolation='None')
+        self.img_red.draw()
 
     def callback(self, action, P, text):
         """
@@ -581,214 +381,155 @@ class DLabController(object):
         else:
             return True
 
-    def scan_params(self):
+    def save_green(self, filepath=None):
         """
-        Get a list of scan parameters based on the currently selected phases.
-
-        Returns
-        -------
-        List[str]
-            A list of scan parameters, formatted as 'phase_name:param_name'.
-        """
-        scparams = []
-        for ind, phase in enumerate(self.phase_refs):
-            if self.vars[ind].get() == 1:
-                phparam = phase.save_()
-                for param in phparam.keys():
-                    scparams.append(phase.name_() + ':' + param)
-        self.cbx_scpar['values'] = scparams
-        return
-
-    def create_loadingfile(self):
-        """
-        Create a loading file for phase scan files.
-
-        Returns
-        -------
-        None
-        """
-        if self.strvar_val.get() != '':
-            strval = self.strvar_val.get()
-            listval = strval.split(':', 3)
-            try:
-                strt = float(listval[0])
-                stop = float(listval[1])
-                num = int(listval[2])
-                val_range = np.around(np.linspace(strt, stop, num), decimals=3)
-            except (ValueError, IndexError) as err:
-                self.but_crt['text'] = f'Create loading file : {err}'
-                return
-
-        else:
-            print('Empty value')
-            return
-        print(f'{strt}_{stop}_{num}')
-
-        cwd = os.getcwd()
-        print('cwd is {}'.format(cwd))
-        dirstr = '\\SLM_phase_scan_files'
-        if not os.path.exists(cwd + dirstr):
-            os.mkdir(cwd + dirstr)
-        # create folder
-        scparam = self.cbx_scpar.get().split(':')
-        folder_str = '\\{}_{}_{}_{}_{}'.format(
-            scparam[0], scparam[1], strt, stop, num)
-        cwd = cwd + dirstr + folder_str
-        if not os.path.exists(cwd):
-            os.mkdir(cwd)
-
-        # create file for filepaths
-        ind = self.types.index(scparam[0])
-        param_dic = self.phase_refs[ind].save_()
-        with open(cwd + '\\' + 'filepaths.txt', 'w') as logfile:
-            for val in val_range:
-                param_dic[scparam[1]] = val
-                self.phase_refs[ind].load_(param_dic)
-                filepath = f'{cwd}\\{val:.3f}.txt'
-                print(filepath)
-                self.save(filepath)
-                logfile.write(filepath + '\n')
-        self.lbl_file['text'] = cwd + '\\' + 'filepaths.txt'
-
-        self.but_crt['text'] = 'Create loading file : OK'
-        return
-
-    def open_loadingfile(self):
-        """
-        Open a loading file for phase scan files.
-
-        Returns
-        -------
-        None
-        """
-        filepath = askopenfilename(
-            filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-        )
-        if not filepath:
-            return
-        self.lbl_file['text'] = f'{filepath}'
-        return
-
-    def load_filelist(self):
-        """
-        Load a filelist for phase scan files.
-
-        Returns
-        -------
-        list
-            A list of file paths in the filelist.
-        """
-        filelistpath = self.lbl_file['text']
-        with open(filelistpath, 'r') as f:
-            text = f.read()
-            stringlist = text.split('\n')
-            return stringlist[0:-1]
-
-    def stop_scan(self):
-        """
-        Stop the scan by setting a variable to 1.
-
-        Returns
-        -------
-        None
-        """
-        self.var_stop_scan.set(1)
-        return
-
-    def left_arrow(self):
-        """
-        Move the selected phase to the left.
-
-        Returns
-        -------
-        None
-        """
-        if self.vars[2].get() == 1:
-            self.phase_refs[2].left_()
-            self.open_pub()
-            self.main_win.after(500, self.main_win.focus_force)
-
-    def right_arrow(self):
-        """
-        Move the selected phase to the right.
-
-        Returns
-        -------
-        None
-        """
-        if self.vars[2].get() == 1:
-            self.phase_refs[2].right_()
-            self.open_pub()
-            self.main_win.after(500, self.main_win.focus_force)
-
-    def up_arrow(self):
-        """
-        Move the selected phase up.
-
-        Returns
-        -------
-        None
-        """
-        if self.vars[2].get() == 1:
-            self.phase_refs[2].up_()
-            self.open_pub()
-            self.main_win.after(500, self.main_win.focus_force)
-
-    def down_arrow(self):
-        """
-        Move the selected phase down.
-
-        Returns
-        -------
-        None
-        """
-        print('s pressed')
-        if self.vars[2].get() == 1:
-            self.phase_refs[2].down_()
-            self.open_pub()
-            self.main_win.after(500, self.main_win.focus_force)
-
-    def escape_key(self):
-        """
-        Handle the escape key press event.
-
-        If the publication window is open, it prompts the user to close the window.
-        Otherwise, it clears the ax1 and draws the img1.
-
-        Returns
-        -------
-        None
-        """
-        print('esc pressed')
-        if self.pub_win is not None:
-            q_str = 'Do you want to close the SLM Publication Window?\nThe SLM screen will instead show the desktop ' \
-                    'background.'
-            result = tkMbox.askquestion('Close Publication Window', q_str)
-            if result == 'yes':
-                self.pub_win_closed()
-                self.ax.clear()
-                self.img.draw()
-
-    def update_phase_plot(self, phase):
-        """
-        Update the phase plot of the SLM.
-
-        This function clears the ax1, updates the phase with new values, and draws
-        the img1.
+        Save the current settings to a file.
 
         Parameters
         ----------
-        phase : np.ndarray
-            The new phase values to update.
+        filepath : str, optional
+            The path to the file to save. If not specified, a dialog box will be
+            displayed to prompt the user to choose a file.
+
+        Notes
+        -----
+        The settings will be saved as a JSON-encoded dictionary to the specified
+        file. The dictionary will contain the enabled status and parameters for
+        each phase type
+        """
+        if filepath is None:
+            filepath = asksaveasfilename(
+                defaultextension='txt',
+                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+            )
+            if not filepath:
+                return
+        dict = {}
+        with open(filepath, 'w') as f:
+            for num, phase in enumerate(self.phase_refs_green):
+                dict[phase.name_()] = {'Enabled': self.vars_green[num].get(),
+                                       'Params': phase.save_()}
+            dict['screen_pos'] = self.ent_scr_green.get()
+            f.write(json.dumps(dict))
+
+    def load_green(self, filepath=None):
+        """
+        Load settings from a file.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            The path to the file to load. If not specified, a dialog box will be
+            displayed to prompt the user to choose a file.
+
+        Notes
+        -----
+        The settings will be loaded from a JSON-encoded dictionary in the specified
+        file. The dictionary should contain the enabled status and parameters for
+        each phase type.
+        """
+        if filepath is None:
+            filepath = askopenfilename(
+                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+            )
+            if not filepath:
+                return
+        try:
+            with open(filepath, 'r') as f:
+                dics = json.loads(f.read())
+            try:
+                for num, phase in enumerate(self.phase_refs_green):
+                    phase.load_(dics[phase.name_()]['Params'])
+                    self.vars_green[num].set(dics[phase.name_()]['Enabled'])
+                self.ent_scr_green.delete(0, tk.END)
+                self.ent_scr_green.insert(0, dics['screen_pos'])
+                print("Green settings loaded successfully")
+            except ValueError:
+                print('Not able to load green settings')
+        except FileNotFoundError:
+            print(f'No green settings file found at {filepath}')
+
+    def save_red(self, filepath=None):
+        """
+        Save the current settings to a file.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            The path to the file to save. If not specified, a dialog box will be
+            displayed to prompt the user to choose a file.
+
+        Notes
+        -----
+        The settings will be saved as a JSON-encoded dictionary to the specified
+        file. The dictionary will contain the enabled status and parameters for
+        each phase type
+        """
+        if filepath is None:
+            filepath = asksaveasfilename(
+                defaultextension='txt',
+                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+            )
+            if not filepath:
+                return
+        dict = {}
+        with open(filepath, 'w') as f:
+            for num, phase in enumerate(self.phase_refs_red):
+                dict[phase.name_()] = {'Enabled': self.vars_red[num].get(),
+                                       'Params': phase.save_()}
+            dict['screen_pos'] = self.ent_scr_red.get()
+            f.write(json.dumps(dict))
+
+    def load_red(self, filepath=None):
+        """
+        Load settings from a file.
+
+        Parameters
+        ----------
+        filepath : str, optional
+            The path to the file to load. If not specified, a dialog box will be
+            displayed to prompt the user to choose a file.
+
+        Notes
+        -----
+        The settings will be loaded from a JSON-encoded dictionary in the specified
+        file. The dictionary should contain the enabled status and parameters for
+        each phase type.
+        """
+        if filepath is None:
+            filepath = askopenfilename(
+                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+            )
+            if not filepath:
+                return
+        try:
+            with open(filepath, 'r') as f:
+                dics = json.loads(f.read())
+            try:
+                for num, phase in enumerate(self.phase_refs_red):
+                    phase.load_(dics[phase.name_()]['Params'])
+                    self.vars_red[num].set(dics[phase.name_()]['Enabled'])
+                self.ent_scr_red.delete(0, tk.END)
+                self.ent_scr_red.insert(0, dics['screen_pos'])
+                print("Red settings loaded successfully")
+            except ValueError:
+                print('Not able to load red settings')
+        except FileNotFoundError:
+            print(f'No red settings file found at {filepath}')
+
+    def publish_window_closed(self):
+        """
+        Handle the event of the publish display window being closed.
 
         Returns
         -------
         None
         """
-        self.ax.clear()
-        self.ax.imshow(phase % (bit_depth + 1), cmap='RdBu',
-                       interpolation='None')
-        self.img.draw()
+        self.ent_scr_green.config(state='normal')
+        slm.SLM_Disp_Close(int(self.ent_scr_green.get()))
+
+        self.ent_scr_red.config(state='normal')
+        slm.SLM_Disp_Close(int(self.ent_scr_red.get()))
 
     def exit_prog(self):
         """
@@ -801,27 +542,12 @@ class DLabController(object):
         -------
         None
         """
-        self.save('./last_settings.txt')
-        self.pub_win_closed()
+        self.publish_window_closed()
         self.feedback_win = None
-        self.prev_win = None
         self.andor_camera = None
         self.camera_win = None
         self.mcp_win = None
         self.main_win.destroy()
-
-    # Diagnostics
-    def delete_last_settings_file(self):
-        """
-        Deletes the last_settings.txt file if it exists.
-
-        Returns
-        -------
-        None
-        """
-        file_path = os.path.join(os.getcwd(), 'last_settings.txt')
-        if os.path.exists(file_path):
-            os.remove(file_path)
 
 
 root = tk.Tk()

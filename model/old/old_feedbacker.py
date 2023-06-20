@@ -1,4 +1,4 @@
-from ressources.settings import slm_size, bit_depth
+from ressources.slm_infos import slm_size, bit_depth
 import drivers.avaspec_driver._avs_py as avs
 from drivers import gxipy_driver as gx
 from views import draw_polygon
@@ -20,7 +20,7 @@ from datetime import date
 from collections import deque
 from . import calibrator as cal
 import os
-from views import camera_control
+from views import daheng_camera
 
 
 class Feedbacker(object):

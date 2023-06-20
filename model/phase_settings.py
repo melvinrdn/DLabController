@@ -3,12 +3,11 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
-from ressources.settings import slm_size, bit_depth, chip_width, chip_height, wavelength
-import model.hologram_generation as gs
-import model.aberration_correction as aberration
+from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height, wavelength
+import model.hologram_and_aberration.hologram_generation as gs
+import model.hologram_and_aberration.aberration_correction as aberration
 
-types = ['Backgr', 'Flat', 'Tilt', 'Binary', 'Lens',
-         'Multi', 'Vortex', 'Zernike', 'Image', 'Holo', 'Aberr']
+types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike']
 
 
 def new_type(frm_mid, typ):
@@ -34,7 +33,7 @@ def new_type(frm_mid, typ):
         return TypeTilt(frm_mid)
     elif typ == 'Binary':
         return TypeBinary(frm_mid)
-    elif typ == 'Backgr':
+    elif typ == 'Background':
         return TypeBackground(frm_mid)
     elif typ == 'Lens':
         return TypeLens(frm_mid)
@@ -186,23 +185,23 @@ class TypeBackground(BaseType):
             The parent window for the frame.
 
         """
-        self.name = 'Backgr'
+        self.name = 'Background'
         self.parent = parent
         self.frm_ = ttk.Frame(self.parent)
         self.frm_.grid(row=0, column=0, sticky='nsew')
 
         # Create a label frame for the background settings
-        lbl_frm = ttk.LabelFrame(self.frm_, text='Background')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='Background correction file')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         # Create a button for opening the background file
         btn_open = ttk.Button(lbl_frm, text='Open Background file',
-                             command=self.open_file)
+                              command=self.open_file)
         btn_open.grid(row=0)
 
         # Create a label for displaying the selected file
         self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=400,
-                                 justify='left', foreground='gray')
+                                  justify='left', foreground='gray')
         self.lbl_file.grid(row=1)
 
     def phase(self):
@@ -288,7 +287,7 @@ class TypeFlat(BaseType):
 
         # Create a label and entry box for the phase shift value
         lbl_phi = ttk.Label(lbl_frm,
-                           text='Phase shift (' + str(bit_depth) + '=2pi):')
+                            text='Phase shift (' + str(bit_depth) + '=2pi):')
         vcmd = (parent.register(self.callback))
         self.strvar_flat = tk.StringVar()
         self.ent_flat = tk.Entry(
@@ -385,7 +384,7 @@ class TypeTilt(BaseType):
         lbl_xdir = ttk.Label(lbl_frm, text='Steepness along x-direction:')
         lbl_ydir = ttk.Label(lbl_frm, text='Steepness along y-direction:')
         lbl_bit = ttk.Label(lbl_frm,
-                           text='(' + str(bit_depth) + ' corresponds to 2pi Rad)')
+                            text='(' + str(bit_depth) + ' corresponds to 2pi Rad)')
         lbl_step = ttk.Label(lbl_frm, text='(wasd) Step per click:')
         vcmd = (parent.register(self.callback))
         self.strvar_xdir = tk.StringVar()
@@ -543,8 +542,8 @@ class TypeBinary(BaseType):
         vcmd = (parent.register(self.callback))
         self.strvar_phi = tk.StringVar()
         self.ent_phi = ttk.Entry(lbl_frm, width=12, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_phi)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_phi)
 
         # Setting up
         lbl_dir.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
@@ -648,7 +647,7 @@ class TypeLens(BaseType):
         self.name = 'Lens'
         self.frm_ = ttk.Frame(parent)
         self.frm_.grid(row=4, column=0, sticky='nsew')
-        lbl_frm = ttk.LabelFrame(self.frm_, text='Lens')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='Virtual lens')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         # creating labels
@@ -658,7 +657,7 @@ class TypeLens(BaseType):
         vcmd = (parent.register(self.callback))
         self.strvar_ben = tk.StringVar()
         self.ent_ben = ttk.Entry(lbl_frm, width=5, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_ben)
+                                 textvariable=self.strvar_ben)
 
         # setup
         lbl_ben.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
@@ -807,44 +806,44 @@ class TypeMultibeam(BaseType):
         vcmd = (parent.register(self.callback))
         self.strvar_n = tk.StringVar()
         self.ent_n = ttk.Entry(frm_n, width=5, validate='all',
-                              validatecommand=(vcmd, '%d', '%P', '%S'),
-                              textvariable=self.strvar_n)
+                               validatecommand=(vcmd, '%d', '%P', '%S'),
+                               textvariable=self.strvar_n)
         self.strvar_hpt = tk.StringVar()
         self.ent_hpt = ttk.Entry(frm_spr, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_hpt)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_hpt)
         self.strvar_vpt = tk.StringVar()
         self.ent_vpt = ttk.Entry(frm_spr, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_vpt)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_vpt)
         self.strvar_rad = tk.StringVar()
         self.ent_rad = ttk.Entry(frm_rad, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_rad)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_rad)
         self.strvar_amp = tk.StringVar()
         self.ent_amp = ttk.Entry(frm_rad, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_amp)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_amp)
         self.strvar_hit = tk.StringVar()
         self.ent_hit = ttk.Entry(frm_int, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_hit)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_hit)
         self.strvar_vit = tk.StringVar()
         self.ent_vit = ttk.Entry(frm_int, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_vit)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_vit)
         self.strvar_his = tk.StringVar()
         self.ent_his = ttk.Entry(frm_int, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_his)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_his)
         self.strvar_vis = tk.StringVar()
         self.ent_vis = ttk.Entry(frm_int, width=5, validate='all',
-                                validatecommand=(vcmd, '%d', '%P', '%S'),
-                                textvariable=self.strvar_vis)
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_vis)
         self.strvar_pxsiz = tk.StringVar()
         self.ent_pxsiz = ttk.Entry(frm_pxsiz, width=5, validate='all',
-                                  validatecommand=(vcmd, '%d', '%P', '%S'),
-                                  textvariable=self.strvar_pxsiz)
+                                   validatecommand=(vcmd, '%d', '%P', '%S'),
+                                   textvariable=self.strvar_pxsiz)
 
         # setup
         frm_n.grid(row=0, sticky='nsew')
@@ -1121,16 +1120,16 @@ class TypeVortex(BaseType):
         self.name = 'Vortex'
         self.frm_ = ttk.Frame(parent)
         self.frm_.grid(row=6, column=0, sticky='nsew')
-        lbl_frm = ttk.LabelFrame(self.frm_, text='Vortex')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='Vortex beam')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
-        lbl_texts = ['Vortex order:', 'dx [mm]:', 'dy [mm]:']
+        lbl_texts = ['Vortex order:']
         labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
         vcmd = (parent.register(self.callback))
         self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
         self.entries = [ttk.Entry(lbl_frm, width=11, validate='all',
-                                 validatecommand=(vcmd, '%d', '%P', '%S'),
-                                 textvariable=strvar)
+                                  validatecommand=(vcmd, '%d', '%P', '%S'),
+                                  textvariable=strvar)
                         for strvar in self.strvars]
         for ind, label in enumerate(labels):
             label.grid(row=ind, column=0, sticky='e', padx=(10, 0), pady=5)
@@ -1142,9 +1141,9 @@ class TypeVortex(BaseType):
         for i, entry in enumerate(self.entries):
             if entry.get() != '':
                 coeffs[i] = float(entry.get())
-        vor, dx, dy = coeffs
-        x = np.linspace(-chip_width * 500 + dx, chip_width * 500 + dx, slm_size[1])
-        y = np.linspace(-chip_height * 500 + dy, chip_height * 500 + dy, slm_size[0])
+        vor = coeffs
+        x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
+        y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
         phase = theta * bit_depth / (2 * np.pi) * vor
@@ -1204,22 +1203,24 @@ class TypeZernike(BaseType):
         self.name = 'Zernike'
         self.frm_ = ttk.Frame(parent)
         self.frm_.grid(row=7, column=0, sticky='nsew')
-        lbl_frm = ttk.LabelFrame(self.frm_, text='Zernike')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='Zernike polynomials')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         self.varnames = ['z1coef', 'z2coef', 'z3coef', 'z4coef', 'z5coef',
                          'z6coef', 'z7coef', 'z8coef', 'z9coef', 'z10coef',
-                         'zsize', 'zdx', 'zdy']
-        lbl_texts = ['Z_00 :', 'Z_11 :', 'Z_-11 :',
-                     'Z_02 :', 'Z_22 :', 'Z_-22 :',
-                     'Z_13 :', 'Z_-13 :', 'Z_33 :',
-                     'Z_-33 :', 'Z size:', 'dx [mm]:', 'dy [mm]:']
+                         'z11coef', 'z12coef', 'z13coef', 'z14coef', 'z15coef']
+        lbl_texts = ['Piston Z_00 :', 'Horizontal tilt Z_11 :', 'Vertical tilt Z_-11 :',
+                     'Defocus Z_02 :', 'Vertical astigmatism Z_22 :', 'Oblique astigmatism Z_-22 :',
+                     'Horizontal coma Z_13 :', 'Vertical coma Z_-13 :', 'Oblique trefoil Z_33 :',
+                     'Vertical trefoil Z_-33 :', 'Primary spherical Z_04 :', 'Oblique secondary astigmatism Z_-24 :',
+                     'Vertical secondary astigmatism Z_24 :', 'Oblique quadrafoil Z_-44 :',
+                     'Vertical quadrafoil Z_44 :']
         labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
         vcmd = (parent.register(self.callback))
         self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
         self.entries = [ttk.Entry(lbl_frm, width=11, validate='all',
-                                 validatecommand=(vcmd, '%d', '%P', '%S'),
-                                 textvariable=strvar)
+                                  validatecommand=(vcmd, '%d', '%P', '%S'),
+                                  textvariable=strvar)
                         for strvar in self.strvars]
         for ind, label in enumerate(labels):
             label.grid(row=ind % 10, column=2 * int(ind / 10),
@@ -1238,18 +1239,16 @@ class TypeZernike(BaseType):
             Array of phase values computed using Zernike polynomials.
         """
         coeffs = np.zeros(len(self.entries), dtype=float)
-        coeffs[10] = 1
 
         for i, entry in enumerate(self.entries):
             if entry.get() != '':
                 coeffs[i] = float(entry.get())
-        zsize, zdx, zdy = coeffs[10:]
 
-        x = np.linspace(-chip_width * 500 + zdx, chip_width * 500 + zdx, slm_size[1])
-        y = np.linspace(-chip_height * 500 + zdy, chip_height * 500 + zdy, slm_size[0])
+        x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
+        y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
-        rho = np.sqrt(X ** 2 + Y ** 2) / zsize
+        rho = np.sqrt(X ** 2 + Y ** 2)
 
         p1 = coeffs[0] * 1 * np.cos(0 * theta)
         p2 = coeffs[1] * rho * np.cos(1 * theta)
@@ -1261,8 +1260,13 @@ class TypeZernike(BaseType):
         p8 = coeffs[7] * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta)
         p9 = coeffs[8] * rho ** 3 * np.cos(3 * theta)
         p10 = coeffs[9] * rho ** 3 * np.sin(3 * theta)
+        p11 = coeffs[10] * (6 * rho ** 4 - 6 * rho ** 2 + 1)
+        p12 = coeffs[11] * (4 * rho ** 4 - 3 * rho ** 2) * np.sin(2 * theta)
+        p13 = coeffs[12] * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
+        p14 = coeffs[13] * rho ** 4 * np.sin(4 * theta)
+        p15 = coeffs[14] * rho ** 4 * np.cos(4 * theta)
 
-        phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10)
+        phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15)
 
         return phase
 
@@ -1323,7 +1327,7 @@ class TypeImage(TypeBackground):
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         btn_open = ttk.Button(lbl_frm, text='Open Phase Profile',
-                             command=self.open_file)
+                              command=self.open_file)
         self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=300, justify='left')
         btn_open.grid(row=0)
         self.lbl_file.grid(row=1)

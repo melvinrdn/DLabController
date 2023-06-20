@@ -20,9 +20,8 @@ from drivers import gxipy_driver as gx
 from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
-from ressources.settings import slm_size, bit_depth
-from views import draw_polygon
-from . import calibrator as cal
+from ressources.slm_infos import slm_size, bit_depth
+from model import calibrator as cal
 
 
 class Feedbacker(object):
@@ -47,12 +46,13 @@ class Feedbacker(object):
         matplotlib.use("TkAgg")
         self.cam = None
         self.parent = parent
-        self.lens = self.parent.phase_refs[4]
+        self.lens_green = self.parent.phase_refs_green[1]
+        self.lens_red = self.parent.phase_refs_red[1]
         self.slm_lib = slm
         self.win = tk.Toplevel()
         self.set_point = 0
 
-        title = 'SLM Phase Control - Feedbacker'
+        title = 'D-Lab Controller - Feedbacker'
         print('Opening feedbacker...')
 
         self.win.title(title)
@@ -411,6 +411,8 @@ class Feedbacker(object):
                                          text="Nothing")
         self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus",
                                                  text="Green Focus")
+        self.rb_red_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red Focus",
+                                                 text="Red Focus")
 
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
@@ -512,6 +514,25 @@ class Feedbacker(object):
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_steps)
+
+        lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (1/m)")
+        # scan parameters RED FOCUS POSITIOM
+        self.strvar_RFP_from = tk.StringVar(self.win, '-0.15')
+        self.ent_RFP_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_RFP_from)
+        self.strvar_RFP_to = tk.StringVar(self.win, '-0.05')
+        self.ent_RFP_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_RFP_to)
+        self.strvar_RFP_steps = tk.StringVar(self.win, '10')
+        self.ent_RFP_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_RFP_steps)
+
         # self.var_wpgscan = tk.IntVar()
         # self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
         # command=None)
@@ -685,8 +706,9 @@ class Feedbacker(object):
         self.rb_int_ratio.grid(row=1, column=0, sticky='w')
         self.rb_wpr.grid(row=2, column=0, sticky='w')
         self.rb_wpg.grid(row=3, column=0, sticky='w')
-        self.rb_nothing.grid(row=4, column=0, sticky='w')
-        self.rb_green_focus_SLM.grid(row=5, column=0, sticky='w')
+        self.rb_green_focus_SLM.grid(row=4, column=0, sticky='w')
+        self.rb_red_focus_SLM.grid(row=5, column=0, sticky='w')
+        self.rb_nothing.grid(row=6, column=0, sticky='w')
 
         lbl_int_ratio_focus.grid(row=1, column=1)
         self.lbl_int_ratio_constant.grid(row=1, column=3)
@@ -714,14 +736,15 @@ class Feedbacker(object):
         self.ent_WPG_to.grid(row=3, column=9)
         self.ent_WPG_steps.grid(row=3, column=10)
 
-        lbl_GFP_green.grid(row=5, column=7, sticky='w')
-        self.ent_GFP_from.grid(row=5, column=8)
-        self.ent_GFP_to.grid(row=5, column=9)
-        self.ent_GFP_steps.grid(row=5, column=10)
+        lbl_GFP_green.grid(row=4, column=7, sticky='w')
+        self.ent_GFP_from.grid(row=4, column=8)
+        self.ent_GFP_to.grid(row=4, column=9)
+        self.ent_GFP_steps.grid(row=4, column=10)
 
-        # lbl_WPR.grid(row=2,column = 1)
-
-
+        lbl_RFP_red.grid(row=5, column=7, sticky='w')
+        self.ent_RFP_from.grid(row=5, column=8)
+        self.ent_RFP_to.grid(row=5, column=9)
+        self.ent_RFP_steps.grid(row=5, column=10)
 
         self.figrMCP = Figure(figsize=(5, 5), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -729,19 +752,12 @@ class Feedbacker(object):
         self.axMCP.set_xlim(0, 1600)
         self.axMCP.set_ylim(0, 1000)
         self.axHarmonics.set_xlim(0, 1600)
-        # self.axHarmonics.set_aspect(1600/1000)
-
-        # self.axHarmonics.set_ylim(0,100)
-        # self.harmonics, = self.axHarmonics.plot([])
         self.figrMCP.tight_layout()
         self.figrMCP.canvas.draw()
         self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
-        # self.imgMCP=FigureCanvasTkAgg(self.figrMCP, frm_plt)
         self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
         self.tk_widget_figrMCP.grid(row=0, column=0, sticky='nsew')
-        # self.tk_widget_figrMCP.grid(row=0, column=1, sticky='nsew')
         self.imgMCP.draw()
-
 
         sizefactor = 1.05
 
@@ -914,7 +930,7 @@ class Feedbacker(object):
 
             print("WPR is moving..")
             self.WPR.move_to(pos, True)
-
+            print(f"WPR moved to {str(self.WPR.position)}")
             self.read_WPR()
         except:
             print("Impossible to move WPR :(")
@@ -955,10 +971,11 @@ class Feedbacker(object):
         try:
             self.WPG.move_home(blocking=True)
             self.but_WPG_Home.config(fg='green')
+            print("WPG homed!")
             self.read_WPG()
         except:
             self.but_WPG_Home.config(fg='red')
-            print("Not able to home WPR")
+            print("Not able to home WPG")
 
     def read_WPG(self):
         """
@@ -1008,7 +1025,7 @@ class Feedbacker(object):
 
             print("WPG is moving..")
             self.WPG.move_to(pos, True)
-
+            print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
         except:
             print("Impossible to move WPG :(")
@@ -1092,7 +1109,7 @@ class Feedbacker(object):
             pos = float(self.strvar_Delay_should.get())
             print("Delay is moving..")
             self.Delay.move_to(pos, True)
-
+            print(f"Delay moved to {str(self.Delay.position)}")
             self.read_Delay()
         except:
             print("Impossible to move Delay :(")
@@ -1225,7 +1242,8 @@ class Feedbacker(object):
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),
                      2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
-            np.round(float(self.lens.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
+            np.round(float(self.lens_green.strvar_ben.get()), 3)) + '\t' + str(
+            np.round(float(self.lens_red.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
         self.f.close()
 
@@ -1453,7 +1471,7 @@ class Feedbacker(object):
         it sets the 'strvar_WPG_should' variable to the current value, moves the WPG  accordingly, takes an image
         with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
 
-        Returns
+        ReturnsW
         -------
         None
         """
@@ -1539,7 +1557,7 @@ class Feedbacker(object):
         print(ratios)
         return pr, pg
 
-    def focus_position_scan(self):
+    def focus_position_scan_green(self):
         start = float(self.ent_GFP_from.get())
         end = float(self.ent_GFP_to.get())
         steps = float(self.ent_GFP_steps.get())
@@ -1548,8 +1566,27 @@ class Feedbacker(object):
             # things go to hell if division by zero
             if b == 0:
                 b = 0.00001
-            self.lens.strvar_ben.set(str(b))
-            self.parent.open_pub()
+            self.lens_green.strvar_ben.set(str(b))
+            self.parent.open_pub_green()
+            if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
+                self.phase_scan()
+            else:
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.save_im(im)
+                self.plot_MCP(im)
+                #self.focus_cam_mono_acq()
+
+    def focus_position_scan_red(self):
+        start = float(self.ent_RFP_from.get())
+        end = float(self.ent_RFP_to.get())
+        steps = float(self.ent_RFP_steps.get())
+
+        for ind, b in enumerate(np.linspace(start, end, int(steps))):
+            # things go to hell if division by zero
+            if b == 0:
+                b = 0.00001
+            self.lens_red.strvar_ben.set(str(b))
+            self.parent.open_pub_red()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
@@ -1569,18 +1606,35 @@ class Feedbacker(object):
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
                     self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
-                    self.focus_position_scan()
+                    self.focus_position_scan_green()
                 else:
                     self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
-                    self.focus_position_scan()
+                    self.focus_position_scan_green()
             else:
                 print("Are you sure you do not want to scan the phase for each focus position?")
                 if self.var_background.get() == 1:
                     self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
-                    self.focus_position_scan()
+                    self.focus_position_scan_green()
                 else:
                     self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
-                    self.focus_position_scan()
+                    self.focus_position_scan_green()
+
+        if status == "Red Focus":
+            if self.var_phasescan.get() == 1:
+                if self.var_background.get() == 1:
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan_red()
+                else:
+                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan_red()
+            else:
+                print("Are you sure you do not want to scan the phase for each focus position?")
+                if self.var_background.get() == 1:
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan_red()
+                else:
+                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.focus_position_scan_red()
 
         elif status == "Nothing":
             if self.var_phasescan.get() == 1:
@@ -1596,6 +1650,7 @@ class Feedbacker(object):
                     self.phase_scan()
             else:
                 print("Would you please select something to actually scan")
+
         elif status == "Red/Green Ratio":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
@@ -1693,10 +1748,10 @@ class Feedbacker(object):
             phi = float(self.ent_flat.get())
         else:
             phi = 0
-        phase_map = self.parent.phase_map + phi / 2 * bit_depth
+        phase_map = self.parent.phase_map_green + phi / 2 * bit_depth
 
-        self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr.get()))
-        self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr.get()), phase_map,
+        self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_green.get()))
+        self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_green.get()), phase_map,
                                    slm_size[1], slm_size[0])
 
     def eval_spec(self):
@@ -1833,7 +1888,6 @@ class Feedbacker(object):
         self.axHarmonics.set_ylabel("Counts (arb.u.)")
 
         self.axHarmonics.set_xlim(0, 1600)
-        #self.axHarmonics.set_aspect('equal')
 
         self.figrMCP.tight_layout()
         self.imgMCP.draw()
@@ -2005,19 +2059,6 @@ class Feedbacker(object):
         self.phi_ind = self.phi_ind + 1
         if self.phi_ind < 60:
             self.win.after(100, self.fast_scan_loop)
-
-    def set_area1(self):
-        """
-        Set area 1.
-
-        Calls the `draw_polygon()` method and prints the resulting polygon.
-
-        Returns
-        -------
-        None
-        """
-        poly_1 = draw_polygon.draw_polygon(self.ax1, self.fig)
-        print(poly_1)
 
     def set_setpoint(self):
         """
