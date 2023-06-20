@@ -1,4 +1,4 @@
-from ressources.settings import slm_size, wavelength, chip_width, chip_height, pixel_size, bit_depth
+from ressources.slm_infos import slm_size, wavelength, chip_width, chip_height, pixel_size, bit_depth
 from model.hologram_and_aberration.functions import initial_process, wgs_algo
 
 import numpy as np

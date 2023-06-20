@@ -10,15 +10,15 @@ from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
-from ressources.settings import slm_size, bit_depth
+from ressources.slm_infos import slm_size, bit_depth
 from views import daheng_camera, andor_xuv_camera, mcp_camera
 
-print('Done !')
+print('Done')
 
 
 class DLabController(object):
     """
-    A class for controlling the Dlab hardware, test
+    A class for controlling the Dlab hardware
     """
 
     def __init__(self, parent):
@@ -39,9 +39,9 @@ class DLabController(object):
         self.publish_window_red = None
 
         self.feedback_win = None
-        self.andor_camera = None
-        self.camera_win = None
-        self.mcp_win = None
+        self.andor_camera_win = None
+        self.daheng_camera_win = None
+        self.mcp_camera_win = None
 
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
@@ -60,7 +60,7 @@ class DLabController(object):
         self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
         but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
-                                    command=self.save_green)  # TODO automatic saving with date, same for red
+                                    command=self.save_green)
         but_load_green = ttk.Button(self.frm_top_b_green, text='Load green settings', command=self.load_green)
         but_save_green.grid(row=0, sticky='ew')
         but_load_green.grid(row=1, sticky='ew')
@@ -120,16 +120,17 @@ class DLabController(object):
         self.ax_red.axes.xaxis.set_visible(False)
         self.ax_red.axes.yaxis.set_visible(False)
 
-        but_mcp = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp)
-        but_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_camera)
-        but_xuv_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_xuv_camera)
+        but_mcp_camera = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp_camera)
+        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
+        but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
+        but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
+
+        but_mcp_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        but_daheng_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        but_andor_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='EXIT', command=self.exit_prog)
-
-        but_mcp.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        but_xuv_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        but_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
-
         but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
         but_feedback = ttk.Button(self.frm_bottom_green, text='Feedbacker', command=self.open_feedback_window)
@@ -140,9 +141,10 @@ class DLabController(object):
         but_publish_red = ttk.Button(self.frm_bottom_red, text='Publish red', command=self.open_pub_red)
         but_publish_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        print("Done !")
+        print("Done")
         print("-----------")
-        print("Welcome to the D-Lab Controller")
+        print("Welcome to the D-Lab Controller !")
+        print("-----------")
 
     def open_feedback_window(self):
         """
@@ -154,7 +156,7 @@ class DLabController(object):
         """
         self.feedback_win = feedbacker.Feedbacker(self)
 
-    def open_camera(self):
+    def open_daheng_camera(self):
         """
         Opens the camera window to look at the beam profile.
 
@@ -162,9 +164,9 @@ class DLabController(object):
         -------
         None
         """
-        self.camera_win = daheng_camera.CameraControl()
+        self.daheng_camera_win = daheng_camera.CameraControl()
 
-    def open_xuv_camera(self):
+    def open_andor_camera(self):
         """
         Opens the XUV camera.
 
@@ -172,9 +174,9 @@ class DLabController(object):
         -------
         None
         """
-        self.andor_camera = andor_xuv_camera.AndorCameraViewer(self)
+        self.andor_camera_win = andor_xuv_camera.AndorCameraViewer(self)
 
-    def open_mcp(self):
+    def open_mcp_camera(self):
         """
         Open the MCP window.
 
@@ -182,7 +184,10 @@ class DLabController(object):
         -------
         None
         """
-        self.mcp_win = mcp_camera.Mcp(self)
+        self.mcp_camera_win = mcp_camera.Mcp(self)
+
+    def open_thorlabs_stages(self):
+        print('not available yet')
 
     def open_pub_green(self):
         """
@@ -281,10 +286,12 @@ class DLabController(object):
             A 2D numpy array containing the phase values of the active phase types.
         """
         phase_green = np.zeros(slm_size)
+        active_phase_types = []
         for ind, phase_types_green in enumerate(self.phase_refs_green):
             if self.vars_green[ind].get() == 1:
-                print(phase_types_green)
+                active_phase_types.append(phase_types_green.__class__.__name__)
                 phase_green += phase_types_green.phase()
+        print("Active phase(s) on the green SLM :", ', '.join(active_phase_types))
         return phase_green
 
     def get_phase_red(self):
@@ -297,10 +304,12 @@ class DLabController(object):
             A 2D numpy array containing the phase values of the active phase types.
         """
         phase_red = np.zeros(slm_size)
+        active_phase_types = []
         for ind, phase_types_red in enumerate(self.phase_refs_red):
             if self.vars_red[ind].get() == 1:
-                print(phase_types_red)
+                active_phase_types.append(phase_types_red.__class__.__name__)
                 phase_red += phase_types_red.phase()
+        print("Active phase(s) on the red SLM :", ', '.join(active_phase_types))
         return phase_red
 
     def update_phase_plot_green(self, phase):
@@ -434,11 +443,11 @@ class DLabController(object):
                     self.vars_green[num].set(dics[phase.name_()]['Enabled'])
                 self.ent_scr_green.delete(0, tk.END)
                 self.ent_scr_green.insert(0, dics['screen_pos'])
-                print("File loaded successfully")
+                print("Green settings loaded successfully")
             except ValueError:
-                print('Not able to load settings')
+                print('Not able to load green settings')
         except FileNotFoundError:
-            print(f'No settings file found at {filepath}')
+            print(f'No green settings file found at {filepath}')
 
     def save_red(self, filepath=None):
         """
@@ -502,11 +511,11 @@ class DLabController(object):
                     self.vars_red[num].set(dics[phase.name_()]['Enabled'])
                 self.ent_scr_red.delete(0, tk.END)
                 self.ent_scr_red.insert(0, dics['screen_pos'])
-                print("File loaded successfully")
+                print("Red settings loaded successfully")
             except ValueError:
-                print('Not able to load settings')
+                print('Not able to load red settings')
         except FileNotFoundError:
-            print(f'No settings file found at {filepath}')
+            print(f'No red settings file found at {filepath}')
 
     def publish_window_closed(self):
         """

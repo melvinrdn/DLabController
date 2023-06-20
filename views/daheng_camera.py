@@ -307,6 +307,7 @@ class CameraControl(object):
 
         print(f'Mono acquisition mode - Image taken over {num} averages')
 
+
     def cam_mono_acq(self):
         self.render_thread_mono = threading.Thread(target=self.init_cam_mono)
         self.render_thread_mono.daemon = True

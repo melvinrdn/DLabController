@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
-from ressources.settings import slm_size, bit_depth, chip_width, chip_height, wavelength
+from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height, wavelength
 import model.hologram_and_aberration.hologram_generation as gs
 import model.hologram_and_aberration.aberration_correction as aberration
 
