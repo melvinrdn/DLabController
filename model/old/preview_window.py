@@ -1,4 +1,4 @@
-from ressources.settings import slm_size, bit_depth
+from ressources.slm_infos import slm_size, bit_depth
 import numpy as np
 import matplotlib
 from matplotlib.figure import Figure
