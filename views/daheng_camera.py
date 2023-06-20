@@ -18,7 +18,7 @@ class CameraControl(object):
 
         self.win = tk.Toplevel()
 
-        title = 'SLM Phase Control - Camera control'
+        title = 'D-Lab Controller - Daheng camera'
 
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
