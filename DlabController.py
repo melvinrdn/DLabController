@@ -12,7 +12,7 @@ import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
 from views import daheng_camera, andor_xuv_camera, mcp_camera
-
+from stages_and_sensors import thorlabs_stages
 print('Done')
 
 
@@ -29,6 +29,7 @@ class DLabController(object):
 
         self.main_win = parent
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
+
         self.main_win.title('D-Lab Controller - Main Interface')
         self.style = ttk.Style()
         self.style.configure('lefttab.TNotebook',
@@ -43,6 +44,8 @@ class DLabController(object):
         self.daheng_camera_win = None
         self.mcp_camera_win = None
 
+        self.thorlabs_stages_win = None
+
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
 
@@ -56,7 +59,7 @@ class DLabController(object):
         self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
         self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
 
-        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware - Cameras')
+        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
         self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
         but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
@@ -187,7 +190,14 @@ class DLabController(object):
         self.mcp_camera_win = mcp_camera.Mcp(self)
 
     def open_thorlabs_stages(self):
-        print('not available yet')
+        """
+        Open the thorlabs stages control window.
+
+        Returns
+        -------
+        None
+        """
+        self.thorlabs_stages_win = thorlabs_stages.ThorlabsStages()
 
     def open_pub_green(self):
         """

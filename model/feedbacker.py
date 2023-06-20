@@ -21,7 +21,7 @@ from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
 from ressources.slm_infos import slm_size, bit_depth
-from model import calibrator as cal
+from stages_and_sensors import waveplate_calibrator as cal
 
 
 class Feedbacker(object):
@@ -70,18 +70,20 @@ class Feedbacker(object):
         # self.f = open(self.autolog, "a+")
 
         # creating frames
-        frm_bot = tk.Frame(self.win)
-        frm_plt = tk.Frame(self.win)
-        frm_mcp_image = tk.Frame(self.win)
-        frm_mid = tk.Frame(self.win)
 
-        # new frame for scan related parameters
+        frm_mid = tk.Frame(self.win)
+        frm_bot = tk.Frame(self.win)
         frm_scans = tk.Frame(self.win)
 
-        frm_spc_but = tk.Frame(self.win)
+        # Spectrometer
+        frm_plt = tk.LabelFrame(self.win, text='Spectrometer')
+        frm_spc_but = tk.LabelFrame(self.win, text='Spectrometer options')
         frm_spc_but_set = tk.Frame(frm_spc_but)
-        frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
 
+        frm_mcp_image = tk.LabelFrame(self.win, text='MCP')
+        frm_mcp_but = tk.LabelFrame(self.win, text='MCP options')
+
+        frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
         frm_ratio = tk.LabelFrame(frm_mid, text='Phase extraction')
         frm_pid = tk.LabelFrame(frm_mid, text='PID controller')
 
@@ -244,17 +246,17 @@ class Feedbacker(object):
         lbl_WPR = tk.Label(frm_stage, text='WP red:')
         self.strvar_WPR_is = tk.StringVar(self.win, '')
         self.ent_WPR_is = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_is)
         self.strvar_WPR_should = tk.StringVar(self.win, '')
         self.ent_WPR_should = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_should)
         self.strvar_WPR_Nr = tk.StringVar(self.win, '83837724')
         self.ent_WPR_Nr = tk.Entry(
-            frm_stage, width=9, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_Nr)
 
@@ -271,17 +273,17 @@ class Feedbacker(object):
         lbl_WPG = tk.Label(frm_stage, text='WP green:')
         self.strvar_WPG_is = tk.StringVar(self.win, '')
         self.ent_WPG_is = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_is)
         self.strvar_WPG_should = tk.StringVar(self.win, '')
         self.ent_WPG_should = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_should)
         self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
         self.ent_WPG_Nr = tk.Entry(
-            frm_stage, width=9, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_Nr)
         self.but_WPG_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPG)
@@ -296,33 +298,33 @@ class Feedbacker(object):
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
         self.ent_Delay_is = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_is)
         self.strvar_Delay_should = tk.StringVar(self.win, '')
         self.ent_Delay_should = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_should)
         self.strvar_Delay_Nr = tk.StringVar(self.win, '83837719')
         self.ent_Delay_Nr = tk.Entry(
-            frm_stage, width=9, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_Nr)
         # scan parameters
         self.strvar_Delay_from = tk.StringVar(self.win, '6.40')
         self.ent_Delay_from = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_from)
         self.strvar_Delay_to = tk.StringVar(self.win, '6.45')
         self.ent_Delay_to = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_to)
         self.strvar_Delay_steps = tk.StringVar(self.win, '10')
         self.ent_Delay_steps = tk.Entry(
-            frm_stage, width=5, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_Delay_steps)
         self.var_delayscan = tk.IntVar()
@@ -337,67 +339,59 @@ class Feedbacker(object):
         lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
         self.strvar_pharos_att = tk.StringVar(self.win, '100')
         self.ent_pharos_att = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_pharos_att)
 
         lbl_pharos_pp = tk.Label(frm_wp_power_cal, text='Pharos PP:')
         self.strvar_pharos_pp = tk.StringVar(self.win, '1')
         self.ent_pharos_pp = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
+
             textvariable=self.strvar_pharos_pp)
 
         self.strvar_red_power = tk.StringVar(self.win, '')
         self.ent_red_power = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_power)
 
-        self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open Calibrator!', command=self.enable_calibrator)
-        # self.but_red_power = tk.Button(frm_wp_power_cal, text='Red Power :', command=self.read_red_power)
+        self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
 
-        lbl_red_power = tk.Label(frm_wp_power_cal, text='Red Max Power (W):')
+        lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
         self.strvar_red_power = tk.StringVar(self.win, '4.5')
         self.ent_red_power = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_power)
 
         lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
         self.strvar_red_phase = tk.StringVar(self.win, '-27.76')
         self.ent_red_phase = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_phase)
 
-        lbl_red_current_power = tk.Label(frm_wp_power_cal, text='Red current Power (W):')
+        lbl_red_current_power = tk.Label(frm_wp_power_cal, text='Red current power (W):')
         self.strvar_red_current_power = tk.StringVar(self.win, '')
         self.ent_red_current_power = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_current_power)
 
-        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green Max Power (mW):')
+        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
         self.strvar_green_power = tk.StringVar(self.win, '345')
         self.ent_green_power = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_power)
 
         lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
         self.strvar_green_phase = tk.StringVar(self.win, '44.02')
         self.ent_green_phase = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_phase)
 
-        lbl_green_current_power = tk.Label(frm_wp_power_cal, text='Green current Power (mW):')
+        lbl_green_current_power = tk.Label(frm_wp_power_cal, text='Green current power (mW):')
         self.strvar_green_current_power = tk.StringVar(self.win, '')
         self.ent_green_current_power = tk.Entry(
-            frm_wp_power_cal, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+            frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
+
 
         # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
@@ -537,23 +531,23 @@ class Feedbacker(object):
         # self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
         # command=None)
 
-        frm_spc_but.grid(row=0, column=0, sticky='nsew')
+        frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_plt.grid(row=1, column=0, sticky='nsew')
-        frm_mcp_image.grid(row=1, column=2, sticky='nsew')
-        frm_scans.grid(row=1, column=1)
-        frm_measure.grid(row=0, column=0, padx=5)
-        frm_phase_scan.grid(row=0, column=1, padx=5)
-        frm_stage.grid(row=1, column=0, padx=5)
-        frm_wp_power_cal.grid(row=2, column=0, padx=5, pady=5)
-        frm_wp_scans.grid(row=3, column=0, padx=5, pady=5)
+        frm_plt.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_mcp_image.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
+        frm_scans.grid(row=0, column=1,padx=2, pady=2, sticky='nsew')
+        frm_measure.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_phase_scan.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        frm_stage.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_wp_power_cal.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_wp_scans.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
 
-        frm_mid.grid(row=2, column=0, sticky='nsew')
-        frm_bot.grid(row=3, column=0)
+        frm_mid.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_bot.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
 
-        frm_plt_set.grid(row=0, column=0, padx=5)
-        frm_ratio.grid(row=0, column=1, padx=5)
-        frm_pid.grid(row=0, column=2, padx=5)
+        frm_plt_set.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_ratio.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        frm_pid.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
 
         frm_ratio.config(width=162, height=104)
 
@@ -561,192 +555,173 @@ class Feedbacker(object):
 
         # setting up buttons frm_spc
         frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
-        but_spc_start.grid(row=0, column=1, padx=5, pady=5, ipadx=5, ipady=5)
-        but_spc_stop.grid(row=0, column=2, padx=5, pady=5, ipadx=5, ipady=5)
-        but_spc_phi.grid(row=0, column=3, padx=5, pady=5, ipadx=5, ipady=5)
-        lbl_spc_ind.grid(row=0, column=0)
-        self.ent_spc_ind.grid(row=0, column=1)
-        but_spc_activate.grid(row=0, column=2, padx=(1, 5))
-        lbl_spc_exp.grid(row=1, column=0)
-        self.ent_spc_exp.grid(row=1, column=1)
-        but_spc_deactivate.grid(row=1, column=2, padx=(1, 5))
-        lbl_spc_gain.grid(row=2, column=0)
-        self.ent_spc_avg.grid(row=2, column=1)
+        but_spc_start.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        but_spc_stop.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
+        but_spc_phi.grid(row=0, column=3,  padx=2, pady=2, sticky='nsew')
+        lbl_spc_ind.grid(row=0, column=0 ,padx=2, pady=2, sticky='nsew')
+        self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        but_spc_activate.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
+        lbl_spc_exp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_spc_exp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        but_spc_deactivate.grid(row=1, column=2,  padx=2, pady=2, sticky='nsew')
+        lbl_spc_gain.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_spc_avg.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
 
         # setting up frm_spc_set
-        but_auto_scale.grid(row=0, column=0, columnspan=2, padx=5, pady=(3, 10))
-        but_bck.grid(row=1, column=0, columnspan=2, padx=5)
-        lbl_std.grid(row=2, column=0, pady=5)
-        self.lbl_std_val.grid(row=2, column=1, pady=5)
+        but_auto_scale.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        but_bck.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_std.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        self.lbl_std_val.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
 
         # setting up buttons frm_bot
-        but_exit.grid(row=1, column=0, padx=5, pady=5, ipadx=5, ipady=5)
-        but_feedback.grid(row=1, column=1, padx=5, pady=5, ipadx=5, ipady=5)
+        but_exit.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        but_feedback.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
 
         # setting up frm_pid
-        lbl_setp.grid(row=0, column=0)
-        lbl_pidp.grid(row=1, column=0)
-        lbl_pidi.grid(row=2, column=0)
-        self.ent_setp.grid(row=0, column=1)
-        self.ent_pidp.grid(row=1, column=1)
-        self.ent_pidi.grid(row=2, column=1)
-        but_pid_setp.grid(row=3, column=0)
-        but_pid_setk.grid(row=3, column=1)
-        but_pid_enbl.grid(row=1, column=2)
-        but_pid_stop.grid(row=2, column=2)
+        lbl_setp.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_pidp.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_pidi.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_setp.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        self.ent_pidp.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
+        self.ent_pidi.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
+        but_pid_setp.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        but_pid_setk.grid(row=3, column=1,  padx=2, pady=2, sticky='nsew')
+        but_pid_enbl.grid(row=1, column=2,  padx=2, pady=2, sticky='nsew')
+        but_pid_stop.grid(row=2, column=2,  padx=2, pady=2, sticky='nsew')
 
         # setting up frm_measure
-        lbl_mcp.grid(row=1, column=0, sticky='w')
-        self.ent_mcp.grid(row=1, column=1, padx=5, pady=5)
+        lbl_mcp.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_mcp.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
 
-        lbl_avgs.grid(row=2, column=0, sticky='w')
-        self.ent_avgs.grid(row=2, column=1)
+        lbl_avgs.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_avgs.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
 
-        lbl_comment.grid(row=3, column=0, sticky='w')
-        self.ent_comment.grid(row=3, column=1, padx=5, pady=5)
+        lbl_comment.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_comment.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
 
-        self.cb_background.grid(row=4, column=0, sticky='w')
+        self.cb_background.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
 
-        self.but_meas_all.grid(row=5, column=0)
-        self.but_meas_scan.grid(row=5, column=1)
-        self.but_meas_simple.grid(row=5, column=2)
+        self.but_meas_all.grid(row=4, column=0,  padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=4, column=1,  padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=4, column=2,  padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
-        lbl_from.grid(row=0, column=0, sticky='w')
-        lbl_to.grid(row=1, column=0, sticky='w')
-        lbl_steps.grid(row=2, column=0, sticky='w')
-        self.ent_from.grid(row=0, column=1)
-        self.ent_to.grid(row=1, column=1)
-        self.ent_steps.grid(row=2, column=1)
-        self.cb_phasescan.grid(row=5, column=1)
+        lbl_from.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_to.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_steps.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_from.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        self.ent_to.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
+        self.ent_steps.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
+        self.cb_phasescan.grid(row=5, column=1,  padx=2, pady=2, sticky='nsew')
 
         # setting up frm_stage
-        lbl_Stage.grid(row=1, column=1)
-        lbl_Nr.grid(row=1, column=2)
-        lbl_is.grid(row=1, column=3)
-        lbl_should.grid(row=1, column=4)
+        lbl_Stage.grid(row=0, column=1, pady=2, sticky='nsew')
+        lbl_Nr.grid(row=0, column=2, pady=2, sticky='nsew')
+        lbl_is.grid(row=0, column=3, pady=2, sticky='nsew')
+        lbl_should.grid(row=0, column=4, pady=2, sticky='nsew')
 
-        lbl_WPR.grid(row=2, column=1)
-        lbl_WPG.grid(row=3, column=1)
-        lbl_Delay.grid(row=4, column=1)
+        lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
+        lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
+        lbl_Delay.grid(row=3, column=1, pady=2, sticky='nsew')
 
-        self.ent_WPR_Nr.grid(row=2, column=2)
-        self.ent_WPG_Nr.grid(row=3, column=2)
-        self.ent_Delay_Nr.grid(row=4, column=2)
+        self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
+        self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
+        self.ent_Delay_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_is.grid(row=2, column=3)
-        self.ent_WPG_is.grid(row=3, column=3)
-        self.ent_Delay_is.grid(row=4, column=3)
+        self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_Delay_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_should.grid(row=2, column=4)
-        self.ent_WPG_should.grid(row=3, column=4)
-        self.ent_Delay_should.grid(row=4, column=4)
+        self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_Delay_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPR_Ini.grid(row=2, column=5)
-        self.but_WPR_Home.grid(row=2, column=6)
-        self.but_WPR_Read.grid(row=2, column=7)
-        self.but_WPR_Move.grid(row=2, column=8)
+        self.but_WPR_Ini.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Home.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Read.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Move.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPG_Ini.grid(row=3, column=5)
-        self.but_WPG_Home.grid(row=3, column=6)
-        self.but_WPG_Read.grid(row=3, column=7)
-        self.but_WPG_Move.grid(row=3, column=8)
+        self.but_WPG_Ini.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Home.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Read.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Move.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_Delay_Ini.grid(row=4, column=5)
-        self.but_Delay_Home.grid(row=4, column=6)
-        self.but_Delay_Read.grid(row=4, column=7)
-        self.but_Delay_Move.grid(row=4, column=8)
+        self.but_Delay_Ini.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_Delay_Home.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_Delay_Read.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_Delay_Move.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
 
-        # self.ent_WPR_from.grid(row=2, column=9)
-        # self.ent_WPR_to.grid(row=2, column=10)
-        # self.ent_WPR_steps.grid(row=2, column=11)
-
-        # self.ent_WPG_from.grid(row=3, column=9)
-        # self.ent_WPG_to.grid(row=3, column=10)
-        # self.ent_WPG_steps.grid(row=3, column=11)
-
-        # self.ent_Delay_from.grid(row=4, column=9)
-        # self.ent_Delay_to.grid(row=4, column=10)
-        # self.ent_Delay_steps.grid(row=4, column=11)
-
-        # self.cb_wprscan.grid(row=2, column=12)
-        # self.cb_wpgscan.grid(row=3, column=12)
-        # self.cb_delayscan.grid(row=4, column=12)
-
-        self.cb_wprpower.grid(row=2, column=9)
-        self.cb_wpgpower.grid(row=3, column=9)
+        self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
+        self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_power_calibration
-        self.but_calibrator_open.grid(row=0, column=0)
-        lbl_pharos_att.grid(row=0, column=1)
-        self.ent_pharos_att.grid(row=0, column=2)
-        lbl_pharos_pp.grid(row=1, column=1)
-        self.ent_pharos_pp.grid(row=1, column=2)
+        self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
-        lbl_red_power.grid(row=0, column=5, sticky='w')
-        self.ent_red_power.grid(row=0, column=6)
+        lbl_pharos_att.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pharos_att.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_pharos_pp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pharos_pp.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
-        lbl_red_phase.grid(row=1, column=5, sticky='w')
-        self.ent_red_phase.grid(row=1, column=6)
+        lbl_red_power.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_power.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
+        lbl_red_phase.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_phase.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        lbl_red_current_power.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_current_power.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        lbl_red_current_power.grid(row=2, column=5, sticky='w')
-        self.ent_red_current_power.grid(row=2, column=6)
-
-        lbl_green_power.grid(row=0, column=7, sticky='w')
-        self.ent_green_power.grid(row=0, column=8)
-
-        lbl_green_phase.grid(row=1, column=7, sticky='w')
-        self.ent_green_phase.grid(row=1, column=8)
-
-        lbl_green_current_power.grid(row=2, column=7, sticky='w')
-        self.ent_green_current_power.grid(row=2, column=8)
+        lbl_green_power.grid(row=0, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_power.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_green_phase.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_phase.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_green_current_power.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_current_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_scans
-        lbl_wp_scan_info.grid(row=0, column=0, sticky='w')
-        self.rb_int_ratio.grid(row=1, column=0, sticky='w')
-        self.rb_wpr.grid(row=2, column=0, sticky='w')
-        self.rb_wpg.grid(row=3, column=0, sticky='w')
-        self.rb_green_focus_SLM.grid(row=4, column=0, sticky='w')
-        self.rb_red_focus_SLM.grid(row=5, column=0, sticky='w')
-        self.rb_nothing.grid(row=6, column=0, sticky='w')
+        lbl_wp_scan_info.grid(row=0, column=0, padx=2, pady=2)
+        self.rb_int_ratio.grid(row=1, column=0)
+        self.rb_wpr.grid(row=2, column=0)
+        self.rb_wpg.grid(row=3, column=0)
+        self.rb_green_focus_SLM.grid(row=4, column=0)
+        self.rb_red_focus_SLM.grid(row=5, column=0)
+        self.rb_nothing.grid(row=6, column=0)
 
-        lbl_int_ratio_focus.grid(row=1, column=1)
-        self.lbl_int_ratio_constant.grid(row=1, column=3)
+        lbl_int_ratio_focus.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.lbl_int_ratio_constant.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
-        lbl_stage_scan_from.grid(row=0, column=8)
-        lbl_stage_scan_to.grid(row=0, column=9)
-        lbl_stage_scan_steps.grid(row=0, column=10)
+        lbl_stage_scan_from.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_stage_scan_to.grid(row=0, column=9, padx=2, pady=2, sticky='nsew')
+        lbl_stage_scan_steps.grid(row=0, column=10, padx=2, pady=2, sticky='nsew')
 
-        self.ent_int_ratio_focus.grid(row=1, column=2, padx=3, pady=3)
-        self.ent_int_ratio_constant.grid(row=1, column=4, padx=3, pady=3)
+        self.ent_int_ratio_focus.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_int_ratio_constant.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        lbl_int_green_ratio.grid(row=1, column=7, sticky='w')
+        lbl_int_green_ratio.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.ent_ratio_from.grid(row=1, column=8)
-        self.ent_ratio_to.grid(row=1, column=9)
-        self.ent_ratio_steps.grid(row=1, column=10)
+        self.ent_ratio_from.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_ratio_to.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_ratio_steps.grid(row=1, column=10, padx=2, pady=2, sticky='nsew')
 
-        lbl_int_red.grid(row=2, column=7, sticky='w')
-        self.ent_WPR_from.grid(row=2, column=8)
-        self.ent_WPR_to.grid(row=2, column=9)
-        self.ent_WPR_steps.grid(row=2, column=10)
+        lbl_int_red.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_from.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_to.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_steps.grid(row=2, column=10, padx=2, pady=2, sticky='nsew')
 
-        lbl_int_green.grid(row=3, column=7, sticky='w')
-        self.ent_WPG_from.grid(row=3, column=8)
-        self.ent_WPG_to.grid(row=3, column=9)
-        self.ent_WPG_steps.grid(row=3, column=10)
+        lbl_int_green.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_from.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_to.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_steps.grid(row=3, column=10, padx=2, pady=2, sticky='nsew')
 
-        lbl_GFP_green.grid(row=4, column=7, sticky='w')
-        self.ent_GFP_from.grid(row=4, column=8)
-        self.ent_GFP_to.grid(row=4, column=9)
-        self.ent_GFP_steps.grid(row=4, column=10)
+        lbl_GFP_green.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_from.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_to.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_steps.grid(row=4, column=10, padx=2, pady=2, sticky='nsew')
 
-        lbl_RFP_red.grid(row=5, column=7, sticky='w')
-        self.ent_RFP_from.grid(row=5, column=8)
-        self.ent_RFP_to.grid(row=5, column=9)
-        self.ent_RFP_steps.grid(row=5, column=10)
+        lbl_RFP_red.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_from.grid(row=5, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
-        self.figrMCP = Figure(figsize=(5, 5), dpi=100)
+        self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
         self.axHarmonics = self.figrMCP.add_subplot(212)
         self.axMCP.set_xlim(0, 1600)
@@ -756,12 +731,12 @@ class Feedbacker(object):
         self.figrMCP.canvas.draw()
         self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
         self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
-        self.tk_widget_figrMCP.grid(row=0, column=0, sticky='nsew')
+        self.tk_widget_figrMCP.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.imgMCP.draw()
 
-        sizefactor = 1.05
+        sizefactor = 1
 
-        self.figr = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
+        self.figr = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
         self.ax1r = self.figr.add_subplot(211)
         self.ax2r = self.figr.add_subplot(212)
         self.trace_line, = self.ax1r.plot([])
@@ -777,12 +752,12 @@ class Feedbacker(object):
         self.figr.canvas.draw()
         self.img1r = FigureCanvasTkAgg(self.figr, frm_plt)
         self.tk_widget_figr = self.img1r.get_tk_widget()
-        self.tk_widget_figr.grid(row=0, column=0, sticky='nsew')
+        self.tk_widget_figr.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
         self.ax2r_blit = self.figr.canvas.copy_from_bbox(self.ax2r.bbox)
 
-        self.figp = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
+        self.figp = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
         self.ax1p = self.figp.add_subplot(111)
         self.phase_line, = self.ax1p.plot([], '.', ms=1)
         self.ax1p.set_xlim(0, 1000)
@@ -792,22 +767,21 @@ class Feedbacker(object):
         self.figp.canvas.draw()
         self.img1p = FigureCanvasTkAgg(self.figp, frm_plt)
         self.tk_widget_figp = self.img1p.get_tk_widget()
-        self.tk_widget_figp.grid(row=1, column=0, sticky='nsew')
+        self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.img1p.draw()
         self.ax1p_blit = self.figp.canvas.copy_from_bbox(self.ax1p.bbox)
 
         # setting up frm_ratio
-        self.ent_area1x.grid(row=0, column=0)
-        self.ent_area1y.grid(row=0, column=1)
+        self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
-
-        lbl_indexfft.grid(row=1, column=0, sticky='e')
-        self.ent_indexfft.grid(row=1, column=1)
-        lbl_angle.grid(row=2, column=0)
-        self.lbl_angle.grid(row=2, column=1)
-        lbl_phi.grid(row=3, column=0, sticky='e')
-        self.ent_flat.grid(row=3, column=1)
-        lbl_phi_2.grid(row=3, column=2, sticky='w')
+        lbl_indexfft.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_indexfft.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_angle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.lbl_angle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_phi.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        self.ent_flat.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.im_phase = np.zeros(1000)
         self.pid = PID(0.35, 0, 0, setpoint=0)
