@@ -684,7 +684,7 @@ class TypeLens(BaseType):
         [X, Y] = np.meshgrid(x, y)
         R = np.sqrt(X ** 2 + Y ** 2)  # radius on a 2d array
         Z = rad_sign * (np.sqrt(rad ** 2 + R ** 2) - rad)
-        Z_phi = Z / wavelength * bit_depth  # translating meters to wavelengths and phase
+        Z_phi = Z / wavelength * bit_depth  # translating meters to wavelengths and phase #TODO wavelength depedency !!
         del X, Y, R, Z
 
         return Z_phi
@@ -1142,11 +1142,11 @@ class TypeVortex(BaseType):
             if entry.get() != '':
                 coeffs[i] = float(entry.get())
         vor = coeffs
-        x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
-        y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
+        x = np.linspace(-chip_width , chip_width , slm_size[1])
+        y = np.linspace(-chip_height , chip_height , slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
-        phase = theta * bit_depth / (2 * np.pi) * vor
+        phase = theta * vor * bit_depth / (2*np.pi)
         return phase
 
     def save_(self):
@@ -1245,21 +1245,22 @@ class TypeZernike(BaseType):
                 coeffs[i] = float(entry.get())
 
         x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
+        print(x)
         y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
         rho = np.sqrt(X ** 2 + Y ** 2)
 
-        p1 = coeffs[0] * 1 * np.cos(0 * theta)
-        p2 = coeffs[1] * rho * np.cos(1 * theta)
-        p3 = coeffs[2] * rho * np.sin(1 * theta)
-        p4 = coeffs[3] * (2 * rho ** 2 - 1) * np.cos(0 * theta)
-        p5 = coeffs[4] * rho ** 2 * np.cos(2 * theta)
-        p6 = coeffs[5] * rho ** 2 * np.sin(2 * theta)
-        p7 = coeffs[6] * (3 * rho ** 3 - 2 * rho) * np.cos(1 * theta)
-        p8 = coeffs[7] * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta)
-        p9 = coeffs[8] * rho ** 3 * np.cos(3 * theta)
-        p10 = coeffs[9] * rho ** 3 * np.sin(3 * theta)
+        p1 = coeffs[0] * 1  # Piston
+        p2 = coeffs[1] * 2 * rho * np.cos(1 * theta)  # H tilt
+        p3 = coeffs[2] * 2 * rho * np.sin(1 * theta)  # V tilt
+        p4 = coeffs[3] * np.sqrt(3) * (2 * rho ** 2 - 1)  # Defocus
+        p5 = coeffs[4] * np.sqrt(6) * rho ** 2 * np.cos(2 * theta)  # Vertical astigmatism
+        p6 = coeffs[5] * np.sqrt(6) * rho ** 2 * np.sin(2 * theta)  # Oblique astigmatism
+        p7 = coeffs[6] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.cos(1 * theta) # Horizontal coma
+        p8 = coeffs[7] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta) # Vertical coma
+        p9 = coeffs[8] * np.sqrt(8) * rho ** 3 * np.cos(3 * theta) # Oblique trefoil
+        p10 = coeffs[9] * np.sqrt(8) * rho ** 3 * np.sin(3 * theta) # Vertical trefoil
         p11 = coeffs[10] * (6 * rho ** 4 - 6 * rho ** 2 + 1)
         p12 = coeffs[11] * (4 * rho ** 4 - 3 * rho ** 2) * np.sin(2 * theta)
         p13 = coeffs[12] * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
@@ -1267,6 +1268,13 @@ class TypeZernike(BaseType):
         p15 = coeffs[14] * rho ** 4 * np.cos(4 * theta)
 
         phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15)
+        phase /= np.max(phase)
+        print(np.min(phase))
+        print(np.max(phase))
+        phase *= bit_depth
+        print(np.min(phase))
+        print(np.max(phase))
+
 
         return phase
 
