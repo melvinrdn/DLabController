@@ -1245,7 +1245,6 @@ class TypeZernike(BaseType):
                 coeffs[i] = float(entry.get())
 
         x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
-        print(x)
         y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)

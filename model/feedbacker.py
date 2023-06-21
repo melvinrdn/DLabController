@@ -44,7 +44,9 @@ class Feedbacker(object):
 
         """
         matplotlib.use("TkAgg")
-        self.cam = None
+        self.cam_1 = None
+        self.cam_2 = None
+        self.cam_3 = None
         self.parent = parent
         self.lens_green = self.parent.phase_refs_green[1]
         self.lens_red = self.parent.phase_refs_red[1]
@@ -438,7 +440,7 @@ class Feedbacker(object):
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
         maxG = float(self.ent_green_power.get()) * 1e-3
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c - x * maxG), 3)))
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -798,7 +800,7 @@ class Feedbacker(object):
             c = float(self.ent_int_ratio_constant.get())
             maxG = float(self.ent_green_power.get()) * 1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
-            self.strvar_ratio_to.set(str(np.round(x * maxG / (c - x * maxG), 3)))
+            self.strvar_ratio_to.set(str(np.round(x * maxG /c, 3)))
 
             # print(x)
             # print(c)
@@ -1316,7 +1318,7 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
-    def init_focus_cam_mono(self):
+    def init_cam_mono(self):
 
         print('Mono acquisition mode - on ')
 
@@ -1329,26 +1331,44 @@ class Feedbacker(object):
             return
 
         # open the first device
-        self.cam = device_manager.open_device_by_index(int(1))
+        self.cam_1= device_manager.open_device_by_index(int(1))
+        self.cam_2 = device_manager.open_device_by_index(int(2))
+        self.cam_3 = device_manager.open_device_by_index(int(3))
 
         # set exposure
-        self.cam.ExposureTime.set(float(1000))  # TODO exposure box
+        self.cam_1.ExposureTime.set(float(100000))  # TODO exposure box
+        self.cam_2.ExposureTime.set(float(100000))
+        self.cam_3.ExposureTime.set(float(100000))
 
         # set gain
-        self.cam.Gain.set(float(1))  # TODO gain box
+        self.cam_1.Gain.set(float(10))  # TODO gain box
+        self.cam_2.Gain.set(float(10))  # TODO gain box
+        self.cam_3.Gain.set(float(10))  # TODO gain box
 
         if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
             # set trigger mode
-            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
         else:
             # set trigger mode and trigger source
-            self.cam.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+            self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_1.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_2.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
+            self.cam_3.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
 
-        self.cam.stream_on()
+        self.cam_1.stream_on()
+        self.cam_2.stream_on()
+        self.cam_3.stream_on()
         self.focus_cam_acq_mono(int(1))  # TODO average box
-        self.cam.stream_off()
-        self.cam.close_device()
+        self.cam_1.stream_off()
+        self.cam_2.stream_off()
+        self.cam_2.stream_off()
+        self.cam_1.close_device()
+        self.cam_2.close_device()
+        self.cam_3.close_device()
 
         print('Mono acquisition mode - off ')
 
@@ -1356,61 +1376,143 @@ class Feedbacker(object):
         """
         acquisition function for camera in single picture mode
         """
-        sum_image = None
+        sum_image_1 = None
+        sum_image_2 = None
+        sum_image_3 = None
 
         for i in range(num):
-            self.cam.TriggerSoftware.send_command()
-            self.cam.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam.Gain.set(float(1))  # TODO exposure box
+            self.cam_1.TriggerSoftware.send_command()
+            self.cam_1.ExposureTime.set(float(10000))  # TODO gain box
+            self.cam_1.Gain.set(float(1))  # TODO exposure box
+            self.cam_2.TriggerSoftware.send_command()
+            self.cam_2.ExposureTime.set(float(10000))  # TODO gain box
+            self.cam_2.Gain.set(float(1))  # TODO exposure box
+            self.cam_3.TriggerSoftware.send_command()
+            self.cam_3.ExposureTime.set(float(10000))  # TODO gain box
+            self.cam_3.Gain.set(float(1))  # TODO exposure box
 
-            raw_image = self.cam.data_stream[0].get_image()
-            if raw_image is None:
-                print('oups')
+            raw_image_1 = self.cam_1.data_stream[0].get_image()
+            if raw_image_1 is None:
+                print('oups1')
                 continue
-            numpy_image = raw_image.get_numpy_array()
-            if numpy_image is None:
-                print('oups')
+            numpy_image_1 = raw_image_1.get_numpy_array()
+            if numpy_image_1 is None:
+                print('oups1')
                 continue
 
-            if sum_image is None:
-                sum_image = numpy_image.astype('float64')
+            raw_image_2 = self.cam_2.data_stream[0].get_image()
+            if raw_image_2 is None:
+                print('oups2')
+                continue
+            numpy_image_2 = raw_image_2.get_numpy_array()
+            if numpy_image_2 is None:
+                print('oups2')
+                continue
+
+            raw_image_3 = self.cam_3.data_stream[0].get_image()
+            if raw_image_3 is None:
+                print('oups3')
+                continue
+            numpy_image_3 = raw_image_3.get_numpy_array()
+            if numpy_image_3 is None:
+                print('oups3')
+                continue
+
+            if sum_image_1 is None:
+                sum_image_1 = numpy_image_1.astype('float64')
             else:
-                sum_image += numpy_image.astype('float64')
+                sum_image_1 += numpy_image_1.astype('float64')
 
-        average_image = (sum_image / num).astype('uint8')
-        print(average_image)
+            if sum_image_2 is None:
+                sum_image_2 = numpy_image_2.astype('float64')
+            else:
+                sum_image_2 += numpy_image_2.astype('float64')
 
-        picture = Image.fromarray(average_image)
-        picture = picture.resize((800, 600), resample=0)
-        picture = ImageTk.PhotoImage(picture)
+            if sum_image_3 is None:
+                sum_image_3 = numpy_image_3.astype('float64')
+            else:
+                sum_image_3 += numpy_image_3.astype('float64')
 
-        self.focus_cam_save = True #TODO possibility to change
+        nr = self.get_start_image()
 
-        if self.focus_cam_save:
-            folder_path = 'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
+        average_image_1 = (sum_image_1 / num).astype('uint8')
+        picture_1 = Image.fromarray(average_image_1)
+        picture_1 = picture_1.resize((800, 600), resample=0)
+        picture_1 = ImageTk.PhotoImage(picture_1)
 
-            nr = self.get_start_image()
-            base_filename = 'focus_camera' + str(date.today()) + '-' + str(int(nr))
+        average_image_2 = (sum_image_2 / num).astype('uint8')
+        picture_2 = Image.fromarray(average_image_2)
+        picture_2 = picture_2.resize((800, 600), resample=0)
+        picture_2 = ImageTk.PhotoImage(picture_2)
 
-            filename = base_filename + '.bmp'
+        average_image_3 = (sum_image_3 / num).astype('uint8')
+        picture_3 = Image.fromarray(average_image_3)
+        picture_3 = picture_3.resize((800, 600), resample=0)
+        picture_3 = ImageTk.PhotoImage(picture_3)
 
-            full_path = os.path.join(folder_path, filename)
+        self.focus_cam_save_1 = False #TODO possibility to change
+        self.focus_cam_save_2 = False
+        self.focus_cam_save_3 = False
 
-            last_image = picture
+        if self.focus_cam_save_1:
+            folder_path_1 = 'C:/data/' + str(date.today()) + '/' + 'camera_1' + '/'
+            if not os.path.exists(folder_path_1):
+                os.makedirs(folder_path_1)
 
-            if last_image is not None:
-                pil_image = ImageTk.getimage(last_image)
-                pil_image.save(full_path)
-                print(f"Image saved as {full_path}")
+            base_filename_1 = 'camera_1' + str(date.today()) + '-' + str(int(nr))
+            filename_1 = base_filename_1 + '.bmp'
+            full_path_1 = os.path.join(folder_path_1, filename_1)
+            last_image_1 = picture_1
+
+            if last_image_1 is not None:
+                pil_image_1 = ImageTk.getimage(last_image_1)
+                pil_image_1.save(full_path_1)
+                print(f"Image saved as {full_path_1}")
             else:
                 print("No image to save")
 
-        print(f'Mono acquisition mode - Image taken over {num} averages')
+        print(f'Mono acquisition mode - Image taken on camera 1 over {num} averages')
 
-    def focus_cam_mono_acq(self):
-        self.render_thread_mono = threading.Thread(target=self.init_focus_cam_mono)
+        if self.focus_cam_save_2:
+            folder_path_2 = 'C:/data/' + str(date.today()) + '/' + 'camera_2' + '/'
+            if not os.path.exists(folder_path_2):
+                os.makedirs(folder_path_2)
+
+            base_filename_2 = 'camera_2' + str(date.today()) + '-' + str(int(nr))
+            filename_2 = base_filename_2 + '.bmp'
+            full_path_2 = os.path.join(folder_path_2, filename_2)
+            last_image_2 = picture_2
+
+            if last_image_2 is not None:
+                pil_image_2 = ImageTk.getimage(last_image_2)
+                pil_image_2.save(full_path_2)
+                print(f"Image saved as {full_path_2}")
+            else:
+                print("No image to save")
+
+        print(f'Mono acquisition mode - Image taken on camera 2 over {num} averages')
+
+        if self.focus_cam_save_3:
+            folder_path_3 = 'C:/data/' + str(date.today()) + '/' + 'camera_3' + '/'
+            if not os.path.exists(folder_path_3):
+                os.makedirs(folder_path_3)
+
+            base_filename_3 = 'camera_3' + str(date.today()) + '-' + str(int(nr))
+            filename_3 = base_filename_3 + '.bmp'
+            full_path_3 = os.path.join(folder_path_3, filename_3)
+            last_image_3 = picture_3
+
+            if last_image_3 is not None:
+                pil_image_3 = ImageTk.getimage(last_image_3)
+                pil_image_3.save(full_path_3)
+                print(f"Image saved as {full_path_3}")
+            else:
+                print("No image to save")
+
+        print(f'Mono acquisition mode - Image taken on camera 3 over {num} averages')
+
+    def cam_mono_acq(self):
+        self.render_thread_mono = threading.Thread(target=self.init_cam_mono)
         self.render_thread_mono.daemon = True
         self.render_thread_mono.start()
 
@@ -1514,7 +1616,7 @@ class Feedbacker(object):
             im = self.take_image(int(self.ent_avgs.get()))
             self.save_im(im)
             self.plot_MCP(im)
-            #self.focus_cam_mono_acq()
+            #self.cam_mono_acq()
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -1524,8 +1626,8 @@ class Feedbacker(object):
         x = float(self.ent_int_ratio_focus.get()) ** 2
         ratios = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()),
                              int(self.ent_ratio_steps.get()))
-        pr = c / (1 + ratios)
-        pg = ratios * pr / x
+        pr = c - c * ratios
+        pg = c * ratios / x
         print(x)
         print(c)
         print(ratios)
@@ -1548,7 +1650,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                #self.focus_cam_mono_acq()
+                #self.cam_mono_acq()
 
     def focus_position_scan_red(self):
         start = float(self.ent_RFP_from.get())
@@ -1567,7 +1669,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                #self.focus_cam_mono_acq()
+                #self.cam_mono_acq()
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')
