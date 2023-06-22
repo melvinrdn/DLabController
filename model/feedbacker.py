@@ -91,6 +91,7 @@ class Feedbacker(object):
 
         frm_measure = tk.LabelFrame(frm_scans, text='Measurement')
         frm_phase_scan = tk.LabelFrame(frm_scans, text='Phase Scan')
+        frm_daheng_camera_settings = tk.LabelFrame(frm_scans, text='Daheng camera')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
         frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
@@ -212,6 +213,25 @@ class Feedbacker(object):
         self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
                                            offvalue=0,
                                            command=None)
+
+        # Daheng camera
+
+        self.var_camera_1 = tk.IntVar()
+        self.cb_camera_1 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1, onvalue=1,
+                                           offvalue=0,
+                                           command=None)
+
+        self.var_camera_3 = tk.IntVar()
+        self.cb_camera_3 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3, onvalue=1,
+                                           offvalue=0,
+                                           command=None)
+
+        self.var_camera_2 = tk.IntVar()
+        self.cb_camera_2 = tk.Checkbutton(frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2, onvalue=1,
+                                           offvalue=0,
+                                           command=None)
+
+
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
@@ -394,7 +414,6 @@ class Feedbacker(object):
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
 
-
         # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
         self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
@@ -408,7 +427,7 @@ class Feedbacker(object):
         self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus",
                                                  text="Green Focus")
         self.rb_red_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red Focus",
-                                                 text="Red Focus")
+                                               text="Red Focus")
 
         lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
         lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
@@ -535,21 +554,22 @@ class Feedbacker(object):
 
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_plt.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_mcp_image.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
-        frm_scans.grid(row=0, column=1,padx=2, pady=2, sticky='nsew')
-        frm_measure.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_phase_scan.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
-        frm_stage.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_wp_power_cal.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_wp_scans.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_phase_scan.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        frm_daheng_camera_settings.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        frm_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_wp_power_cal.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        frm_wp_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_mid.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_bot.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_plt_set.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        frm_ratio.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
-        frm_pid.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
+        frm_plt_set.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_ratio.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        frm_pid.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         frm_ratio.config(width=162, height=104)
 
@@ -557,64 +577,64 @@ class Feedbacker(object):
 
         # setting up buttons frm_spc
         frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
-        but_spc_start.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
-        but_spc_stop.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
-        but_spc_phi.grid(row=0, column=3,  padx=2, pady=2, sticky='nsew')
-        lbl_spc_ind.grid(row=0, column=0 ,padx=2, pady=2, sticky='nsew')
+        but_spc_start.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        but_spc_stop.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        but_spc_phi.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_spc_ind.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        but_spc_activate.grid(row=0, column=2,  padx=2, pady=2, sticky='nsew')
+        but_spc_activate.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         lbl_spc_exp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_exp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        but_spc_deactivate.grid(row=1, column=2,  padx=2, pady=2, sticky='nsew')
-        lbl_spc_gain.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_spc_avg.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
+        but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_spc_gain.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_spc_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_spc_set
-        but_auto_scale.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        but_bck.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        lbl_std.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        self.lbl_std_val.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
+        but_auto_scale.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        but_bck.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_std.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.lbl_std_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up buttons frm_bot
-        but_exit.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        but_feedback.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
+        but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        but_feedback.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_pid
-        lbl_setp.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        lbl_pidp.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        lbl_pidi.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_setp.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
-        self.ent_pidp.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
-        self.ent_pidi.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
-        but_pid_setp.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
-        but_pid_setk.grid(row=3, column=1,  padx=2, pady=2, sticky='nsew')
-        but_pid_enbl.grid(row=1, column=2,  padx=2, pady=2, sticky='nsew')
-        but_pid_stop.grid(row=2, column=2,  padx=2, pady=2, sticky='nsew')
+        lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidi.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_setp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidi.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        but_pid_setp.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        but_pid_setk.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        but_pid_enbl.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        but_pid_stop.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_measure
-        lbl_mcp.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_mcp.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
+        lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
-        lbl_avgs.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_avgs.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
+        lbl_avgs.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_avgs.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-        lbl_comment.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_comment.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
+        lbl_comment.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_comment.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.cb_background.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        self.cb_background.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-        self.but_meas_all.grid(row=4, column=0,  padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=4, column=1,  padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=4, column=2,  padx=2, pady=2, sticky='nsew')
+        self.but_meas_all.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
-        lbl_from.grid(row=0, column=0,  padx=2, pady=2, sticky='nsew')
-        lbl_to.grid(row=1, column=0,  padx=2, pady=2, sticky='nsew')
-        lbl_steps.grid(row=2, column=0,  padx=2, pady=2, sticky='nsew')
-        self.ent_from.grid(row=0, column=1,  padx=2, pady=2, sticky='nsew')
-        self.ent_to.grid(row=1, column=1,  padx=2, pady=2, sticky='nsew')
-        self.ent_steps.grid(row=2, column=1,  padx=2, pady=2, sticky='nsew')
-        self.cb_phasescan.grid(row=5, column=1,  padx=2, pady=2, sticky='nsew')
+        lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_to.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_steps.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_to.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_steps.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_stage
         lbl_Stage.grid(row=0, column=1, pady=2, sticky='nsew')
@@ -781,7 +801,7 @@ class Feedbacker(object):
         self.ent_indexfft.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         lbl_angle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.lbl_angle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_phi.grid(row=3, column=0,  padx=2, pady=2, sticky='nsew')
+        lbl_phi.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_flat.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
         lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
@@ -794,13 +814,17 @@ class Feedbacker(object):
         self.spec_interface_initialized = False
         self.active_spec_handle = None
 
+        self.camera_daheng_1 = False
+        self.camera_daheng_2 = False
+        self.camera_daheng_3 = False
+
     def update_maxgreenratio(self, var, index, mode):
         try:
             x = float(self.ent_int_ratio_focus.get()) ** 2
             c = float(self.ent_int_ratio_constant.get())
             maxG = float(self.ent_green_power.get()) * 1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
-            self.strvar_ratio_to.set(str(np.round(x * maxG /c, 3)))
+            self.strvar_ratio_to.set(str(np.round(x * maxG / c, 3)))
 
             # print(x)
             # print(c)
@@ -1318,9 +1342,7 @@ class Feedbacker(object):
         self.f.close()
         return start_image
 
-    def init_cam_mono(self):
-
-        print('Mono acquisition mode - on ')
+    def init_cam_mono_1(self):
 
         # create a device manager
         device_manager = gx.DeviceManager()
@@ -1331,65 +1353,104 @@ class Feedbacker(object):
             return
 
         # open the first device
-        self.cam_1= device_manager.open_device_by_index(int(1))
-        self.cam_2 = device_manager.open_device_by_index(int(2))
-        self.cam_3 = device_manager.open_device_by_index(int(3))
+        self.cam_1 = device_manager.open_device_by_index(int(1))
 
         # set exposure
         self.cam_1.ExposureTime.set(float(100000))  # TODO exposure box
-        self.cam_2.ExposureTime.set(float(100000))
-        self.cam_3.ExposureTime.set(float(100000))
 
         # set gain
         self.cam_1.Gain.set(float(10))  # TODO gain box
-        self.cam_2.Gain.set(float(10))  # TODO gain box
-        self.cam_3.Gain.set(float(10))  # TODO gain box
 
         if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
             # set trigger mode
             self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
+
         else:
             # set trigger mode and trigger source
             self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
             self.cam_1.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+
+        self.cam_1.stream_on()
+
+        self.focus_cam_acq_mono_1(int(1))  # TODO average box
+        self.cam_1.stream_off()
+        self.cam_1.close_device()
+
+    def init_cam_mono_2(self):
+
+        # create a device manager
+        device_manager = gx.DeviceManager()
+        dev_num, dev_info_list = device_manager.update_device_list()
+
+        if dev_num == 0:
+            print("No connected devices")
+            return
+
+        # open the second device
+        self.cam_2 = device_manager.open_device_by_index(int(2))
+
+        # set exposure
+        self.cam_2.ExposureTime.set(float(100000))
+
+        # set gain
+        self.cam_2.Gain.set(float(10))
+
+        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
+            # set trigger mode
+
+            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
+        else:
+            # set trigger mode and trigger source
             self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
             self.cam_2.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
+
+        self.cam_2.stream_on()
+        self.focus_cam_acq_mono_2(int(1))
+        self.cam_2.stream_off()
+        self.cam_2.close_device()
+
+    def init_cam_mono_3(self):
+
+        # create a device manager
+        device_manager = gx.DeviceManager()
+        dev_num, dev_info_list = device_manager.update_device_list()
+
+        if dev_num == 0:
+            print("No connected devices")
+            return
+
+        # open the first device
+        self.cam_3 = device_manager.open_device_by_index(int(3))
+
+        # set exposure
+        self.cam_3.ExposureTime.set(float(100000))
+
+        # set gain
+        self.cam_3.Gain.set(float(10))
+
+        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
+            # set trigger mode
+            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
+        else:
+            # set trigger mode and trigger source
             self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
             self.cam_3.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
 
-        self.cam_1.stream_on()
-        self.cam_2.stream_on()
         self.cam_3.stream_on()
-        self.focus_cam_acq_mono(int(1))  # TODO average box
-        self.cam_1.stream_off()
-        self.cam_2.stream_off()
-        self.cam_2.stream_off()
-        self.cam_1.close_device()
-        self.cam_2.close_device()
+        self.focus_cam_acq_mono_3(int(1))
+        self.cam_3.stream_off()
         self.cam_3.close_device()
 
-        print('Mono acquisition mode - off ')
-
-    def focus_cam_acq_mono(self, num):
+    def focus_cam_acq_mono_1(self, num):
         """
         acquisition function for camera in single picture mode
         """
         sum_image_1 = None
-        sum_image_2 = None
-        sum_image_3 = None
 
         for i in range(num):
             self.cam_1.TriggerSoftware.send_command()
             self.cam_1.ExposureTime.set(float(10000))  # TODO gain box
             self.cam_1.Gain.set(float(1))  # TODO exposure box
-            self.cam_2.TriggerSoftware.send_command()
-            self.cam_2.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam_2.Gain.set(float(1))  # TODO exposure box
-            self.cam_3.TriggerSoftware.send_command()
-            self.cam_3.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam_3.Gain.set(float(1))  # TODO exposure box
 
             raw_image_1 = self.cam_1.data_stream[0].get_image()
             if raw_image_1 is None:
@@ -1400,6 +1461,49 @@ class Feedbacker(object):
                 print('oups1')
                 continue
 
+            if sum_image_1 is None:
+                sum_image_1 = numpy_image_1.astype('float64')
+            else:
+                sum_image_1 += numpy_image_1.astype('float64')
+
+        nr = self.get_start_image()
+
+        average_image_1 = (sum_image_1 / num).astype('uint8')
+        picture_1 = Image.fromarray(average_image_1)
+        picture_1 = picture_1.resize((600, 400), resample=0)
+        picture_1 = ImageTk.PhotoImage(picture_1)
+
+        self.focus_cam_save_1 = True  # TODO possibility to change
+
+        if self.focus_cam_save_1:
+            folder_path_1 = 'C:/data/' + str(date.today()) + '/' + 'camera_1' + '/'
+            if not os.path.exists(folder_path_1):
+                os.makedirs(folder_path_1)
+
+            base_filename_1 = 'camera_1_' + str(date.today()) + '-' + str(int(nr))
+            filename_1 = base_filename_1 + '.bmp'
+            full_path_1 = os.path.join(folder_path_1, filename_1)
+            last_image_1 = picture_1
+
+            if last_image_1 is not None:
+                pil_image_1 = ImageTk.getimage(last_image_1)
+                pil_image_1.save(full_path_1)
+                print(f"Image of camera 1 taken over {num} averages saved as {full_path_1}")
+            else:
+                print("No image to save")
+
+
+    def focus_cam_acq_mono_2(self, num):
+        """
+        acquisition function for camera in single picture mode
+        """
+        sum_image_2 = None
+
+        for i in range(num):
+            self.cam_2.TriggerSoftware.send_command()
+            self.cam_2.ExposureTime.set(float(10000))  # TODO gain box
+            self.cam_2.Gain.set(float(1))  # TODO exposure box
+
             raw_image_2 = self.cam_2.data_stream[0].get_image()
             if raw_image_2 is None:
                 print('oups2')
@@ -1408,6 +1512,49 @@ class Feedbacker(object):
             if numpy_image_2 is None:
                 print('oups2')
                 continue
+
+            if sum_image_2 is None:
+                sum_image_2 = numpy_image_2.astype('float64')
+            else:
+                sum_image_2 += numpy_image_2.astype('float64')
+
+        nr = self.get_start_image()
+
+        average_image_2 = (sum_image_2 / num).astype('uint8')
+        picture_2 = Image.fromarray(average_image_2)
+        picture_2 = picture_2.resize((600, 400), resample=0)
+        picture_2 = ImageTk.PhotoImage(picture_2)
+
+        self.focus_cam_save_2 = True
+
+        if self.focus_cam_save_2:
+            folder_path_2 = 'C:/data/' + str(date.today()) + '/' + 'camera_2' + '/'
+            if not os.path.exists(folder_path_2):
+                os.makedirs(folder_path_2)
+
+            base_filename_2 = 'camera_2_' + str(date.today()) + '-' + str(int(nr))
+            filename_2 = base_filename_2 + '.bmp'
+            full_path_2 = os.path.join(folder_path_2, filename_2)
+            last_image_2 = picture_2
+
+            if last_image_2 is not None:
+                pil_image_2 = ImageTk.getimage(last_image_2)
+                pil_image_2.save(full_path_2)
+                print(f"Image of camera 2 taken over {num} averages saved as {full_path_2}")
+            else:
+                print("No image to save")
+
+
+    def focus_cam_acq_mono_3(self, num):
+        """
+        acquisition function for camera in single picture mode
+        """
+        sum_image_3 = None
+
+        for i in range(num):
+            self.cam_3.TriggerSoftware.send_command()
+            self.cam_3.ExposureTime.set(float(10000))  # TODO gain box
+            self.cam_3.Gain.set(float(1))  # TODO exposure box
 
             raw_image_3 = self.cam_3.data_stream[0].get_image()
             if raw_image_3 is None:
@@ -1418,16 +1565,6 @@ class Feedbacker(object):
                 print('oups3')
                 continue
 
-            if sum_image_1 is None:
-                sum_image_1 = numpy_image_1.astype('float64')
-            else:
-                sum_image_1 += numpy_image_1.astype('float64')
-
-            if sum_image_2 is None:
-                sum_image_2 = numpy_image_2.astype('float64')
-            else:
-                sum_image_2 += numpy_image_2.astype('float64')
-
             if sum_image_3 is None:
                 sum_image_3 = numpy_image_3.astype('float64')
             else:
@@ -1435,69 +1572,19 @@ class Feedbacker(object):
 
         nr = self.get_start_image()
 
-        average_image_1 = (sum_image_1 / num).astype('uint8')
-        picture_1 = Image.fromarray(average_image_1)
-        picture_1 = picture_1.resize((800, 600), resample=0)
-        picture_1 = ImageTk.PhotoImage(picture_1)
-
-        average_image_2 = (sum_image_2 / num).astype('uint8')
-        picture_2 = Image.fromarray(average_image_2)
-        picture_2 = picture_2.resize((800, 600), resample=0)
-        picture_2 = ImageTk.PhotoImage(picture_2)
-
         average_image_3 = (sum_image_3 / num).astype('uint8')
         picture_3 = Image.fromarray(average_image_3)
-        picture_3 = picture_3.resize((800, 600), resample=0)
+        picture_3 = picture_3.resize((600, 400), resample=0)
         picture_3 = ImageTk.PhotoImage(picture_3)
 
-        self.focus_cam_save_1 = False #TODO possibility to change
-        self.focus_cam_save_2 = False
-        self.focus_cam_save_3 = False
-
-        if self.focus_cam_save_1:
-            folder_path_1 = 'C:/data/' + str(date.today()) + '/' + 'camera_1' + '/'
-            if not os.path.exists(folder_path_1):
-                os.makedirs(folder_path_1)
-
-            base_filename_1 = 'camera_1' + str(date.today()) + '-' + str(int(nr))
-            filename_1 = base_filename_1 + '.bmp'
-            full_path_1 = os.path.join(folder_path_1, filename_1)
-            last_image_1 = picture_1
-
-            if last_image_1 is not None:
-                pil_image_1 = ImageTk.getimage(last_image_1)
-                pil_image_1.save(full_path_1)
-                print(f"Image saved as {full_path_1}")
-            else:
-                print("No image to save")
-
-        print(f'Mono acquisition mode - Image taken on camera 1 over {num} averages')
-
-        if self.focus_cam_save_2:
-            folder_path_2 = 'C:/data/' + str(date.today()) + '/' + 'camera_2' + '/'
-            if not os.path.exists(folder_path_2):
-                os.makedirs(folder_path_2)
-
-            base_filename_2 = 'camera_2' + str(date.today()) + '-' + str(int(nr))
-            filename_2 = base_filename_2 + '.bmp'
-            full_path_2 = os.path.join(folder_path_2, filename_2)
-            last_image_2 = picture_2
-
-            if last_image_2 is not None:
-                pil_image_2 = ImageTk.getimage(last_image_2)
-                pil_image_2.save(full_path_2)
-                print(f"Image saved as {full_path_2}")
-            else:
-                print("No image to save")
-
-        print(f'Mono acquisition mode - Image taken on camera 2 over {num} averages')
+        self.focus_cam_save_3 = True
 
         if self.focus_cam_save_3:
             folder_path_3 = 'C:/data/' + str(date.today()) + '/' + 'camera_3' + '/'
             if not os.path.exists(folder_path_3):
                 os.makedirs(folder_path_3)
 
-            base_filename_3 = 'camera_3' + str(date.today()) + '-' + str(int(nr))
+            base_filename_3 = 'camera_3_' + str(date.today()) + '-' + str(int(nr))
             filename_3 = base_filename_3 + '.bmp'
             full_path_3 = os.path.join(folder_path_3, filename_3)
             last_image_3 = picture_3
@@ -1505,16 +1592,25 @@ class Feedbacker(object):
             if last_image_3 is not None:
                 pil_image_3 = ImageTk.getimage(last_image_3)
                 pil_image_3.save(full_path_3)
-                print(f"Image saved as {full_path_3}")
+                print(f"Image of camera 3 taken over {num} averages saved as {full_path_3}")
             else:
                 print("No image to save")
 
-        print(f'Mono acquisition mode - Image taken on camera 3 over {num} averages')
 
-    def cam_mono_acq(self):
-        self.render_thread_mono = threading.Thread(target=self.init_cam_mono)
-        self.render_thread_mono.daemon = True
-        self.render_thread_mono.start()
+    def cam_mono_acq_1(self):
+        self.render_thread_mono_1 = threading.Thread(target=self.init_cam_mono_1)
+        self.render_thread_mono_1.daemon = True
+        self.render_thread_mono_1.start()
+
+    def cam_mono_acq_2(self):
+        self.render_thread_mono_2 = threading.Thread(target=self.init_cam_mono_2)
+        self.render_thread_mono_2.daemon = True
+        self.render_thread_mono_2.start()
+
+    def cam_mono_acq_3(self):
+        self.render_thread_mono_3 = threading.Thread(target=self.init_cam_mono_3)
+        self.render_thread_mono_3.daemon = True
+        self.render_thread_mono_3.start()
 
     def red_only_scan(self):
         """
@@ -1613,10 +1709,27 @@ class Feedbacker(object):
             start_time = time.time()
             self.strvar_setp.set(phi)
             self.set_setpoint()
+            t0 = time.time()
             im = self.take_image(int(self.ent_avgs.get()))
             self.save_im(im)
             self.plot_MCP(im)
-            #self.cam_mono_acq()
+            t1 = time.time()
+            print(f"Camera MCP {t1 - t0}")
+
+            """
+
+            if self.camera_daheng_1:
+                self.cam_mono_acq_1()  # Nozzle 1
+                time.sleep(1)
+            if self.camera_daheng_2:
+                self.cam_mono_acq_2()  # Focus
+                time.sleep(1)
+            if self.camera_daheng_3:
+                self.cam_mono_acq_3()  # Nozzle 2
+                time.sleep(1)
+                
+            """
+
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -1650,7 +1763,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                #self.cam_mono_acq()
+                # self.cam_mono_acq()
 
     def focus_position_scan_red(self):
         start = float(self.ent_RFP_from.get())
@@ -1669,7 +1782,7 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                #self.cam_mono_acq()
+                # self.cam_mono_acq()
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')

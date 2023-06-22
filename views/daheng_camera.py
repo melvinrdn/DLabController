@@ -7,6 +7,7 @@ import threading
 import os
 from datetime import date
 
+# TODO Reduce size window, scaling roi
 
 class CameraControl(object):
     def __init__(self):
@@ -113,7 +114,7 @@ class CameraControl(object):
         lbl_picture_timing.grid(row=9, column=0, sticky='nsew')
         self.ent_picture_timing.grid(row=9, column=1, padx=(0, 10))
 
-        self.img_canvas = tk.Canvas(frm_cam, height=540, width=720)
+        self.img_canvas = tk.Canvas(frm_cam, height=400, width=600)
         self.img_canvas.grid(row=0, sticky='nsew')
         self.img_canvas.configure(bg='grey')
         self.image = self.img_canvas.create_image(0, 0, anchor="nw")
@@ -204,7 +205,7 @@ class CameraControl(object):
             average_image = (sum_image / num).astype('uint8')
 
             full_average_image = Image.fromarray(average_image)
-            full_picture = full_average_image.resize((720, 540), resample=0)
+            full_picture = full_average_image.resize((600, 400), resample=0)
             full_picture = ImageTk.PhotoImage(full_picture)
             self.img_canvas.full_image = full_picture
 
@@ -213,7 +214,7 @@ class CameraControl(object):
 
             if self.img_canvas.full_image is not None:
                 picture = Image.fromarray(average_image)
-                picture = picture.resize((720, 540), resample=0)
+                picture = picture.resize((600, 400), resample=0)
                 picture = ImageTk.PhotoImage(picture)
 
             self.img_canvas.itemconfig(self.image, image=picture)
