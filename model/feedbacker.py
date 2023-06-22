@@ -69,7 +69,7 @@ class Feedbacker(object):
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
-        # self.f = open(self.autolog, "a+")
+        self.f = open(self.autolog, "a+")
 
         # creating frames
 
@@ -144,7 +144,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_flat)
 
-        text = '17'
+        text = '20'
         self.strvar_indexfft = tk.StringVar(self.win, text)
         lbl_indexfft = tk.Label(frm_ratio, text='Index fft:')
         lbl_angle = tk.Label(frm_ratio, text='Phase:')
@@ -172,13 +172,13 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_setp)
         lbl_pidp = tk.Label(frm_pid, text='P-value:')
-        self.strvar_pidp = tk.StringVar(self.win, '-0.2')
+        self.strvar_pidp = tk.StringVar(self.win, '-0.17')
         self.ent_pidp = tk.Entry(
             frm_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidp)
         lbl_pidi = tk.Label(frm_pid, text='I-value:')
-        self.strvar_pidi = tk.StringVar(self.win, '-0.8')
+        self.strvar_pidi = tk.StringVar(self.win, '-1.5')
         self.ent_pidi = tk.Entry(
             frm_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -189,14 +189,14 @@ class Feedbacker(object):
         but_pid_setk = tk.Button(frm_pid, text='Set PID values', command=self.set_pid_val)
 
         lbl_from = tk.Label(frm_phase_scan, text='From:')
-        self.strvar_from = tk.StringVar(self.win, '-3.1')
+        self.strvar_from = tk.StringVar(self.win, '-3.14')
         self.ent_from = tk.Entry(
             frm_phase_scan, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_from)
 
         lbl_to = tk.Label(frm_phase_scan, text='To:')
-        self.strvar_to = tk.StringVar(self.win, '3.1')
+        self.strvar_to = tk.StringVar(self.win, '3.14')
         self.ent_to = tk.Entry(
             frm_phase_scan, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -1023,7 +1023,7 @@ class Feedbacker(object):
             else:
                 pos = float(self.strvar_WPG_should.get())
 
-            print("WPG is moving..")
+            print("WPG is moving to {}".format(np.round(pos,2)))
             self.WPG.move_to(pos, True)
             print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
@@ -1231,7 +1231,7 @@ class Feedbacker(object):
         None
         """
         nr = self.get_start_image()
-        self.f = open(self.autolog, "a+")
+        #self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
 
@@ -1245,7 +1245,7 @@ class Feedbacker(object):
             np.round(float(self.lens_green.strvar_ben.get()), 3)) + '\t' + str(
             np.round(float(self.lens_red.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
-        self.f.close()
+        #self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
         """
@@ -1329,7 +1329,8 @@ class Feedbacker(object):
         Exception
             If there is an error in retrieving the starting image index.
         """
-        self.f = open(self.autolog, "a+")
+        #self.f = open(self.autolog, "a+")
+        self.f.seek(0)
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
@@ -1339,7 +1340,7 @@ class Feedbacker(object):
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
-        self.f.close()
+        #self.f.close()
         return start_image
 
     def init_cam_mono_1(self):
@@ -1673,6 +1674,12 @@ class Feedbacker(object):
         self.var_wprpower.set(1)
         self.var_wpgpower.set(1)
 
+        print("Power Values for R: ")
+        print(pr)
+        print("Power Values for G: ")
+        print(pg)
+
+
         for i in np.arange(0, steps):
             r = pr[i]
             g = pg[i]
@@ -1786,7 +1793,7 @@ class Feedbacker(object):
 
     def measure_all(self):
         self.but_meas_all.config(fg='red')
-        self.f = open(self.autolog, "a+")
+        #self.f = open(self.autolog, "a+")
 
         status = self.var_scan_wp_option.get()
         print(status)
@@ -1862,7 +1869,7 @@ class Feedbacker(object):
         else:
             print("something fishy is going on")
 
-        self.f.close()
+        #self.f.close()
         self.but_meas_all.config(fg='green')
 
     def measure(self):
@@ -1876,7 +1883,7 @@ class Feedbacker(object):
         self.but_meas_scan.config(fg='red')
 
         # if self.var_phasescan.get() == 1:
-        self.f = open(self.autolog, "a+")
+        #self.f = open(self.autolog, "a+")
         if self.var_background.get() == 1:
             self.f.write(
                 "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
@@ -1887,7 +1894,7 @@ class Feedbacker(object):
             self.f.write(
                 "# PhaseScan, " + self.ent_comment.get() + "\n")
             self.phase_scan()
-        self.f.close()
+        #self.f.close()
 
         self.but_meas_scan.config(fg='green')
 
@@ -1906,7 +1913,7 @@ class Feedbacker(object):
         None
         """
         self.but_meas_simple.config(fg='red')
-        self.f = open(self.autolog, "a+")
+        #(self.autolog, "a+")
 
         # start_image = self.get_start_image()
 
@@ -1920,7 +1927,7 @@ class Feedbacker(object):
         self.save_im(im)
         self.plot_MCP(im)
         self.but_meas_simple.config(fg='green')
-        self.f.close()
+        #self.f.close()
 
     def feedback(self):
         """
@@ -2339,7 +2346,7 @@ class Feedbacker(object):
         -------
         None
         """
-        # self.f.close()
+        self.f.close()
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()
