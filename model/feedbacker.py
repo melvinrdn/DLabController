@@ -63,9 +63,14 @@ class Feedbacker(object):
 
         self.WPG = None
         self.WPR = None
+        self.WPDummy = None
         self.Delay = None
 
         self.meas_has_started = False
+
+        self.scan_is_done = True
+
+        self.scan_is_done_threading = threading.Event()
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
@@ -217,25 +222,31 @@ class Feedbacker(object):
         # Daheng camera
 
         self.var_camera_1 = tk.IntVar()
-        self.cb_camera_1 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1, onvalue=1,
-                                           offvalue=0,
-                                           command=None)
+        self.cb_camera_1 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1,
+                                          onvalue=1,
+                                          offvalue=0,
+                                          command=None)
 
         self.var_camera_3 = tk.IntVar()
-        self.cb_camera_3 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3, onvalue=1,
-                                           offvalue=0,
-                                           command=None)
+        self.cb_camera_3 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3,
+                                          onvalue=1,
+                                          offvalue=0,
+                                          command=None)
 
         self.var_camera_2 = tk.IntVar()
-        self.cb_camera_2 = tk.Checkbutton(frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2, onvalue=1,
-                                           offvalue=0,
-                                           command=None)
-
+        self.cb_camera_2 = tk.Checkbutton(frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2,
+                                          onvalue=1,
+                                          offvalue=0,
+                                          command=None)
 
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
+        self.var_split_scan = tk.IntVar()
+        self.cb_split_scan = tk.Checkbutton(frm_measure, text='Split Scan', variable=self.var_split_scan, onvalue=1,
+                                            offvalue=0,
+                                            command=None)
 
         self.var_background = tk.IntVar()
         self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
@@ -262,7 +273,7 @@ class Feedbacker(object):
 
         lbl_Stage = tk.Label(frm_stage, text='Stage')
         lbl_Nr = tk.Label(frm_stage, text='#')
-        lbl_is = tk.Label(frm_stage, text='is')
+        lbl_is = tk.Label(frm_stage, text='is (deg)')
         lbl_should = tk.Label(frm_stage, text='should')
 
         lbl_WPR = tk.Label(frm_stage, text='WP red:')
@@ -303,7 +314,8 @@ class Feedbacker(object):
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_should)
-        self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
+        # self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
+        self.strvar_WPG_Nr = tk.StringVar(self.win, '83837714')
         self.ent_WPG_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -316,6 +328,36 @@ class Feedbacker(object):
         self.var_wpgpower = tk.IntVar()
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
+
+        lbl_WPDummy = tk.Label(frm_stage, text='Dummy Stage:')
+        self.strvar_WPDummy_is = tk.StringVar(self.win, '')
+        self.ent_WPDummy_is = tk.Entry(
+            frm_stage, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPDummy_is)
+        self.strvar_WPDummy_should = tk.StringVar(self.win, '')
+        self.ent_WPDummy_should = tk.Entry(
+            frm_stage, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPDummy_should)
+        # self.strvar_WPDummy_Nr = tk.StringVar(self.win, '83837725')
+        self.strvar_WPDummy_Nr = tk.StringVar(self.win, '83837725')
+        self.ent_WPDummy_Nr = tk.Entry(
+            frm_stage, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_WPDummy_Nr)
+        self.but_WPDummy_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPDummy)
+        self.but_WPDummy_Home = tk.Button(frm_stage, text='Home', command=self.home_WPDummy)
+        self.but_WPDummy_Read = tk.Button(frm_stage, text='Read', command=self.read_WPDummy)
+        self.but_WPDummy_Move = tk.Button(frm_stage, text='Move', command=self.move_WPDummy)
+
+        self.var_WPDummypower = tk.IntVar()
+        self.cb_WPDummypower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_WPDummypower, onvalue=1, offvalue=0,
+                                          command=None)
+
+
+
+
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -379,7 +421,7 @@ class Feedbacker(object):
         self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
-        self.strvar_red_power = tk.StringVar(self.win, '4.5')
+        self.strvar_red_power = tk.StringVar(self.win, '4.34')
         self.ent_red_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_power)
@@ -397,13 +439,13 @@ class Feedbacker(object):
             textvariable=self.strvar_red_current_power)
 
         lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
-        self.strvar_green_power = tk.StringVar(self.win, '345')
+        self.strvar_green_power = tk.StringVar(self.win, '307.8')
         self.ent_green_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_power)
 
         lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
-        self.strvar_green_phase = tk.StringVar(self.win, '44.02')
+        self.strvar_green_phase = tk.StringVar(self.win, '42.08')
         self.ent_green_phase = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_phase)
@@ -626,6 +668,7 @@ class Feedbacker(object):
         self.but_meas_all.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         self.but_meas_scan.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
         self.but_meas_simple.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        self.cb_split_scan.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
         lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -645,18 +688,24 @@ class Feedbacker(object):
         lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
         lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
         lbl_Delay.grid(row=3, column=1, pady=2, sticky='nsew')
+        lbl_WPDummy.grid(row=4, column=1, pady=2, sticky='nsew')
+
 
         self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
         self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
         self.ent_Delay_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
+        self.ent_WPDummy_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
 
         self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_WPDummy_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
         self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_WPDummy_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+
 
         self.but_WPR_Ini.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
         self.but_WPR_Home.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
@@ -668,6 +717,11 @@ class Feedbacker(object):
         self.but_WPG_Read.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
         self.but_WPG_Move.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
+        self.but_WPDummy_Ini.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPDummy_Home.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPDummy_Read.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_WPDummy_Move.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+
         self.but_Delay_Ini.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
         self.but_Delay_Home.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
         self.but_Delay_Read.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
@@ -675,6 +729,8 @@ class Feedbacker(object):
 
         self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
         self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
+        self.cb_WPDummypower.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
+
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -932,7 +988,8 @@ class Feedbacker(object):
             self.WPR.move_to(pos, True)
             print(f"WPR moved to {str(self.WPR.position)}")
             self.read_WPR()
-        except:
+        except Exception as e:
+            print(e)
             print("Impossible to move WPR :(")
 
     def init_WPG(self):
@@ -968,6 +1025,8 @@ class Feedbacker(object):
         -------
         None
         """
+
+        """
         try:
             self.WPG.move_home(blocking=True)
             self.but_WPG_Home.config(fg='green')
@@ -976,6 +1035,9 @@ class Feedbacker(object):
         except:
             self.but_WPG_Home.config(fg='red')
             print("Not able to home WPG")
+        """
+
+        print("Non")
 
     def read_WPG(self):
         """
@@ -1019,16 +1081,153 @@ class Feedbacker(object):
                 if power > float(self.ent_green_power.get()):
                     power = float(self.ent_green_power.get())
                     print("Value above maximum! Desired power set to maximum instead")
-                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))
+                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))+90
             else:
                 pos = float(self.strvar_WPG_should.get())
 
-            print("WPG is moving to {}".format(np.round(pos,2)))
+            print("WPG is moving to {}".format(np.round(pos, 2)))
             self.WPG.move_to(pos, True)
             print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
-        except:
+
+            try:
+                self.WPDummy.move_to(pos, True)
+                print(f"Dummy moved to {str(self.WPDummy.position)}")
+                self.read_WPDummy()
+            except Exception as e:
+                print(e)
+                print("Impossible to move Dummy :(")
+
+
+
+        except Exception as e:
+            print(e)
             print("Impossible to move WPG :(")
+            print("Let us try to re-initialize the WPG :(")
+            try:
+                self.WPG.disable()
+                time.sleep(1)
+                self.init_WPG()
+                self.WPG.move_to(pos, True)
+                print(f"WPG moved to {str(self.WPG.position)}")
+                self.read_WPG()
+            except Exception as ee:
+                print(ee)
+                print("Still impossible to move WPG :(")
+
+    def init_WPDummy(self):
+        """
+        Initializes the Dummy waveplate motor object.
+
+        Raises
+        ------
+        Exception
+            If the motor fails to initialize.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            self.WPDummy = apt.Motor(int(self.ent_WPDummy_Nr.get()))
+            self.but_WPDummy_Ini.config(fg='green')
+            print("WPG connected")
+        except:
+            self.but_WPDummy_Ini.config(fg='red')
+            print("Not able to initalize Dummy Waveplate")
+
+    def home_WPDummy(self):
+        """
+        Homes the Dummy waveplate motor object.
+        Raises
+        ------
+        Exception
+            If the motor fails to home.
+
+        Returns
+        -------
+        None
+        """
+
+
+        try:
+            self.WPDummy.move_home(blocking=True)
+            self.but_WPDummy_Home.config(fg='green')
+            print("WPDummy homed!")
+            self.read_WPDummy()
+        except:
+            self.but_WPDummy_Home.config(fg='red')
+            print("Not able to home Dummy waveplate")
+
+
+        #print("Non")
+
+    def read_WPDummy(self):
+        """
+        Reads the current position of the green waveplate motor.
+
+        Raises
+        ------
+        Exception
+            If the position cannot be read.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            pos = self.WPDummy.position
+            self.strvar_WPDummy_is.set(pos)
+            #self.strvar_green_current_power.set(
+            #    np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
+            #             3))
+
+        except:
+            print("Impossible to read Dummy Waveplate position")
+
+    def move_WPDummy(self):
+        """
+        Moves the Dummy waveplate motor to the desired position.
+
+        Raises
+        ------
+        Exception
+            If the motor fails to move to the desired position.
+
+        Returns
+        -------
+        None
+        """
+        try:
+            if self.var_WPDummypower.get() == 1:
+                power = float(self.strvar_WPDummy_should.get())
+                if power > float(self.ent_green_power.get()):
+                    power = float(self.ent_green_power.get())
+                    print("Value above maximum! Desired power set to maximum instead")
+                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))+90
+            else:
+                pos = float(self.strvar_WPDummy_should.get())
+
+            print("WP Dummy is moving to {}".format(np.round(pos, 2)))
+            self.WPDummy.move_to(pos, True)
+            print(f"WPG moved to {str(self.WPDummy.position)}")
+            self.read_WPDummy()
+        except Exception as e:
+            print(e)
+            print("Impossible to move WPDummy :(")
+            print("Let us try to re-initialize the WPDUMMY :(")
+            try:
+                self.WPDummy.disable()
+                time.sleep(1)
+                self.init_WPDummy()
+                self.WPDummy.move_to(pos, True)
+                print(f"WPG moved to {str(self.WPDummy.position)}")
+                self.read_WPDummy()
+            except Exception as ee:
+                print(ee)
+                print("Still impossible to move WPDummy :(")
+
+
 
     def init_Delay(self):
         """
@@ -1231,21 +1430,31 @@ class Feedbacker(object):
         None
         """
         nr = self.get_start_image()
-        #self.f = open(self.autolog, "a+")
+        # self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
         cv2.imwrite(filename, image)
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        try:
+            rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
+        except:
+            rl = np.nan
+
+        try:
+            gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
+        except:
+            gl = np.nan
+
         log_entry = str(
             int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
             np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),
                      2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
-            np.round(float(self.lens_green.strvar_ben.get()), 3)) + '\t' + str(
-            np.round(float(self.lens_red.strvar_ben.get()), 3)) + '\t' + timestamp + '\n'
+            gl) + '\t' + str(
+            rl) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
-        #self.f.close()
+        # self.f.close()
 
     def save_image(self, image, image_nr, image_info="Test"):
         """
@@ -1272,6 +1481,51 @@ class Feedbacker(object):
         self.f.close()
         return 1
 
+    def split_threading(self):
+        total_steps = int(self.ent_ratio_steps.get())
+        inital_start = float(self.ent_ratio_from.get())
+        initial_end = float(self.ent_ratio_to.get())
+        # now, split WP positions in steps of 10!
+
+        all_steps = np.linspace(inital_start, initial_end, total_steps)
+        nr_blocks = int(np.ceil(total_steps / 10))
+        last_block_length = int(np.mod(total_steps, 10))
+        self.f.write('# this scan is split in {} blocks, from {} to {} with {} steps: \n'.format(nr_blocks, inital_start, initial_end, total_steps))
+        print("I will measure ", nr_blocks, " blocks")
+        if nr_blocks > 1:
+            for i in range(nr_blocks):
+                self.scan_is_done_threading.clear()
+                self.f.write('# PART {} \n'.format(i))
+                if i < (nr_blocks - 1):
+                    print("I am in the first block!")
+                    print(str(all_steps[int(i * 10)]))
+                    self.strvar_ratio_from.set(str(all_steps[int(i * 10)]))
+                    self.strvar_ratio_to.set(str(all_steps[int((i + 1) * 10 - 1)]))
+                    self.strvar_ratio_steps.set(str(10))
+                else:
+                    print("I am in the last block!")
+                    self.strvar_ratio_from.set(str(all_steps[int(i * 10)]))
+                    self.strvar_ratio_to.set(str(all_steps[-1]))
+                    if last_block_length == 0:
+                        self.strvar_ratio_steps.set(str(10))
+                    else:
+                        self.strvar_ratio_steps.set(str(last_block_length))
+
+                self.stop_mcp = False
+                self.mcp_thread = threading.Thread(target=self.measure_all)
+                self.mcp_thread.daemon = True
+                self.mcp_thread.start()
+                print("I started the measure_all thread ")
+                self.scan_is_done = False
+                #while not self.scan_is_done:
+                #    pass
+                self.scan_is_done_threading.wait()
+
+        self.strvar_ratio_from.set(str(inital_start))
+        self.strvar_ratio_to.set(str(initial_end))
+        self.strvar_ratio_steps.set(str(total_steps))
+        print("Measurement Done!!!")
+
     def enabl_mcp_all(self):
         """
         Enables the MCP measurement.
@@ -1280,10 +1534,19 @@ class Feedbacker(object):
         -------
         None
         """
-        self.stop_mcp = False
-        self.mcp_thread = threading.Thread(target=self.measure_all)
-        self.mcp_thread.daemon = True
-        self.mcp_thread.start()
+
+        if self.var_split_scan.get() == 1:
+            if self.var_scan_wp_option.get() == "Red/Green Ratio":
+                self.stop_mcp = False
+                self.split = threading.Thread(target=self.split_threading)
+                self.split.daemon = True
+                self.split.start()
+
+        else:
+            self.stop_mcp = False
+            self.mcp_thread = threading.Thread(target=self.measure_all)
+            self.mcp_thread.daemon = True
+            self.mcp_thread.start()
 
     def enabl_mcp(self):
         """
@@ -1329,7 +1592,7 @@ class Feedbacker(object):
         Exception
             If there is an error in retrieving the starting image index.
         """
-        #self.f = open(self.autolog, "a+")
+        # self.f = open(self.autolog, "a+")
         self.f.seek(0)
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
@@ -1340,7 +1603,7 @@ class Feedbacker(object):
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
-        #self.f.close()
+        # self.f.close()
         return start_image
 
     def init_cam_mono_1(self):
@@ -1493,7 +1756,6 @@ class Feedbacker(object):
             else:
                 print("No image to save")
 
-
     def focus_cam_acq_mono_2(self, num):
         """
         acquisition function for camera in single picture mode
@@ -1545,7 +1807,6 @@ class Feedbacker(object):
             else:
                 print("No image to save")
 
-
     def focus_cam_acq_mono_3(self, num):
         """
         acquisition function for camera in single picture mode
@@ -1596,7 +1857,6 @@ class Feedbacker(object):
                 print(f"Image of camera 3 taken over {num} averages saved as {full_path_3}")
             else:
                 print("No image to save")
-
 
     def cam_mono_acq_1(self):
         self.render_thread_mono_1 = threading.Thread(target=self.init_cam_mono_1)
@@ -1679,14 +1939,18 @@ class Feedbacker(object):
         print("Power Values for G: ")
         print(pg)
 
-
         for i in np.arange(0, steps):
             r = pr[i]
             g = pg[i]
-            self.strvar_WPR_should.set(str(r))
-            self.move_WPR()
+
             self.strvar_WPG_should.set(str(1e3 * g))
             self.move_WPG()
+            time.sleep(1)
+
+            self.strvar_WPR_should.set(str(r))
+            self.move_WPR()
+            time.sleep(1)
+
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
@@ -1792,8 +2056,9 @@ class Feedbacker(object):
                 # self.cam_mono_acq()
 
     def measure_all(self):
+        print("yay i made it into the measure all function")
         self.but_meas_all.config(fg='red')
-        #self.f = open(self.autolog, "a+")
+        # self.f = open(self.autolog, "a+")
 
         status = self.var_scan_wp_option.get()
         print(status)
@@ -1869,9 +2134,11 @@ class Feedbacker(object):
         else:
             print("something fishy is going on")
 
-        #self.f.close()
+        # self.f.close()
         self.but_meas_all.config(fg='green')
-
+        # Indicate completion by setting the event
+        self.scan_is_done = True
+        self.scan_is_done_threading.set()
     def measure(self):
         """
         Performs a phase scan
@@ -1883,7 +2150,7 @@ class Feedbacker(object):
         self.but_meas_scan.config(fg='red')
 
         # if self.var_phasescan.get() == 1:
-        #self.f = open(self.autolog, "a+")
+        # self.f = open(self.autolog, "a+")
         if self.var_background.get() == 1:
             self.f.write(
                 "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
@@ -1894,7 +2161,7 @@ class Feedbacker(object):
             self.f.write(
                 "# PhaseScan, " + self.ent_comment.get() + "\n")
             self.phase_scan()
-        #self.f.close()
+        # self.f.close()
 
         self.but_meas_scan.config(fg='green')
 
@@ -1913,7 +2180,7 @@ class Feedbacker(object):
         None
         """
         self.but_meas_simple.config(fg='red')
-        #(self.autolog, "a+")
+        # (self.autolog, "a+")
 
         # start_image = self.get_start_image()
 
@@ -1927,7 +2194,7 @@ class Feedbacker(object):
         self.save_im(im)
         self.plot_MCP(im)
         self.but_meas_simple.config(fg='green')
-        #self.f.close()
+        # self.f.close()
 
     def feedback(self):
         """

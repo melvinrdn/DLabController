@@ -44,9 +44,9 @@ class Calibrator(object):
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
         self.ax2r_blit = self.figr.canvas.copy_from_bbox(self.ax2r.bbox)
 
-        self.calibration_angle_red, self.calibration_power_red = np.loadtxt('ressources/calibration/wpr_red_calib.txt', delimiter='\t', skiprows=0,
+        self.calibration_angle_red, self.calibration_power_red = np.loadtxt('ressources/calibration/wpr_red_calib_new.txt', delimiter='\t', skiprows=0,
                                                                             unpack=True)
-        self.calibration_angle_green, self.calibration_power_green = np.loadtxt('ressources/calibration/wpg_green_calib.txt', delimiter='\t', skiprows=0,
+        self.calibration_angle_green, self.calibration_power_green = np.loadtxt('ressources/calibration/wpg_green_calib_broken_one.txt', delimiter='\t', skiprows=0,
                                                                             unpack=True)
 
         self.ax1r.plot(self.calibration_angle_red, self.calibration_power_red, 'ro')

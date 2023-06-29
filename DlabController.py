@@ -36,6 +36,8 @@ class DLabController(object):
                              tabposition=tk.W + tk.N,
                              tabplacement=tk.N + tk.EW)
 
+
+
         self.publish_window_green = None
         self.publish_window_red = None
 

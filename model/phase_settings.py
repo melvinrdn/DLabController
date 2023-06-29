@@ -1266,6 +1266,25 @@ class TypeZernike(BaseType):
         p14 = coeffs[13] * rho ** 4 * np.sin(4 * theta)
         p15 = coeffs[14] * rho ** 4 * np.cos(4 * theta)
 
+        """
+        p1 = coeffs[0] * 1 * np.cos(0 * theta)
+        p2 = coeffs[1] * 2 * rho * np.cos(1 * theta)
+        p3 = coeffs[2] * 2 * rho * np.sin(1 * theta)
+        p4 = coeffs[3] * np.sqrt(3) * (2 * rho ** 2 - 1) 
+        p5 = coeffs[4] * np.sqrt(6) * rho ** 2 * np.cos(2 * theta)
+        p6 = coeffs[5] * np.sqrt(6) * rho ** 2 * np.sin(2 * theta)
+        p7 = coeffs[6] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.cos(1 * theta)
+        p8 = coeffs[7] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta)
+        p9 = coeffs[8] * np.sqrt(8) * rho ** 3 * np.cos(3 * theta)
+        p10 = coeffs[9] * np.sqrt(8) * rho ** 3 * np.sin(3 * theta)
+        p11 = coeffs[10] * np.sqrt(5) * (6 * rho ** 4 - 6 * rho ** 2 + 1)
+        p12 = coeffs[11] * np.sqrt(10) * (4 * rho ** 4 - 3 * rho ** 2) * np.sin(2 * theta)
+        p13 = coeffs[12] * np.sqrt(10) * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
+        p14 = coeffs[13] * np.sqrt(10) * rho ** 4 * np.sin(4 * theta)
+        p15 = coeffs[14] * np.sqrt(10) * rho ** 4 * np.cos(4 * theta)
+        
+        """
+
         phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15)
 
         return phase
