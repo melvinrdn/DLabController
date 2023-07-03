@@ -421,7 +421,9 @@ class Feedbacker(object):
         self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
+
         self.strvar_red_power = tk.StringVar(self.win, '4.34')
+
         self.ent_red_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_power)
@@ -439,7 +441,9 @@ class Feedbacker(object):
             textvariable=self.strvar_red_current_power)
 
         lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
+
         self.strvar_green_power = tk.StringVar(self.win, '307.8')
+
         self.ent_green_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_power)
@@ -455,6 +459,7 @@ class Feedbacker(object):
         self.ent_green_current_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
+
 
         # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
@@ -596,6 +601,7 @@ class Feedbacker(object):
 
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
+
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -613,12 +619,14 @@ class Feedbacker(object):
         frm_ratio.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_pid.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
+
         frm_ratio.config(width=162, height=104)
 
         frm_ratio.grid_propagate(False)
 
         # setting up buttons frm_spc
         frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
+
         but_spc_start.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         but_spc_stop.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         but_spc_phi.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
@@ -679,11 +687,13 @@ class Feedbacker(object):
         self.ent_steps.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
+
         # setting up frm_stage
         lbl_Stage.grid(row=0, column=1, pady=2, sticky='nsew')
         lbl_Nr.grid(row=0, column=2, pady=2, sticky='nsew')
         lbl_is.grid(row=0, column=3, pady=2, sticky='nsew')
         lbl_should.grid(row=0, column=4, pady=2, sticky='nsew')
+
 
         lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
         lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
@@ -694,16 +704,21 @@ class Feedbacker(object):
         self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
         self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
         self.ent_Delay_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
+
         self.ent_WPDummy_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
+
 
         self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+
         self.ent_WPDummy_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
 
         self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+
         self.ent_WPDummy_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
 
 
@@ -730,7 +745,6 @@ class Feedbacker(object):
         self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
         self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
         self.cb_WPDummypower.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
-
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -857,7 +871,9 @@ class Feedbacker(object):
         self.ent_indexfft.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         lbl_angle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.lbl_angle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+
         lbl_phi.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
         self.ent_flat.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
         lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
