@@ -1250,6 +1250,7 @@ class TypeZernike(BaseType):
         theta = np.arctan2(Y, X)
         rho = np.sqrt(X ** 2 + Y ** 2)
 
+        """
         p1 = coeffs[0] * 1 * np.cos(0 * theta)
         p2 = coeffs[1] * rho * np.cos(1 * theta)
         p3 = coeffs[2] * rho * np.sin(1 * theta)
@@ -1265,8 +1266,8 @@ class TypeZernike(BaseType):
         p13 = coeffs[12] * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
         p14 = coeffs[13] * rho ** 4 * np.sin(4 * theta)
         p15 = coeffs[14] * rho ** 4 * np.cos(4 * theta)
-
         """
+
         p1 = coeffs[0] * 1 * np.cos(0 * theta)
         p2 = coeffs[1] * 2 * rho * np.cos(1 * theta)
         p3 = coeffs[2] * 2 * rho * np.sin(1 * theta)
@@ -1282,8 +1283,6 @@ class TypeZernike(BaseType):
         p13 = coeffs[12] * np.sqrt(10) * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
         p14 = coeffs[13] * np.sqrt(10) * rho ** 4 * np.sin(4 * theta)
         p15 = coeffs[14] * np.sqrt(10) * rho ** 4 * np.cos(4 * theta)
-        
-        """
 
         phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15)
 
