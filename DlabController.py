@@ -36,6 +36,8 @@ class DLabController(object):
                              tabposition=tk.W + tk.N,
                              tabplacement=tk.N + tk.EW)
 
+
+
         self.publish_window_green = None
         self.publish_window_red = None
 
@@ -133,7 +135,7 @@ class DLabController(object):
         but_andor_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
         but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
-        but_exit = ttk.Button(self.frm_bottom_side_panel, text='EXIT', command=self.exit_prog)
+        but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
         but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
         but_feedback = ttk.Button(self.frm_bottom_green, text='Feedbacker', command=self.open_feedback_window)

@@ -7,14 +7,14 @@ import threading
 import os
 from datetime import date
 
+# TODO Reduce size window, scaling roi
 
 class CameraControl(object):
     def __init__(self):
         self.cam = None
         self.roi = None
 
-
-        self.initial_roi = (0, 1440, 0, 1080)
+        self.initial_roi = (0, 1080, 0, 1440)
 
         self.win = tk.Toplevel()
 
@@ -23,7 +23,7 @@ class CameraControl(object):
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        frm_cam = ttk.LabelFrame(self.win, text="Camera 1")
+        frm_cam = ttk.LabelFrame(self.win, text="Camera")
         frm_controls = ttk.LabelFrame(self.win, text="Camera control")
 
         frm_cam.grid(row=0, column=0, sticky='nsew')
@@ -44,12 +44,12 @@ class CameraControl(object):
                                      textvariable=self.strvar_cam_ind)
 
         lbl_cam_exp = ttk.Label(frm_cam_but_set, text='Exposure (µs):')
-        self.strvar_cam_exp = tk.StringVar(self.win, '10000')
+        self.strvar_cam_exp = tk.StringVar(self.win, '1000000')
         self.ent_cam_exp = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                      textvariable=self.strvar_cam_exp)
 
         lbl_cam_gain = ttk.Label(frm_cam_but_set, text='Gain (0-24):')
-        self.strvar_cam_gain = tk.StringVar(self.win, '1')
+        self.strvar_cam_gain = tk.StringVar(self.win, '24')
         self.ent_cam_gain = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                       textvariable=self.strvar_cam_gain)
 
@@ -78,6 +78,11 @@ class CameraControl(object):
         self.ent_roi_y2 = ttk.Entry(frm_cam_but_set, width=8, validate='all',
                                    textvariable=self.strvar_roi_y2)
 
+        lbl_picture_timing = ttk.Label(frm_cam_but_set, text='Picture every (µs):')
+        self.strvar_picture_timing = tk.StringVar(self.win, '10000')
+        self.ent_picture_timing = ttk.Entry(frm_cam_but_set, width=8, validate='all',
+                                   textvariable=self.strvar_picture_timing)
+
         but_roi_select.grid(row=1, column=1)
         but_roi_reset.grid(row=1, column=2)
         lbl_roi_x1.grid(row=2, column=0, sticky='nsew')
@@ -95,18 +100,21 @@ class CameraControl(object):
         but_roi_select.grid(row=1, column=1)
         but_roi_reset.grid(row=1, column=2)
 
-        frm_cam_but_set.grid(row=0, column=2, sticky='nsew')
+
         lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
         self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
+        frm_cam_but_set.grid(row=0, column=2, sticky='nsew')
+        frm_cam_but.grid(row=1, column=0, sticky='nsew')
         lbl_cam_exp.grid(row=6, column=0, sticky='nsew')
         self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10))
         lbl_cam_gain.grid(row=7, column=0, sticky='nsew')
         self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10))
-        frm_cam_but.grid(row=1, column=0, sticky='nsew')
         lbl_cam_time.grid(row=8, column=0, sticky='nsew')
         self.ent_cam_time.grid(row=8, column=1, padx=(0, 10))
+        lbl_picture_timing.grid(row=9, column=0, sticky='nsew')
+        self.ent_picture_timing.grid(row=9, column=1, padx=(0, 10))
 
-        self.img_canvas = tk.Canvas(frm_cam, height=540, width=720)
+        self.img_canvas = tk.Canvas(frm_cam, height=400, width=600)
         self.img_canvas.grid(row=0, sticky='nsew')
         self.img_canvas.configure(bg='grey')
         self.image = self.img_canvas.create_image(0, 0, anchor="nw")
@@ -197,7 +205,7 @@ class CameraControl(object):
             average_image = (sum_image / num).astype('uint8')
 
             full_average_image = Image.fromarray(average_image)
-            full_picture = full_average_image.resize((720, 540), resample=0)
+            full_picture = full_average_image.resize((600, 400), resample=0)
             full_picture = ImageTk.PhotoImage(full_picture)
             self.img_canvas.full_image = full_picture
 
@@ -206,7 +214,7 @@ class CameraControl(object):
 
             if self.img_canvas.full_image is not None:
                 picture = Image.fromarray(average_image)
-                picture = picture.resize((720, 540), resample=0)
+                picture = picture.resize((600, 400), resample=0)
                 picture = ImageTk.PhotoImage(picture)
 
             self.img_canvas.itemconfig(self.image, image=picture)
@@ -326,10 +334,11 @@ class CameraControl(object):
             self.cam_mono_acq()
             self.cam_save()
             print('image saved')
-            self.win.after(15000, self.timed_mono_acq)
+            timing = int(self.ent_picture_timing.get())
+            self.win.after(timing, self.timed_mono_acq)
 
     def cam_save(self):
-        folder_path = 'C:/data/' + str(date.today()) + '/' + 'focus_camera' + '/'
+        folder_path = 'C:/data/' + str(date.today()) + '/' + 'camera_' + str(int(self.ent_cam_ind.get())) + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
