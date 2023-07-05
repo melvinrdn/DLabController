@@ -210,7 +210,9 @@ class DLabController(object):
         self.ent_scr_green.config(state='disabled')
         self.phase_map_green = self.get_phase_green()
 
+        print(f"g1, {np.max(self.phase_map_green)}")
         self.phase_map_green = (self.phase_map_green % (bit_depth + 1)).astype(np.uint16)
+        print(f"g2, {np.max(self.phase_map_green)}")
 
         self.publish_window_green = int(self.ent_scr_green.get())
         slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
@@ -228,6 +230,10 @@ class DLabController(object):
         """
         self.ent_scr_red.config(state='disabled')
         self.phase_map_red = self.get_phase_red()
+
+        print(f"r1, {np.max(self.phase_map_red)}")
+        self.phase_map_red = (self.phase_map_red % (bit_depth + 1)).astype(np.uint16)
+        print(f"r2, {np.max(self.phase_map_red)}")
 
         self.publish_window_red = int(self.ent_scr_red.get())
         slm.SLM_Disp_Open(int(self.ent_scr_red.get()))

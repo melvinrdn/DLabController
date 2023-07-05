@@ -218,7 +218,8 @@ class TypeBackground(BaseType):
             phase = self.img
         else:
             phase = np.zeros(slm_size)
-        return phase
+        return (phase % (bit_depth + 1)).astype(np.uint16)
+
 
     def save_(self):
         """
@@ -684,8 +685,12 @@ class TypeLens(BaseType):
         [X, Y] = np.meshgrid(x, y)
         R = np.sqrt(X ** 2 + Y ** 2)  # radius on a 2d array
         Z = rad_sign * (np.sqrt(rad ** 2 + R ** 2) - rad)
-        Z_phi = Z / wavelength  # translating meters to wavelengths and phase #TODO wavelength depedency !!
+        Z_phi = Z / wavelength * bit_depth # translating meters to wavelengths and phase #TODO wavelength depedency !!
+        print(f"lens1, {np.max(Z_phi)}")
         del X, Y, R, Z
+
+        Z_phi = (Z_phi % (bit_depth + 1)).astype(np.uint16)
+        print(f"lens2, {np.max(Z_phi)}")
 
         return Z_phi
 
@@ -1146,7 +1151,10 @@ class TypeVortex(BaseType):
         y = np.linspace(-chip_height , chip_height , slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
-        phase = theta * vor / (2*np.pi)
+        phase = theta * vor / (2*np.pi) * bit_depth
+        print(f"vortex1, {np.max(phase)}")
+        phase = (phase % (bit_depth + 1)).astype(np.uint16)
+        print(f"vortex2, {np.max(phase)}")
         return phase
 
     def save_(self):
@@ -1251,7 +1259,7 @@ class TypeZernike(BaseType):
         rho = np.sqrt(X ** 2 + Y ** 2)
 
         phase = np.zeros_like(X)
-        desired_radius = 10
+        desired_radius = np.max(rho)/2
 
         indices = np.where(rho <= desired_radius)
         phase[indices] = (
@@ -1273,6 +1281,11 @@ class TypeZernike(BaseType):
                 coeffs[13] * np.sqrt(10) * rho[indices] ** 4 * np.sin(4 * theta[indices]) +
                 coeffs[14] * np.sqrt(10) * rho[indices] ** 4 * np.cos(4 * theta[indices])
         )
+
+        print(f"zernike1, {np.max(phase)}")
+
+        phase = (phase % (bit_depth + 1)).astype(np.uint16)
+        print(f"zernike2, {np.max(phase)}")
 
         return phase
 
