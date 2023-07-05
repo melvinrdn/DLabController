@@ -119,8 +119,6 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        self.ax_green.axes.xaxis.set_visible(False)
-        self.ax_green.axes.yaxis.set_visible(False)
 
         self.ax_red.axes.xaxis.set_visible(False)
         self.ax_red.axes.yaxis.set_visible(False)
@@ -211,6 +209,8 @@ class DLabController(object):
         """
         self.ent_scr_green.config(state='disabled')
         self.phase_map_green = self.get_phase_green()
+
+        self.phase_map_green = (self.phase_map_green % (bit_depth + 1)).astype(np.uint16)
 
         self.publish_window_green = int(self.ent_scr_green.get())
         slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
@@ -341,8 +341,9 @@ class DLabController(object):
         None
         """
         self.ax_green.clear()
-        self.ax_green.imshow(phase % (bit_depth + 1), cmap='RdBu',
+        self.ax_green.imshow(phase % (bit_depth + 1), cmap='twilight',
                              interpolation='None')
+
         self.img_green.draw()
 
     def update_phase_plot_red(self, phase):
@@ -362,7 +363,7 @@ class DLabController(object):
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase % (bit_depth + 1), cmap='RdBu',
+        self.ax_red.imshow(phase % (bit_depth + 1), cmap='twilight',
                            interpolation='None')
         self.img_red.draw()
 

@@ -189,7 +189,11 @@ def SLM_Disp_Data(display_number, data_array, width, height):
 
     # convert from numpy array to pointer to array of ushort
     data = data_array.astype(np.ushort)
+    print(np.min(data))
+    print(np.max(data))
     c = data.ctypes.data_as(ct.POINTER((ct.c_ushort * height) * width)).contents
+    print(np.min(c))
+    print(np.max(c))
 
     # display on SLM
     ret = dll.SLM_Disp_Data(display_number, width, height, flags, c)
