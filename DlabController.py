@@ -347,7 +347,7 @@ class DLabController(object):
         None
         """
         self.ax_green.clear()
-        self.ax_green.imshow(phase % (bit_depth + 1), cmap='twilight',
+        self.ax_green.imshow(phase, cmap='twilight',
                              interpolation='None')
 
         self.img_green.draw()
@@ -369,7 +369,7 @@ class DLabController(object):
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase % (bit_depth + 1), cmap='twilight',
+        self.ax_red.imshow(phase, cmap='twilight',
                            interpolation='None')
         self.img_red.draw()
 

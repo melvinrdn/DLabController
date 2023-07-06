@@ -215,10 +215,13 @@ class TypeBackground(BaseType):
 
         """
         if self.img is not None:
-            phase = self.img
+            phase = self.img * bit_depth
+            print(f"background1 {np.max(phase)}")
+            phase = (phase % (bit_depth + 1)).astype(np.uint16)
+            print(f"background2 {np.max(phase)}")
         else:
             phase = np.zeros(slm_size)
-        return (phase % (bit_depth + 1)).astype(np.uint16)
+        return phase
 
 
     def save_(self):
