@@ -215,7 +215,7 @@ class TypeBackground(BaseType):
 
         """
         if self.img is not None:
-            phase = self.img * bit_depth
+            phase = self.img
             print(f"background1 {np.max(phase)}")
             phase = (phase % (bit_depth + 1)).astype(np.uint16)
             print(f"background2 {np.max(phase)}")
@@ -1262,7 +1262,7 @@ class TypeZernike(BaseType):
         rho = np.sqrt(X ** 2 + Y ** 2)
 
         phase = np.zeros_like(X)
-        desired_radius = np.max(rho)/2
+        desired_radius = 10 # 10 tqke the zhole screen
 
         indices = np.where(rho <= desired_radius)
         phase[indices] = (
