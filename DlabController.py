@@ -119,10 +119,6 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-
-        self.ax_red.axes.xaxis.set_visible(False)
-        self.ax_red.axes.yaxis.set_visible(False)
-
         but_mcp_camera = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp_camera)
         but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
         but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)

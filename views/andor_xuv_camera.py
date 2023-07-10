@@ -153,6 +153,7 @@ class AndorCameraViewer(object):
         self.im = np.zeros([512, 512])
 
         self.live = True
+        self.stop_live = False
 
     def foo(self):
         if self.live is True:
@@ -168,6 +169,7 @@ class AndorCameraViewer(object):
         -------
         None
         """
+        self.stop_live = False
         self.cam = Andor.AndorSDK2Camera(fan_mode="full")
         self.cam.set_exposure(50E-3)
         self.cam.start_acquisition()
@@ -181,6 +183,8 @@ class AndorCameraViewer(object):
             self.plot_MCP(self.im)
             print('plot plot')
             time.sleep(0.2)
+            if self.stop_live is True:
+                break
 
     def take_image(self, avgs):
         """

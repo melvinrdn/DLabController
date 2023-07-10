@@ -22,7 +22,7 @@ from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
 from ressources.slm_infos import slm_size, bit_depth
 from stages_and_sensors import waveplate_calibrator as cal
-
+from pylablib.devices import Andor
 
 class Feedbacker(object):
     """
@@ -890,6 +890,10 @@ class Feedbacker(object):
         self.camera_daheng_2 = False
         self.camera_daheng_3 = False
 
+        self.PIKE_cam = True
+        self.ANDOR_cam = False
+
+
     def update_maxgreenratio(self, var, index, mode):
         try:
             x = float(self.ent_int_ratio_focus.get()) ** 2
@@ -1413,22 +1417,42 @@ class Feedbacker(object):
             The captured image.
 
         """
-        with Vimba.get_instance() as vimba:
-            cams = vimba.get_all_cameras()
-            image = np.zeros([1000, 1600])
-            self.d_phase = deque()
-            self.meas_has_started = True
-            nr = avgs
-            with cams[0] as cam:
-                for frame in cam.get_frame_generator(limit=avgs):
-                    frame = cam.get_frame()
-                    frame.convert_pixel_format(PixelFormat.Mono8)
-                    img = frame.as_opencv_image()
-                    img = np.squeeze(frame.as_opencv_image())
-                    numpy_image = img
-                    image = image + numpy_image
-                image = image / nr
+        if self.PIKE_cam is True:
+            with Vimba.get_instance() as vimba:
+                cams = vimba.get_all_cameras()
+                image = np.zeros([1000, 1600])
+                self.d_phase = deque()
+                self.meas_has_started = True
+                nr = avgs
+                with cams[0] as cam:
+                    for frame in cam.get_frame_generator(limit=avgs):
+                        frame = cam.get_frame()
+                        frame.convert_pixel_format(PixelFormat.Mono8)
+                        img = frame.as_opencv_image()
+                        img = np.squeeze(frame.as_opencv_image())
+                        numpy_image = img
+                        image = image + numpy_image
+                    image = image / nr
+                    self.meas_has_started = False
+
+        # To be tested
+        if self.ANDOR_cam is True:
+            with Andor.AndorSDK2Camera(fan_mode="full") as cam:
+                cam.start_acquisition()
+                image = np.zeros([512, 512])
+                self.d_phase = deque()
+                self.meas_has_started = True
+                for i in range(avgs):
+                    time.sleep(0.5)  # Increase if bug
+                    cam.wait_for_frame()
+                    frame = cam.read_oldest_image()
+                    image += frame
+                image /= avgs
                 self.meas_has_started = False
+                cam.stop_acquisition()
+
+        else:
+            print('No camera checked')
 
         return image
 
