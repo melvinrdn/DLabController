@@ -2,6 +2,7 @@ import os
 import threading
 import time
 import tkinter as tk
+from tkinter import ttk
 from collections import deque
 from datetime import date
 import datetime
@@ -23,6 +24,7 @@ import drivers.santec_driver._slm_py as slm
 from ressources.slm_infos import slm_size, bit_depth
 from stages_and_sensors import waveplate_calibrator as cal
 from pylablib.devices import Andor
+
 
 class Feedbacker(object):
     """
@@ -259,6 +261,18 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_avgs)
 
+        lbl_mcp_cam_choice = tk.Label(frm_measure, text='MCP Camera selected :')
+        self.strvar_mcp_cam_choice = tk.StringVar(self.win, 'Pike camera')
+        self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
+        self.cbox_mcp_cam_choice['values'] = ('Pike Camera', 'Andor Camera')
+
+        lbl_exposure_time = tk.Label(frm_measure, text='Exposure time:')
+        self.strvar_exposure_time = tk.StringVar(self.win, '10000')
+        self.ent_exposure_time = tk.Entry(
+            frm_measure, width=25, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_exposure_time)
+
         lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
         self.strvar_mcp = tk.StringVar(self.win, '-1550')
         self.ent_mcp = tk.Entry(
@@ -352,12 +366,9 @@ class Feedbacker(object):
         self.but_WPDummy_Move = tk.Button(frm_stage, text='Move', command=self.move_WPDummy)
 
         self.var_WPDummypower = tk.IntVar()
-        self.cb_WPDummypower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_WPDummypower, onvalue=1, offvalue=0,
-                                          command=None)
-
-
-
-
+        self.cb_WPDummypower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_WPDummypower, onvalue=1,
+                                              offvalue=0,
+                                              command=None)
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -459,7 +470,6 @@ class Feedbacker(object):
         self.ent_green_current_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
-
 
         # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
@@ -601,7 +611,6 @@ class Feedbacker(object):
 
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -618,7 +627,6 @@ class Feedbacker(object):
         frm_plt_set.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_ratio.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_pid.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-
 
         frm_ratio.config(width=162, height=104)
 
@@ -665,18 +673,24 @@ class Feedbacker(object):
         lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
-        lbl_avgs.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_avgs.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_mcp_cam_choice.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.cbox_mcp_cam_choice.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-        lbl_comment.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_comment.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_avgs.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_avgs.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.cb_background.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_exposure_time.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_exposure_time.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.but_meas_all.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
-        self.cb_split_scan.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.but_meas_all.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
+        self.cb_split_scan.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
         lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -687,19 +701,16 @@ class Feedbacker(object):
         self.ent_steps.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
-
         # setting up frm_stage
         lbl_Stage.grid(row=0, column=1, pady=2, sticky='nsew')
         lbl_Nr.grid(row=0, column=2, pady=2, sticky='nsew')
         lbl_is.grid(row=0, column=3, pady=2, sticky='nsew')
         lbl_should.grid(row=0, column=4, pady=2, sticky='nsew')
 
-
         lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
         lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
         lbl_Delay.grid(row=3, column=1, pady=2, sticky='nsew')
         lbl_WPDummy.grid(row=4, column=1, pady=2, sticky='nsew')
-
 
         self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
         self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
@@ -707,20 +718,17 @@ class Feedbacker(object):
 
         self.ent_WPDummy_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
 
-
         self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
         self.ent_WPDummy_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
-
         self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_Delay_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
         self.ent_WPDummy_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-
 
         self.but_WPR_Ini.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
         self.but_WPR_Home.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
@@ -891,8 +899,25 @@ class Feedbacker(object):
         self.camera_daheng_3 = False
 
         self.PIKE_cam = True
+        self.name_cam = 'PIKE_cam'
         self.ANDOR_cam = False
 
+        self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
+
+    def change_mcp_cam(self, event):
+        selected_value = self.strvar_mcp_cam_choice.get()
+
+        if selected_value == 'Pike Camera':
+            self.PIKE_cam = True
+            self.ANDOR_cam = False
+            self.name_cam = 'PIKE_cam'
+        elif selected_value == 'Andor Camera':
+            self.PIKE_cam = False
+            self.ANDOR_cam = True
+            self.name_cam = 'ANDOR_cam'
+
+        print(f"PIKE_cam: {self.PIKE_cam}")
+        print(f"ANDOR_cam: {self.ANDOR_cam}")
 
     def update_maxgreenratio(self, var, index, mode):
         try:
@@ -1101,7 +1126,8 @@ class Feedbacker(object):
                 if power > float(self.ent_green_power.get()):
                     power = float(self.ent_green_power.get())
                     print("Value above maximum! Desired power set to maximum instead")
-                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))+90
+                pos = self.power_to_angle(power, float(self.ent_green_power.get()),
+                                          float(self.ent_green_phase.get())) + 90
             else:
                 pos = float(self.strvar_WPG_should.get())
 
@@ -1169,7 +1195,6 @@ class Feedbacker(object):
         None
         """
 
-
         try:
             self.WPDummy.move_home(blocking=True)
             self.but_WPDummy_Home.config(fg='green')
@@ -1179,8 +1204,7 @@ class Feedbacker(object):
             self.but_WPDummy_Home.config(fg='red')
             print("Not able to home Dummy waveplate")
 
-
-        #print("Non")
+        # print("Non")
 
     def read_WPDummy(self):
         """
@@ -1198,7 +1222,7 @@ class Feedbacker(object):
         try:
             pos = self.WPDummy.position
             self.strvar_WPDummy_is.set(pos)
-            #self.strvar_green_current_power.set(
+            # self.strvar_green_current_power.set(
             #    np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
             #             3))
 
@@ -1224,7 +1248,8 @@ class Feedbacker(object):
                 if power > float(self.ent_green_power.get()):
                     power = float(self.ent_green_power.get())
                     print("Value above maximum! Desired power set to maximum instead")
-                pos = self.power_to_angle(power, float(self.ent_green_power.get()), float(self.ent_green_phase.get()))+90
+                pos = self.power_to_angle(power, float(self.ent_green_power.get()),
+                                          float(self.ent_green_phase.get())) + 90
             else:
                 pos = float(self.strvar_WPDummy_should.get())
 
@@ -1246,8 +1271,6 @@ class Feedbacker(object):
             except Exception as ee:
                 print(ee)
                 print("Still impossible to move WPDummy :(")
-
-
 
     def init_Delay(self):
         """
@@ -1425,6 +1448,8 @@ class Feedbacker(object):
                 self.meas_has_started = True
                 nr = avgs
                 with cams[0] as cam:
+                    exposure_time = cam.ExposureTime
+                    exposure_time.set(float(self.ent_exposure_time.get()))
                     for frame in cam.get_frame_generator(limit=avgs):
                         frame = cam.get_frame()
                         frame.convert_pixel_format(PixelFormat.Mono8)
@@ -1436,8 +1461,9 @@ class Feedbacker(object):
                     self.meas_has_started = False
 
         # To be tested
-        if self.ANDOR_cam is True:
+        elif self.ANDOR_cam is True:
             with Andor.AndorSDK2Camera(fan_mode="full") as cam:
+                cam.set_exposure(self.ent_exposure_time.get())
                 cam.start_acquisition()
                 image = np.zeros([512, 512])
                 self.d_phase = deque()
@@ -1452,7 +1478,7 @@ class Feedbacker(object):
                 cam.stop_acquisition()
 
         else:
-            print('No camera checked')
+            print('Damn no cam')
 
         return image
 
@@ -1490,7 +1516,8 @@ class Feedbacker(object):
             np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),
-                     2)) + '\t' + self.ent_mcp.get() + '\t' + self.ent_avgs.get() + '\t' + str(
+                     2)) + '\t' + self.ent_mcp.get() + '\t' + str(
+            self.name_cam) + '\t' + self.ent_avgs.get() + '\t' + self.ent_exposure_time.get() + '\t' + str(
             gl) + '\t' + str(
             rl) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
@@ -1530,7 +1557,9 @@ class Feedbacker(object):
         all_steps = np.linspace(inital_start, initial_end, total_steps)
         nr_blocks = int(np.ceil(total_steps / 10))
         last_block_length = int(np.mod(total_steps, 10))
-        self.f.write('# this scan is split in {} blocks, from {} to {} with {} steps: \n'.format(nr_blocks, inital_start, initial_end, total_steps))
+        self.f.write(
+            '# this scan is split in {} blocks, from {} to {} with {} steps: \n'.format(nr_blocks, inital_start,
+                                                                                        initial_end, total_steps))
         print("I will measure ", nr_blocks, " blocks")
         if nr_blocks > 1:
             for i in range(nr_blocks):
@@ -1557,7 +1586,7 @@ class Feedbacker(object):
                 self.mcp_thread.start()
                 print("I started the measure_all thread ")
                 self.scan_is_done = False
-                #while not self.scan_is_done:
+                # while not self.scan_is_done:
                 #    pass
                 self.scan_is_done_threading.wait()
 
@@ -2179,6 +2208,7 @@ class Feedbacker(object):
         # Indicate completion by setting the event
         self.scan_is_done = True
         self.scan_is_done_threading.set()
+
     def measure(self):
         """
         Performs a phase scan
