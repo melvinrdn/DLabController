@@ -8,7 +8,7 @@ import matplotlib
 from drivers.vimba_driver import *
 
 
-class Mcp(object):
+class PikeCameraViewer(object):
 
     def __init__(self, parent):
         self.parent = parent

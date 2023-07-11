@@ -14,7 +14,7 @@ from matplotlib.figure import Figure
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from views import preview_window, questionbox, daheng_camera, andor_xuv_camera, mcp_camera
+from views import preview_window, questionbox, daheng_camera, andor_xuv_camera, pike_camera
 
 print('Done !')
 

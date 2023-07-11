@@ -151,6 +151,7 @@ class AndorCameraViewer(object):
         self.cam = Andor.AndorSDK2Camera(fan_mode="full")
         self.cam.set_exposure(float(self.ent_exposure_time.get()))
         self.cam.set_EMCCD_gain(float(self.ent_EMCCD.get()))
+        self.cam.setup_shutter('open')
         self.camera_thread = threading.Thread(target=self.measure)
         self.camera_thread.daemon = True
         self.camera_thread.start()

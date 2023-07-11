@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from views import daheng_camera, andor_xuv_camera, mcp_camera
+from views import daheng_camera, andor_xuv_camera, pike_camera
 from stages_and_sensors import thorlabs_stages
 print('Done')
 
@@ -44,7 +44,7 @@ class DLabController(object):
         self.feedback_win = None
         self.andor_camera_win = None
         self.daheng_camera_win = None
-        self.mcp_camera_win = None
+        self.pike_camera_win = None
 
         self.thorlabs_stages_win = None
 
@@ -119,14 +119,14 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        but_mcp_camera = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp_camera)
-        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
         but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
+        but_pike_camera = ttk.Button(self.frm_side_panel, text='PIKE Camera', command=self.open_pike_camera)
+        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
         but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
 
-        but_mcp_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        but_daheng_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        but_andor_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        but_andor_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        but_pike_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        but_daheng_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
         but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
@@ -175,15 +175,15 @@ class DLabController(object):
         """
         self.andor_camera_win = andor_xuv_camera.AndorCameraViewer(self)
 
-    def open_mcp_camera(self):
+    def open_pike_camera(self):
         """
-        Open the MCP window.
+        Open the pike camera window.
 
         Returns
         -------
         None
         """
-        self.mcp_camera_win = mcp_camera.Mcp(self)
+        self.pike_camera_win = pike_camera.PikeCameraViewer(self)
 
     def open_thorlabs_stages(self):
         """
@@ -561,7 +561,7 @@ class DLabController(object):
         self.feedback_win = None
         self.andor_camera = None
         self.camera_win = None
-        self.mcp_win = None
+        self.pike_camera_win = None
         self.main_win.destroy()
 
 
