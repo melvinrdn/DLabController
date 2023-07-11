@@ -206,7 +206,7 @@ class AndorCameraViewer(object):
         """
 
         self.axMCP.clear()
-        self.axMCP.imshow(mcpimage, extent=[self.x_start, self.x_end, self.y_start, self.y_end])
+        self.axMCP.imshow(mcpimage.T[self.x_start:self.x_end, self.y_start:self.y_end], extent=[self.x_start, self.x_end, self.y_start, self.y_end])
         self.axMCP.set_aspect('equal')
 
         self.axMCP.set_xlabel("X (px)")

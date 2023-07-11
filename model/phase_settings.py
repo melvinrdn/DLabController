@@ -1284,7 +1284,7 @@ class TypeZernike(BaseType):
 
         print(f"zernike1, {np.max(phase)}")
 
-        phase = (phase % (bit_depth + 1)).astype(np.uint16)
+        phase = (phase % (bit_depth + 1)).astype(np.uint16) #TODO verifier avec et sans sur la camera du plan focal
         print(f"zernike2, {np.max(phase)}")
 
         return phase
