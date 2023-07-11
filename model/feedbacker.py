@@ -24,7 +24,7 @@ import drivers.santec_driver._slm_py as slm
 from ressources.slm_infos import slm_size, bit_depth
 from stages_and_sensors import waveplate_calibrator as cal
 from pylablib.devices import Andor
-
+import pylablib as pll
 
 class Feedbacker(object):
     """
@@ -46,9 +46,7 @@ class Feedbacker(object):
 
         """
         matplotlib.use("TkAgg")
-        self.cam_1 = None
-        self.cam_2 = None
-        self.cam_3 = None
+        self.cam = None
         self.parent = parent
         self.lens_green = self.parent.phase_refs_green[1]
         self.lens_red = self.parent.phase_refs_red[1]
@@ -62,6 +60,8 @@ class Feedbacker(object):
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
         self.rect_id = 0
+
+        pll.par["devices/dlls/andor_sdk2"] = "drivers/andor_driver/"
 
         self.WPG = None
         self.WPR = None
@@ -899,8 +899,12 @@ class Feedbacker(object):
         self.camera_daheng_3 = False
 
         self.PIKE_cam = True
-        self.name_cam = 'PIKE_cam'
         self.ANDOR_cam = False
+
+        if self.PIKE_cam is True:
+            self.name_cam = 'PIKE_cam'
+        elif self.ANDOR_cam is True:
+            self.name_cam = 'ANDOR_cam'
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
@@ -908,10 +912,14 @@ class Feedbacker(object):
         selected_value = self.strvar_mcp_cam_choice.get()
 
         if selected_value == 'Pike Camera':
+            if self.cam is not None:
+                self.cam.stop_acquisition()
+                self.cam.close()
             self.PIKE_cam = True
             self.ANDOR_cam = False
             self.name_cam = 'PIKE_cam'
         elif selected_value == 'Andor Camera':
+            self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
             self.PIKE_cam = False
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
@@ -1462,20 +1470,19 @@ class Feedbacker(object):
 
         # To be tested
         elif self.ANDOR_cam is True:
-            with Andor.AndorSDK2Camera(fan_mode="full") as cam:
-                cam.set_exposure(self.ent_exposure_time.get())
-                cam.start_acquisition()
-                image = np.zeros([512, 512])
-                self.d_phase = deque()
-                self.meas_has_started = True
-                for i in range(avgs):
-                    time.sleep(0.5)  # Increase if bug
-                    cam.wait_for_frame()
-                    frame = cam.read_oldest_image()
-                    image += frame
-                image /= avgs
-                self.meas_has_started = False
-                cam.stop_acquisition()
+            self.cam.set_exposure(float(self.ent_exposure_time.get()) * 1e-6)
+            self.cam.start_acquisition()
+            self.d_phase = deque()
+            self.meas_has_started = True
+            image = np.zeros([512, 512])
+            for i in range(avgs):
+                self.cam.wait_for_frame()
+                frame = self.cam.read_oldest_image()
+                image += frame
+            image /= avgs
+            self.meas_has_started = False
+            time.sleep(0.1)
+            self.cam.stop_acquisition()
 
         else:
             print('Damn no cam')
@@ -2406,24 +2413,45 @@ class Feedbacker(object):
         -------
         None
         """
-        self.axMCP.clear()
-        self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
-        self.axMCP.set_aspect('equal')
+        if self.PIKE_cam is True:
+            self.axMCP.clear()
+            self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
+            self.axMCP.set_aspect('equal')
 
-        self.axMCP.set_xlabel("X (px)")
-        self.axMCP.set_ylabel("Y (px)")
-        self.axMCP.set_xlim(0, 1600)
-        self.axMCP.set_ylim(0, 1000)
+            self.axMCP.set_xlabel("X (px)")
+            self.axMCP.set_ylabel("Y (px)")
+            self.axMCP.set_xlim(0, 1600)
+            self.axMCP.set_ylim(0, 1000)
 
-        self.axHarmonics.clear()
-        self.axHarmonics.plot(np.arange(1600), np.sum(mcpimage, 0))
-        self.axHarmonics.set_xlabel("X (px)")
-        self.axHarmonics.set_ylabel("Counts (arb.u.)")
+            self.axHarmonics.clear()
+            self.axHarmonics.plot(np.arange(1600), np.sum(mcpimage, 0))
+            self.axHarmonics.set_xlabel("X (px)")
+            self.axHarmonics.set_ylabel("Counts (arb.u.)")
 
-        self.axHarmonics.set_xlim(0, 1600)
+            self.axHarmonics.set_xlim(0, 1600)
 
-        self.figrMCP.tight_layout()
-        self.imgMCP.draw()
+            self.figrMCP.tight_layout()
+            self.imgMCP.draw()
+
+        elif self.ANDOR_cam is True:
+            self.axMCP.clear()
+            self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 512, 0, 512])
+            self.axMCP.set_aspect('equal')
+
+            self.axMCP.set_xlabel("X (px)")
+            self.axMCP.set_ylabel("Y (px)")
+            self.axMCP.set_xlim(0, 512)
+            self.axMCP.set_ylim(0, 512)
+
+            self.axHarmonics.clear()
+            self.axHarmonics.plot(np.arange(512), np.sum(mcpimage, 0))
+            self.axHarmonics.set_xlabel("X (px)")
+            self.axHarmonics.set_ylabel("Counts (arb.u.)")
+
+            self.axHarmonics.set_xlim(0, 512)
+
+            self.figrMCP.tight_layout()
+            self.imgMCP.draw()
 
     def plot_fft(self):
         """
@@ -2687,7 +2715,8 @@ class Feedbacker(object):
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()
-
+        if self.cam is not None :
+            self.cam.close()
         self.spec_deactivate()
         avs.AVS_Done()
         self.win.destroy()
