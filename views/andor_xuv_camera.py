@@ -8,6 +8,7 @@ import numpy as np
 import threading
 from matplotlib.figure import Figure
 import time
+import matplotlib.colors as colors
 
 
 class AndorCameraViewer(object):
@@ -26,6 +27,7 @@ class AndorCameraViewer(object):
         self.main_frame = ttk.Frame(self.win)
         self.main_frame.grid(row=0, column=0)
         self.plot_frame = ttk.LabelFrame(self.main_frame, text="Camera display")
+        self.parameters_frame = ttk.LabelFrame(self.main_frame, text="Parameters")
 
         self.figrMCP = Figure(figsize=(7, 7), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -38,19 +40,22 @@ class AndorCameraViewer(object):
         self.imgMCP = FigureCanvasTkAgg(self.figrMCP, self.plot_frame)
         self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
         self.tk_widget_figrMCP.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.selector = RectangleSelector(self.axMCP, self.on_select, useblit=True, button=[1])
         self.imgMCP.draw()
 
         # Create a frame for general control
-        self.settings_frame = ttk.Label(self.main_frame)
+        self.settings_frame = ttk.LabelFrame(self.parameters_frame, text='Control panel')
         self.init_button = ttk.Button(master=self.settings_frame, text="Live", command=self.start)
-        self.init_button.grid(row=0, column=0, padx=5, pady=5)
+        self.init_button.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
+        self.log_button = ttk.Button(master=self.settings_frame, text="Log scale", command=self.log_scale)
+        self.log_button.grid(row=0, column=1, padx=5, pady=5, sticky='nsew')
         self.stop_button = ttk.Button(master=self.settings_frame, text="Stop", command=self.stop)
-        self.stop_button.grid(row=0, column=1, padx=5, pady=5)
-        self.exit_button = ttk.Button(master=self.settings_frame, text="EXIT", command=self.on_close)
-        self.exit_button.grid(row=0, column=2, padx=5, pady=5)
+        self.stop_button.grid(row=0, column=2, padx=5, pady=5, sticky='nsew')
+        self.exit_button = ttk.Button(master=self.settings_frame, text="Close and exit", command=self.on_close)
+        self.exit_button.grid(row=0, column=3, padx=5, pady=5, sticky='nsew')
 
         # Create a frame for the exposure time setting and the gain
-        self.camera_settings_frame = ttk.LabelFrame(self.main_frame, text="Camera settings")
+        self.camera_settings_frame = ttk.LabelFrame(self.parameters_frame, text="Camera settings")
 
         lbl_exposure_time = tk.Label(self.camera_settings_frame, text='Exposure time (s) :')
         self.strvar_exposure_time = tk.StringVar(self.win, '50e-3')
@@ -71,8 +76,9 @@ class AndorCameraViewer(object):
         lbl_avg.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
+
         # Create a frame for the ROI of the image
-        self.roi_frame = ttk.LabelFrame(self.main_frame, text="Range of interest - XUV camera")
+        self.roi_frame = ttk.LabelFrame(self.parameters_frame, text="Range of interest")
         self.x_start_label = ttk.Label(master=self.roi_frame, text="from x =")
         self.x_start_label.grid(row=0, column=0, padx=5, pady=5)
         self.roi_x_start_var = tk.StringVar(value='0')
@@ -94,49 +100,28 @@ class AndorCameraViewer(object):
         self.y_end_entry = ttk.Entry(master=self.roi_frame, width=10, textvariable=self.roi_y_end_var)
         self.y_end_entry.grid(row=1, column=3, padx=5, pady=5)
         self.roi_reset_button = ttk.Button(master=self.roi_frame, text="Reset image ROI", command=self.reset_roi)
-        self.roi_reset_button.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+        self.roi_reset_button.grid(row=2, column=0, padx=5, pady=5)
         self.roi_set_button = ttk.Button(master=self.roi_frame, text="Set image ROI", command=self.set_roi)
-        self.roi_set_button.grid(row=2, column=2, columnspan=2, padx=5, pady=5)
-
-        # Create a frame for the summation settings
-        self.sum_frame = tk.LabelFrame(self.main_frame, text="Range of interest - Summation plot")
-        self.sum_start_var = tk.StringVar(value=str(0))
-        self.sum_start_label = ttk.Label(master=self.sum_frame, text="from y =")
-        self.sum_start_label.grid(row=1, column=0, padx=5, pady=5)
-        self.sum_start_entry = ttk.Entry(master=self.sum_frame, width=5, textvariable=self.sum_start_var)
-        self.sum_start_entry.grid(row=1, column=1, padx=5, pady=5)
-        self.sum_end_label = ttk.Label(master=self.sum_frame, text="to y =")
-        self.sum_end_label.grid(row=1, column=2, padx=5, pady=5)
-        self.sum_end_var = tk.StringVar(value=str(512))
-        self.sum_end_entry = ttk.Entry(master=self.sum_frame, width=5, textvariable=self.sum_end_var)
-        self.sum_end_entry.grid(row=1, column=3, padx=5, pady=5)
-        self.sum_reset_button = ttk.Button(master=self.sum_frame, text="Reset sum ROI", command=self.reset_sum_roi)
-        self.sum_reset_button.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
-        self.sum_set_button = ttk.Button(master=self.sum_frame, text="Set sum ROI", command=self.set_sum_roi)
-        self.sum_set_button.grid(row=2, column=2, columnspan=2, padx=5, pady=5)
+        self.roi_set_button.grid(row=2, column=2, padx=5, pady=5)
 
         # Add all frames to the main frame
-        self.plot_frame.grid(row=0, column=0, columnspan=2, rowspan=6)
-        self.settings_frame.grid(row=0, column=2, sticky="ew")
-        self.roi_frame.grid(row=1, column=2, sticky="ew")
-        self.sum_frame.grid(row=2, column=2, sticky="ew")
-        self.camera_settings_frame.grid(row=3, column=2, sticky="ew")
+        self.plot_frame.grid(row=0, column=0, sticky="nsew")
+        self.parameters_frame.grid(row=0, column=1, sticky="nsew")
 
-        # Add a status bar at the bottom
-        self.status_bar = ttk.Label(self.win, text="", anchor=tk.W)
-        self.status_bar.grid(row=1, column=0, sticky="ew")
-        self.status_bar.config(text=str('Status bar'))
+        self.settings_frame.grid(row=0, column=0, sticky="nsew")
+        self.roi_frame.grid(row=1, column=0, sticky="nsew")
+        self.camera_settings_frame.grid(row=2, column=0, sticky="nsew")
 
-        self.sum_start_index = 0
-        self.sum_end_index = 512
+        self.x_start = 0
+        self.x_end = 512
+        self.y_start = 0
+        self.y_end = 512
 
         self.im = np.zeros([512, 512])
 
         self.live = False
         self.stop_live = True
-
-        self.reset_roi()
-        self.reset_sum_roi()
+        self.log_image = False
 
     def enable_camera(self):
         """
@@ -207,26 +192,36 @@ class AndorCameraViewer(object):
         """
 
         self.axMCP.clear()
-        self.axMCP.imshow(mcpimage.T[self.x_start:self.x_end, self.y_start:self.y_end], extent=[self.x_start, self.x_end, self.y_start, self.y_end])
+
+        if self.log_image is True:
+            image = self.axMCP.imshow(mcpimage, norm=colors.LogNorm())
+        elif self.log_image is False:
+            image = self.axMCP.imshow(mcpimage)
+
         self.axMCP.set_aspect('equal')
 
         self.axMCP.set_xlabel("X (px)")
         self.axMCP.set_ylabel("Y (px)")
-        self.axMCP.set_xlim(self.x_start, self.x_end)
-        self.axMCP.set_ylim(self.y_start, self.y_end)
+        self.axMCP.set_xlim([self.x_start, self.x_end])
+        self.axMCP.set_ylim([self.y_start, self.y_end])
 
         self.axHarmonics.clear()
-        sums = np.sum(mcpimage[self.y_start:self.y_end, :], axis=0)
+        sums = np.sum(mcpimage[self.y_start:self.y_end, self.x_start:self.x_end], axis=0)
         self.axHarmonics.plot(np.arange(len(sums)), sums)
         self.axHarmonics.set_xlabel("X (px)")
         self.axHarmonics.set_ylabel("Counts (arb.u.)")
 
-        self.axHarmonics.set_xlim(self.x_start, self.x_end)
-
-        self.status_bar.config(text=str(self.cam.get_device_info()))
-
         self.figrMCP.tight_layout()
         self.imgMCP.draw()
+
+    def log_scale(self):
+        if self.log_image is True:
+            self.log_image = False
+            print('Log scale off')
+        elif self.log_image is False:
+            self.log_image = True
+            print('Log scale on')
+
 
     def set_roi(self):
         """
@@ -241,10 +236,6 @@ class AndorCameraViewer(object):
         self.x_end = int(self.roi_x_end_var.get())
         self.y_start = int(self.roi_y_start_var.get())
         self.y_end = int(self.roi_y_end_var.get())
-
-        self.sum_start_var.set(self.y_start)
-        self.sum_end_var.set(self.y_end)
-        self.set_sum_roi()
 
     def reset_roi(self):
         """
@@ -263,31 +254,31 @@ class AndorCameraViewer(object):
 
         self.set_roi()
 
-    def set_sum_roi(self):
+    def on_select(self, e_click, e_release):
         """
-        Set the start and end indices for the sum region of interest (ROI).
+        Perform actions when the user selects a region of interest (ROI) on the plot.
+
+        Parameters
+        ----------
+        e_click : matplotlib.backend_bases.MouseEvent
+            The mouse click event.
+        e_release : matplotlib.backend_bases.MouseEvent
+            The mouse release event.
 
         Returns
         -------
         None
 
         """
-        self.sum_start = int(self.sum_start_var.get())
-        self.sum_end = int(self.sum_end_var.get())
+        x1, y1 = int(e_click.xdata), int(e_click.ydata)
+        x2, y2 = int(e_release.xdata), int(e_release.ydata)
 
-    def reset_sum_roi(self):
-        """
-        Reset the start and end indices for the sum region of interest (ROI) to default values.
+        self.roi_x_start_var.set(x1)
+        self.roi_x_end_var.set(x2)
+        self.roi_y_start_var.set(y1)
+        self.roi_y_end_var.set(y2)
 
-        Returns
-        -------
-        None
-
-        """
-        self.sum_start_var.set(str(0))
-        self.sum_end_var.set(str(512))
-
-        self.set_sum_roi()
+        self.set_roi()
 
     def start(self):
         """

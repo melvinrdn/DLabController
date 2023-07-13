@@ -1471,18 +1471,18 @@ class Feedbacker(object):
         # To be tested
         elif self.ANDOR_cam is True:
             self.cam.set_exposure(float(self.ent_exposure_time.get()) * 1e-6)
-            self.cam.start_acquisition()
+            self.cam.setup_shutter('open')
             self.d_phase = deque()
             self.meas_has_started = True
             image = np.zeros([512, 512])
+            self.cam.start_acquisition()
             for i in range(avgs):
-                self.cam.wait_for_frame()
+                self.cam.wait_for_frame(timeout=20)
                 frame = self.cam.read_oldest_image()
                 image += frame
             image /= avgs
-            self.meas_has_started = False
-            time.sleep(0.1)
             self.cam.stop_acquisition()
+            self.meas_has_started = False
 
         else:
             print('Damn no cam')
@@ -2435,7 +2435,7 @@ class Feedbacker(object):
 
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
-            self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 512, 0, 512])
+            self.axMCP.imshow(mcpimage)
             self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")

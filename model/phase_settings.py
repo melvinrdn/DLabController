@@ -1255,7 +1255,7 @@ class TypeZernike(BaseType):
         rho /= (np.max(rho) / 2)
         theta = np.arctan2(Y, X)
 
-        desired_radius = 1
+        desired_radius = 10
         indices = np.where(rho <= desired_radius)
 
         p1 = np.zeros_like(X)
