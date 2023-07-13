@@ -57,6 +57,9 @@ print(p8_n)
 print(p9_n)
 print(p10_n)
 
+phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10) / (2*np.pi) * 1023
+phase = np.mod(phase, 1023)  # Wrap the phase from 0 to 2π
 
-plt.imshow(p5)
+plt.imshow(phase)
+print(np.max(phase))
 plt.show()
