@@ -77,13 +77,13 @@ class DLabController(object):
 
         lbl_screen_green = ttk.Label(self.frm_top_green, text='Display number :')
         self.strvar_green = tk.StringVar(value='3')
-        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=5, from_=1, to=5, textvariable=self.strvar_green)
-        self.ent_scr_green.grid(row=0, column=1, sticky='w', padx=(0, 10))
+        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=8, from_=1, to=5, textvariable=self.strvar_green)
+        self.ent_scr_green.grid(row=0, column=1, sticky='w')
 
         lbl_screen_red = ttk.Label(self.frm_top_red, text='Display number :')
         self.strvar_red = tk.StringVar(value='2')
-        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=5, from_=1, to=5, textvariable=self.strvar_red)
-        self.ent_scr_red.grid(row=0, column=1, sticky='w', padx=(0, 10))
+        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=8, from_=1, to=5, textvariable=self.strvar_red)
+        self.ent_scr_red.grid(row=0, column=1, sticky='w')
 
         self.setup_box_green(self.frm_top_green)
         self.setup_box_red(self.frm_top_red)
@@ -206,15 +206,12 @@ class DLabController(object):
         self.ent_scr_green.config(state='disabled')
         self.phase_map_green = self.get_phase_green()
 
-        print(f"g1, {np.max(self.phase_map_green)}")
         self.phase_map_green = (self.phase_map_green % (bit_depth + 1)).astype(np.uint16)
-        print(f"g2, {np.max(self.phase_map_green)}")
+        self.update_phase_plot_green(self.phase_map_green)
 
         self.publish_window_green = int(self.ent_scr_green.get())
         slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
         slm.SLM_Disp_Data(int(self.ent_scr_green.get()), self.phase_map_green, slm_size[1], slm_size[0])
-
-        self.update_phase_plot_green(self.phase_map_green)
 
     def open_pub_red(self):
         """
@@ -227,15 +224,12 @@ class DLabController(object):
         self.ent_scr_red.config(state='disabled')
         self.phase_map_red = self.get_phase_red()
 
-        print(f"r1, {np.max(self.phase_map_red)}")
         self.phase_map_red = (self.phase_map_red % (bit_depth + 1)).astype(np.uint16)
-        print(f"r2, {np.max(self.phase_map_red)}")
+        self.update_phase_plot_red(self.phase_map_red)
 
         self.publish_window_red = int(self.ent_scr_red.get())
         slm.SLM_Disp_Open(int(self.ent_scr_red.get()))
         slm.SLM_Disp_Data(int(self.ent_scr_red.get()), self.phase_map_red, slm_size[1], slm_size[0])
-
-        self.update_phase_plot_red(self.phase_map_red)
 
     def setup_box_green(self, frm_):
         """
