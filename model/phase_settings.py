@@ -4,8 +4,8 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
-import model.hologram_and_aberration.hologram_generation as gs
-import model.hologram_and_aberration.aberration_correction as aberration
+gs=None
+aberration=None
 
 types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike']
 
