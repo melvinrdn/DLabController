@@ -3,9 +3,9 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
-from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height, wavelength
-import model.hologram_and_aberration.hologram_generation as gs
-import model.hologram_and_aberration.aberration_correction as aberration
+from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
+gs=None
+aberration=None
 
 types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike']
 
@@ -652,16 +652,23 @@ class TypeLens(BaseType):
 
         # creating labels
         lbl_ben = ttk.Label(lbl_frm, text='Bending strength (1/f) [1/m]:')
+        lbl_wavelength = ttk.Label(lbl_frm, text='Wavelength [m]:')
 
         # creating entries
         vcmd = (parent.register(self.callback))
         self.strvar_ben = tk.StringVar()
-        self.ent_ben = ttk.Entry(lbl_frm, width=5, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'),
+        self.ent_ben = ttk.Entry(lbl_frm, width=5, validate='all',
                                  textvariable=self.strvar_ben)
+
+        self.strvar_wavelength = tk.StringVar()
+        self.ent_wavelength = ttk.Entry(lbl_frm, width=10, validate='all',
+                                 textvariable=self.strvar_wavelength)
 
         # setup
         lbl_ben.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
+        lbl_wavelength.grid(row=0, column=2, sticky='e', padx=(10, 0), pady=5)
         self.ent_ben.grid(row=0, column=1, sticky='w', padx=(0, 10))
+        self.ent_wavelength.grid(row=0, column=3, sticky='w', padx=(0, 10))
 
     def phase(self):
         """
@@ -677,6 +684,11 @@ class TypeLens(BaseType):
         else:
             ben = 0
 
+        if self.ent_ben.get() != '':
+            wavelength = float(self.ent_wavelength.get())
+        else:
+            print('set a wavelength')
+
         rad_sign = np.sign(ben)
         rad = 2 / np.abs(ben)  # R=2*f
         x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
@@ -684,7 +696,7 @@ class TypeLens(BaseType):
         [X, Y] = np.meshgrid(x, y)
         R = np.sqrt(X ** 2 + Y ** 2)  # radius on a 2d array
         Z = rad_sign * (np.sqrt(rad ** 2 + R ** 2) - rad)
-        Z_phi = Z / wavelength * bit_depth  # translating meters to wavelengths and phase #TODO wavelength depedency !!
+        Z_phi = Z / wavelength * bit_depth  # translating meters to wavelengths and phase
         del X, Y, R, Z
 
         return Z_phi
@@ -1142,11 +1154,11 @@ class TypeVortex(BaseType):
             if entry.get() != '':
                 coeffs[i] = float(entry.get())
         vor = coeffs
-        x = np.linspace(-chip_width , chip_width , slm_size[1])
-        y = np.linspace(-chip_height , chip_height , slm_size[0])
+        x = np.linspace(-chip_width, chip_width, slm_size[1])
+        y = np.linspace(-chip_height, chip_height, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
         theta = np.arctan2(Y, X)
-        phase = theta * vor * bit_depth / (2*np.pi)
+        phase = theta * vor / (2 * np.pi) * bit_depth
         return phase
 
     def save_(self):
@@ -1207,19 +1219,15 @@ class TypeZernike(BaseType):
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         self.varnames = ['z1coef', 'z2coef', 'z3coef', 'z4coef', 'z5coef',
-                         'z6coef', 'z7coef', 'z8coef', 'z9coef', 'z10coef',
-                         'z11coef', 'z12coef', 'z13coef', 'z14coef', 'z15coef']
+                         'z6coef', 'z7coef', 'z8coef', 'z9coef', 'z10coef' ]
         lbl_texts = ['Piston Z_00 :', 'Horizontal tilt Z_11 :', 'Vertical tilt Z_-11 :',
                      'Defocus Z_02 :', 'Vertical astigmatism Z_22 :', 'Oblique astigmatism Z_-22 :',
                      'Horizontal coma Z_13 :', 'Vertical coma Z_-13 :', 'Oblique trefoil Z_33 :',
-                     'Vertical trefoil Z_-33 :', 'Primary spherical Z_04 :', 'Oblique secondary astigmatism Z_-24 :',
-                     'Vertical secondary astigmatism Z_24 :', 'Oblique quadrafoil Z_-44 :',
-                     'Vertical quadrafoil Z_44 :']
+                     'Vertical trefoil Z_-33 :']
         labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
         vcmd = (parent.register(self.callback))
         self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
         self.entries = [ttk.Entry(lbl_frm, width=11, validate='all',
-                                  validatecommand=(vcmd, '%d', '%P', '%S'),
                                   textvariable=strvar)
                         for strvar in self.strvars]
         for ind, label in enumerate(labels):
@@ -1247,44 +1255,37 @@ class TypeZernike(BaseType):
         x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
         y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
-        theta = np.arctan2(Y, X)
+
         rho = np.sqrt(X ** 2 + Y ** 2)
+        rho /= (np.max(rho) / 2)
+        theta = np.arctan2(Y, X)
 
-        """
-        p1 = coeffs[0] * 1 * np.cos(0 * theta)
-        p2 = coeffs[1] * rho * np.cos(1 * theta)
-        p3 = coeffs[2] * rho * np.sin(1 * theta)
-        p4 = coeffs[3] * (2 * rho ** 2 - 1) * np.cos(0 * theta)
-        p5 = coeffs[4] * rho ** 2 * np.cos(2 * theta)
-        p6 = coeffs[5] * rho ** 2 * np.sin(2 * theta)
-        p7 = coeffs[6] * (3 * rho ** 3 - 2 * rho) * np.cos(1 * theta)
-        p8 = coeffs[7] * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta)
-        p9 = coeffs[8] * rho ** 3 * np.cos(3 * theta)
-        p10 = coeffs[9] * rho ** 3 * np.sin(3 * theta)
-        p11 = coeffs[10] * (6 * rho ** 4 - 6 * rho ** 2 + 1)
-        p12 = coeffs[11] * (4 * rho ** 4 - 3 * rho ** 2) * np.sin(2 * theta)
-        p13 = coeffs[12] * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
-        p14 = coeffs[13] * rho ** 4 * np.sin(4 * theta)
-        p15 = coeffs[14] * rho ** 4 * np.cos(4 * theta)
-        """
+        desired_radius = 10
+        indices = np.where(rho <= desired_radius)
 
-        p1 = coeffs[0] * 1 * np.cos(0 * theta)
-        p2 = coeffs[1] * 2 * rho * np.cos(1 * theta)
-        p3 = coeffs[2] * 2 * rho * np.sin(1 * theta)
-        p4 = coeffs[3] * np.sqrt(3) * (2 * rho ** 2 - 1) 
-        p5 = coeffs[4] * np.sqrt(6) * rho ** 2 * np.cos(2 * theta)
-        p6 = coeffs[5] * np.sqrt(6) * rho ** 2 * np.sin(2 * theta)
-        p7 = coeffs[6] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.cos(1 * theta)
-        p8 = coeffs[7] * np.sqrt(8) * (3 * rho ** 3 - 2 * rho) * np.sin(1 * theta)
-        p9 = coeffs[8] * np.sqrt(8) * rho ** 3 * np.cos(3 * theta)
-        p10 = coeffs[9] * np.sqrt(8) * rho ** 3 * np.sin(3 * theta)
-        p11 = coeffs[10] * np.sqrt(5) * (6 * rho ** 4 - 6 * rho ** 2 + 1)
-        p12 = coeffs[11] * np.sqrt(10) * (4 * rho ** 4 - 3 * rho ** 2) * np.sin(2 * theta)
-        p13 = coeffs[12] * np.sqrt(10) * (4 * rho ** 4 - 3 * rho ** 2) * np.cos(2 * theta)
-        p14 = coeffs[13] * np.sqrt(10) * rho ** 4 * np.sin(4 * theta)
-        p15 = coeffs[14] * np.sqrt(10) * rho ** 4 * np.cos(4 * theta)
+        p1 = np.zeros_like(X)
+        p2 = np.zeros_like(X)
+        p3 = np.zeros_like(X)
+        p4 = np.zeros_like(X)
+        p5 = np.zeros_like(X)
+        p6 = np.zeros_like(X)
+        p7 = np.zeros_like(X)
+        p8 = np.zeros_like(X)
+        p9 = np.zeros_like(X)
+        p10 = np.zeros_like(X)
 
-        phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10 + p11 + p12 + p13 + p14 + p15)
+        p1[indices] = coeffs[0] * 1 * np.cos(0 * theta[indices])
+        p2[indices] = coeffs[1] * 2 * rho[indices] * np.cos(1 * theta[indices])
+        p3[indices] = coeffs[2] * 2 * rho[indices] * np.sin(1 * theta[indices])
+        p4[indices] = coeffs[3] * np.sqrt(3) * (2 * rho[indices] ** 2 - 1)
+        p5[indices] = coeffs[4] * np.sqrt(6) * rho[indices] ** 2 * np.cos(2 * theta[indices])
+        p6[indices] = coeffs[5] * np.sqrt(6) * rho[indices] ** 2 * np.sin(2 * theta[indices])
+        p7[indices] = coeffs[6] * np.sqrt(8) * (3 * rho[indices] ** 3 - 2 * rho[indices]) * np.cos(1 * theta[indices])
+        p8[indices] = coeffs[7] * np.sqrt(8) * (3 * rho[indices] ** 3 - 2 * rho[indices]) * np.sin(1 * theta[indices])
+        p9[indices] = coeffs[8] * np.sqrt(8) * rho[indices] ** 3 * np.cos(3 * theta[indices])
+        p10[indices] = coeffs[9] * np.sqrt(8) * rho[indices] ** 3 * np.sin(3 * theta[indices])
+
+        phase = (p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9 + p10) / (2 * np.pi) * bit_depth
 
         return phase
 

@@ -11,10 +11,11 @@ from matplotlib.figure import Figure
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from views import daheng_camera, andor_xuv_camera, mcp_camera
+from views import daheng_camera, andor_xuv_camera, pike_camera
 from stages_and_sensors import thorlabs_stages
 print('Done')
 
+#test
 
 class DLabController(object):
     """
@@ -36,15 +37,13 @@ class DLabController(object):
                              tabposition=tk.W + tk.N,
                              tabplacement=tk.N + tk.EW)
 
-
-
         self.publish_window_green = None
         self.publish_window_red = None
 
         self.feedback_win = None
         self.andor_camera_win = None
         self.daheng_camera_win = None
-        self.mcp_camera_win = None
+        self.pike_camera_win = None
 
         self.thorlabs_stages_win = None
 
@@ -77,13 +76,13 @@ class DLabController(object):
 
         lbl_screen_green = ttk.Label(self.frm_top_green, text='Display number :')
         self.strvar_green = tk.StringVar(value='3')
-        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=5, from_=1, to=5, textvariable=self.strvar_green)
-        self.ent_scr_green.grid(row=0, column=1, sticky='w', padx=(0, 10))
+        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=8, from_=1, to=5, textvariable=self.strvar_green)
+        self.ent_scr_green.grid(row=0, column=1, sticky='w')
 
         lbl_screen_red = ttk.Label(self.frm_top_red, text='Display number :')
         self.strvar_red = tk.StringVar(value='2')
-        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=5, from_=1, to=5, textvariable=self.strvar_red)
-        self.ent_scr_red.grid(row=0, column=1, sticky='w', padx=(0, 10))
+        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=8, from_=1, to=5, textvariable=self.strvar_red)
+        self.ent_scr_red.grid(row=0, column=1, sticky='w')
 
         self.setup_box_green(self.frm_top_green)
         self.setup_box_red(self.frm_top_red)
@@ -119,20 +118,14 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        self.ax_green.axes.xaxis.set_visible(False)
-        self.ax_green.axes.yaxis.set_visible(False)
-
-        self.ax_red.axes.xaxis.set_visible(False)
-        self.ax_red.axes.yaxis.set_visible(False)
-
-        but_mcp_camera = ttk.Button(self.frm_side_panel, text='MCP Camera', command=self.open_mcp_camera)
-        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
         but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
+        but_pike_camera = ttk.Button(self.frm_side_panel, text='PIKE Camera', command=self.open_pike_camera)
+        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
         but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
 
-        but_mcp_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        but_daheng_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        but_andor_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        but_andor_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        but_pike_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        but_daheng_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
         but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
@@ -181,15 +174,15 @@ class DLabController(object):
         """
         self.andor_camera_win = andor_xuv_camera.AndorCameraViewer(self)
 
-    def open_mcp_camera(self):
+    def open_pike_camera(self):
         """
-        Open the MCP window.
+        Open the pike camera window.
 
         Returns
         -------
         None
         """
-        self.mcp_camera_win = mcp_camera.Mcp(self)
+        self.pike_camera_win = pike_camera.PikeCameraViewer(self)
 
     def open_thorlabs_stages(self):
         """
@@ -212,11 +205,12 @@ class DLabController(object):
         self.ent_scr_green.config(state='disabled')
         self.phase_map_green = self.get_phase_green()
 
+        self.phase_map_green = (self.phase_map_green % (bit_depth + 1)).astype(np.uint16)
+        self.update_phase_plot_green(self.phase_map_green)
+
         self.publish_window_green = int(self.ent_scr_green.get())
         slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
         slm.SLM_Disp_Data(int(self.ent_scr_green.get()), self.phase_map_green, slm_size[1], slm_size[0])
-
-        self.update_phase_plot_green(self.phase_map_green)
 
     def open_pub_red(self):
         """
@@ -229,11 +223,12 @@ class DLabController(object):
         self.ent_scr_red.config(state='disabled')
         self.phase_map_red = self.get_phase_red()
 
+        self.phase_map_red = (self.phase_map_red % (bit_depth + 1)).astype(np.uint16)
+        self.update_phase_plot_red(self.phase_map_red)
+
         self.publish_window_red = int(self.ent_scr_red.get())
         slm.SLM_Disp_Open(int(self.ent_scr_red.get()))
         slm.SLM_Disp_Data(int(self.ent_scr_red.get()), self.phase_map_red, slm_size[1], slm_size[0])
-
-        self.update_phase_plot_red(self.phase_map_red)
 
     def setup_box_green(self, frm_):
         """
@@ -341,8 +336,9 @@ class DLabController(object):
         None
         """
         self.ax_green.clear()
-        self.ax_green.imshow(phase % (bit_depth + 1), cmap='RdBu',
+        self.ax_green.imshow(phase, cmap='twilight',
                              interpolation='None')
+
         self.img_green.draw()
 
     def update_phase_plot_red(self, phase):
@@ -362,7 +358,7 @@ class DLabController(object):
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase % (bit_depth + 1), cmap='RdBu',
+        self.ax_red.imshow(phase, cmap='twilight',
                            interpolation='None')
         self.img_red.draw()
 
@@ -558,7 +554,7 @@ class DLabController(object):
         self.feedback_win = None
         self.andor_camera = None
         self.camera_win = None
-        self.mcp_win = None
+        self.pike_camera_win = None
         self.main_win.destroy()
 
 
