@@ -15,6 +15,7 @@ from views import daheng_camera, andor_xuv_camera, pike_camera
 from stages_and_sensors import thorlabs_stages
 print('Done')
 
+#test
 
 class DLabController(object):
     """
