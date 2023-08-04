@@ -1504,8 +1504,9 @@ class Feedbacker(object):
         """
         nr = self.get_start_image()
         # self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
-        cv2.imwrite(filename, image)
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.tif'
+        image_16bit = image.astype(np.uint16)
+        cv2.imwrite(filename, image_16bit,[cv2.IMWRITE_PXM_BINARY, 1])
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
@@ -2427,6 +2428,7 @@ class Feedbacker(object):
 
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
+
 
     def plot_fft(self):
         """
