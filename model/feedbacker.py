@@ -1530,31 +1530,6 @@ class Feedbacker(object):
         self.f.write(log_entry)
         # self.f.close()
 
-    def save_image(self, image, image_nr, image_info="Test"):
-        """
-        Saves the captured image to a file.
-
-        Parameters
-        ----------
-        image : numpy.ndarray
-            The captured image.
-        image_nr : int
-            The number of the image.
-        image_info : str, optional
-            Additional information about the image. The default is "Test".
-
-        Returns
-        -------
-        int
-            The status of the save operation (1 for success, 0 for failure).
-        """
-        self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(image_nr)) + '.bmp'
-        cv2.imwrite(filename, image)
-        self.f.write(str(int(image_nr)) + "\t" + image_info + "\n")
-        self.f.close()
-        return 1
-
     def split_threading(self):
         total_steps = int(self.ent_ratio_steps.get())
         inital_start = float(self.ent_ratio_from.get())
