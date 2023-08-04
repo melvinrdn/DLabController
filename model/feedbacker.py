@@ -1144,13 +1144,13 @@ class Feedbacker(object):
             print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
 
-            try:
-                self.WPDummy.move_to(pos, True)
-                print(f"Dummy moved to {str(self.WPDummy.position)}")
-                self.read_WPDummy()
-            except Exception as e:
-                print(e)
-                print("Impossible to move Dummy :(")
+            #try:
+            #    self.WPDummy.move_to(pos, True)
+            #    print(f"Dummy moved to {str(self.WPDummy.position)}")
+            #    self.read_WPDummy()
+            #except Exception as e:
+            #    print(e)
+            #    print("Impossible to move Dummy :(")
 
 
 
