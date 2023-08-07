@@ -2411,7 +2411,7 @@ class Feedbacker(object):
 
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
-            self.axMCP.imshow(mcpimage)
+            self.axMCP.imshow(mcpimage.T)
             self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")
@@ -2420,7 +2420,7 @@ class Feedbacker(object):
             self.axMCP.set_ylim(0, 512)
 
             self.axHarmonics.clear()
-            self.axHarmonics.plot(np.arange(512), np.sum(mcpimage, 0))
+            self.axHarmonics.plot(np.arange(512), np.sum(mcpimage, 1))
             self.axHarmonics.set_xlabel("X (px)")
             self.axHarmonics.set_ylabel("Counts (arb.u.)")
 
