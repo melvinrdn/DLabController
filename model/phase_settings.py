@@ -652,7 +652,7 @@ class TypeLens(BaseType):
 
         # creating labels
         lbl_ben = ttk.Label(lbl_frm, text='Bending strength (1/f) [1/m]:')
-        lbl_wavelength = ttk.Label(lbl_frm, text='Wavelength [m]:')
+        lbl_wavelength = ttk.Label(lbl_frm, text='Wavelength [nm]:')
 
         # creating entries
         vcmd = (parent.register(self.callback))
@@ -685,7 +685,7 @@ class TypeLens(BaseType):
             ben = 0
 
         if self.ent_ben.get() != '':
-            wavelength = float(self.ent_wavelength.get())
+            wavelength = float(self.ent_wavelength.get()) * 1e-9
         else:
             print('set a wavelength')
 
@@ -710,7 +710,7 @@ class TypeLens(BaseType):
         dict : dict
             A dictionary of the current state.
         """
-        dict = {'ben': self.ent_ben.get()}
+        dict = {'ben': self.ent_ben.get(), 'wavelength': self.ent_wavelength.get()}
         return dict
 
     def load_(self, dict):
@@ -723,6 +723,7 @@ class TypeLens(BaseType):
             A dictionary of the saved state.
         """
         self.strvar_ben.set(dict['ben'])
+        self.strvar_wavelength.set(dict['wavelength'])
 
 
 class TypeMultibeam(BaseType):
