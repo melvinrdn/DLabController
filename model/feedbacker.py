@@ -1144,13 +1144,13 @@ class Feedbacker(object):
             print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
 
-            try:
-                self.WPDummy.move_to(pos, True)
-                print(f"Dummy moved to {str(self.WPDummy.position)}")
-                self.read_WPDummy()
-            except Exception as e:
-                print(e)
-                print("Impossible to move Dummy :(")
+            #try:
+            #    self.WPDummy.move_to(pos, True)
+            #    print(f"Dummy moved to {str(self.WPDummy.position)}")
+            #    self.read_WPDummy()
+            #except Exception as e:
+            #    print(e)
+            #    print("Impossible to move Dummy :(")
 
 
 
@@ -1504,8 +1504,9 @@ class Feedbacker(object):
         """
         nr = self.get_start_image()
         # self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.bmp'
-        cv2.imwrite(filename, image)
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.tif'
+        image_16bit = image.astype(np.uint16)
+        cv2.imwrite(filename, image_16bit,[cv2.IMWRITE_PXM_BINARY, 1])
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
@@ -1529,31 +1530,6 @@ class Feedbacker(object):
             rl) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
         # self.f.close()
-
-    def save_image(self, image, image_nr, image_info="Test"):
-        """
-        Saves the captured image to a file.
-
-        Parameters
-        ----------
-        image : numpy.ndarray
-            The captured image.
-        image_nr : int
-            The number of the image.
-        image_info : str, optional
-            Additional information about the image. The default is "Test".
-
-        Returns
-        -------
-        int
-            The status of the save operation (1 for success, 0 for failure).
-        """
-        self.f = open(self.autolog, "a+")
-        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(image_nr)) + '.bmp'
-        cv2.imwrite(filename, image)
-        self.f.write(str(int(image_nr)) + "\t" + image_info + "\n")
-        self.f.close()
-        return 1
 
     def split_threading(self):
         total_steps = int(self.ent_ratio_steps.get())
@@ -2452,6 +2428,7 @@ class Feedbacker(object):
 
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
+
 
     def plot_fft(self):
         """
