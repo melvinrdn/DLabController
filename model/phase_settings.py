@@ -7,7 +7,7 @@ from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
 gs=None
 aberration=None
 
-types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike']
+types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike'] #defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):

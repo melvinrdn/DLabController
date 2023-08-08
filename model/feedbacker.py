@@ -1510,12 +1510,18 @@ class Feedbacker(object):
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
-            rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
+            if self.parent.vars_red[1].get() == 1:
+                rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
+            else:
+                rl = 0
         except:
             rl = np.nan
 
         try:
-            gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
+            if self.parent.vars_green[1].get() == 1:
+                gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
+            else:
+                gl = 0
         except:
             gl = np.nan
 
