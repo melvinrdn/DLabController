@@ -26,6 +26,7 @@ from stages_and_sensors import waveplate_calibrator as cal
 from pylablib.devices import Andor
 import pylablib as pll
 
+
 class Feedbacker(object):
     """
     A class for controlling the overlap between the green and the red, using spectral fringes.
@@ -45,6 +46,7 @@ class Feedbacker(object):
         None
 
         """
+
         matplotlib.use("TkAgg")
         self.cam = None
         self.parent = parent
@@ -74,6 +76,11 @@ class Feedbacker(object):
 
         self.scan_is_done_threading = threading.Event()
 
+        self.ymin_harmonics = None
+        self.ymax_harmonics = None
+        self.current_harmonics_profile_max = None
+        self.current_harmonics_profile_min = None
+
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
         self.f = open(self.autolog, "a+")
@@ -90,7 +97,7 @@ class Feedbacker(object):
         frm_spc_but_set = tk.Frame(frm_spc_but)
 
         frm_mcp_image = tk.LabelFrame(self.win, text='MCP')
-        frm_mcp_but = tk.LabelFrame(self.win, text='MCP options')
+        frm_mcp_options = tk.LabelFrame(self.win, text='MCP options')
 
         frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
         frm_ratio = tk.LabelFrame(frm_mid, text='Phase extraction')
@@ -609,10 +616,17 @@ class Feedbacker(object):
         # self.cb_wpgscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wpgscan, onvalue=1, offvalue=0,
         # command=None)
 
+        self.but_fixyaxis = tk.Button(frm_mcp_options, text='Update Y Axis!', command=self.fixyaxis)
+        self.var_fixyaxis = tk.IntVar()
+        self.cb_fixyaxis = tk.Checkbutton(frm_mcp_options, text='Fix Y axis', variable=self.var_fixyaxis, onvalue=1,
+                                          offvalue=0,
+                                          command=None)
+
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_phase_scan.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -871,6 +885,10 @@ class Feedbacker(object):
         self.img1p.draw()
         self.ax1p_blit = self.figp.canvas.copy_from_bbox(self.ax1p.bbox)
 
+        # setting up frm_mcp_options
+        self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_fixyaxis.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
         # setting up frm_ratio
         self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -907,6 +925,12 @@ class Feedbacker(object):
             self.name_cam = 'ANDOR_cam'
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
+
+    def fixyaxis(self):
+        if self.var_fixyaxis.get() == 1:
+            #ymin, ymax = self.axHarmonics.get_ylim()
+            self.ymin_harmonics = self.current_harmonics_profile_min
+            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (self.current_harmonics_profile_max - self.current_harmonics_profile_min)
 
     def change_mcp_cam(self, event):
         selected_value = self.strvar_mcp_cam_choice.get()
@@ -1144,11 +1168,11 @@ class Feedbacker(object):
             print(f"WPG moved to {str(self.WPG.position)}")
             self.read_WPG()
 
-            #try:
+            # try:
             #    self.WPDummy.move_to(pos, True)
             #    print(f"Dummy moved to {str(self.WPDummy.position)}")
             #    self.read_WPDummy()
-            #except Exception as e:
+            # except Exception as e:
             #    print(e)
             #    print("Impossible to move Dummy :(")
 
@@ -1506,7 +1530,7 @@ class Feedbacker(object):
         # self.f = open(self.autolog, "a+")
         filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.tif'
         image_16bit = image.astype(np.uint16)
-        cv2.imwrite(filename, image_16bit,[cv2.IMWRITE_PXM_BINARY, 1])
+        cv2.imwrite(filename, image_16bit, [cv2.IMWRITE_PXM_BINARY, 1])
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
@@ -2431,10 +2455,14 @@ class Feedbacker(object):
             self.axHarmonics.set_ylabel("Counts (arb.u.)")
 
             self.axHarmonics.set_xlim(0, 512)
+            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
+            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
+            if self.var_fixyaxis.get() == 1:
+                self.axHarmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+
 
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
-
 
     def plot_fft(self):
         """
@@ -2698,7 +2726,7 @@ class Feedbacker(object):
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()
-        if self.cam is not None :
+        if self.cam is not None:
             self.cam.close()
         self.spec_deactivate()
         avs.AVS_Done()
