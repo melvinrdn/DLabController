@@ -81,6 +81,8 @@ class Feedbacker(object):
         self.current_harmonics_profile_max = None
         self.current_harmonics_profile_min = None
 
+        self.background = None
+
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
         self.f = open(self.autolog, "a+")
@@ -622,6 +624,10 @@ class Feedbacker(object):
                                           offvalue=0,
                                           command=None)
 
+        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
+        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background', command=self.remove_background)
+
+
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -887,7 +893,10 @@ class Feedbacker(object):
 
         # setting up frm_mcp_options
         self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_fixyaxis.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_fixyaxis.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+
 
         # setting up frm_ratio
         self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -926,6 +935,13 @@ class Feedbacker(object):
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
+    def get_background(self):
+        im = self.take_image(int(self.ent_avgs.get()))
+        self.background = im
+
+    def remove_background(self):
+        self.background = np.zeros([512,512])
+
     def fixyaxis(self):
         if self.var_fixyaxis.get() == 1:
             #ymin, ymax = self.axHarmonics.get_ylim()
@@ -947,6 +963,7 @@ class Feedbacker(object):
             self.PIKE_cam = False
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
+            self.background = np.zeros([512,512])
 
         print(f"PIKE_cam: {self.PIKE_cam}")
         print(f"ANDOR_cam: {self.ANDOR_cam}")
@@ -1511,7 +1528,7 @@ class Feedbacker(object):
         else:
             print('Damn no cam')
 
-        return image
+        return image-self.background
 
     def save_im(self, image):
         """
@@ -2419,6 +2436,9 @@ class Feedbacker(object):
         -------
         None
         """
+
+        #mcpimage = mcpimage - self.background
+
         if self.PIKE_cam is True:
             self.axMCP.clear()
             self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
