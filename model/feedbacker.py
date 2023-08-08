@@ -83,6 +83,9 @@ class Feedbacker(object):
 
         self.background = None
 
+        self.live_is_pressed = False
+
+
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
         self.f = open(self.autolog, "a+")
@@ -254,6 +257,8 @@ class Feedbacker(object):
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
+        self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
+
         self.var_split_scan = tk.IntVar()
         self.cb_split_scan = tk.Checkbutton(frm_measure, text='Split Scan', variable=self.var_split_scan, onvalue=1,
                                             offvalue=0,
@@ -710,6 +715,7 @@ class Feedbacker(object):
         self.but_meas_all.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
         self.but_meas_scan.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
         self.but_meas_simple.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_view_live.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
         self.cb_split_scan.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
@@ -1625,6 +1631,32 @@ class Feedbacker(object):
         self.strvar_ratio_steps.set(str(total_steps))
         print("Measurement Done!!!")
 
+
+    def enabl_mcp_live(self):
+        """
+        Enables the MCP measurement.
+
+        Returns
+        -------
+        None
+        """
+        self.live_is_pressed = not self.live_is_pressed
+        self.update_live_button()
+
+        self.stop_mcp = False
+        self.mcp_thread = threading.Thread(target=self.view_live)
+        self.mcp_thread.daemon = True
+        self.mcp_thread.start()
+
+
+    def update_live_button(self):
+        if self.live_is_pressed:
+            self.but_view_live.config(relief="sunken")
+            self.but_view_live.config(fg = 'red')
+        else:
+            self.but_view_live.config(relief="raised")
+            self.but_view_live.config(fg='green')
+
     def enabl_mcp_all(self):
         """
         Enables the MCP measurement.
@@ -2153,6 +2185,11 @@ class Feedbacker(object):
                 self.save_im(im)
                 self.plot_MCP(im)
                 # self.cam_mono_acq()
+
+    def view_live(self):
+        while self.live_is_pressed:
+            im = self.take_image(int(self.ent_avgs.get()))
+            self.plot_MCP(im)
 
     def measure_all(self):
         print("yay i made it into the measure all function")
