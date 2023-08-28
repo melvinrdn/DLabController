@@ -110,10 +110,12 @@ class Feedbacker(object):
 
         frm_measure = tk.LabelFrame(frm_scans, text='Measurement')
         frm_phase_scan = tk.LabelFrame(frm_scans, text='Phase Scan')
-        frm_daheng_camera_settings = tk.LabelFrame(frm_scans, text='Daheng camera')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
         frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
+        frm_daheng_camera = tk.LabelFrame(frm_scans, text='Daheng camera')
+        frm_daheng_camera_settings = tk.LabelFrame(frm_daheng_camera, text='Settings')
+        frm_daheng_camera_image = tk.LabelFrame(frm_daheng_camera, text='The Image')
 
         vcmd = (self.win.register(self.parent.callback))
 
@@ -641,10 +643,14 @@ class Feedbacker(object):
         frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_phase_scan.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        frm_daheng_camera_settings.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         frm_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         frm_wp_power_cal.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_wp_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        frm_daheng_camera.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        frm_daheng_camera_settings.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_daheng_camera_image.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+
+
 
         frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
@@ -847,6 +853,13 @@ class Feedbacker(object):
         self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
         self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
+
+        #setting up Daheng stuff
+        self.but_initialize_daheng = tk.Button(frm_daheng_camera_settings, text="Initialize", command=initialize_daheng)
+        self.but_initialize_daheng.grid(row=0,column=0)
+        self.but_close_daheng = tk.Button(frm_daheng_camera_settings, text="Disconnect", command=close_daheng)
+        self.but_close_daheng.grid(row=0,column=1)
+
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
         self.axHarmonics = self.figrMCP.add_subplot(212)
@@ -940,6 +953,14 @@ class Feedbacker(object):
             self.name_cam = 'ANDOR_cam'
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
+
+
+    def initialize_daheng(self):
+        return 1
+
+    def close_daheng(self):
+        return 1
+
 
     def get_background(self):
         im = self.take_image(int(self.ent_avgs.get()))
