@@ -26,6 +26,8 @@ from stages_and_sensors import waveplate_calibrator as cal
 from pylablib.devices import Andor
 import pylablib as pll
 
+import views.focus_diagnostic as dh
+
 
 class Feedbacker(object):
     """
@@ -85,6 +87,11 @@ class Feedbacker(object):
 
         self.live_is_pressed = False
 
+        self.daheng_active = False
+        self.daheng_camera = None
+        self.daheng_is_live = False
+        self.current_daheng_image = None
+        self.daheng_zoom = None
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
@@ -113,9 +120,11 @@ class Feedbacker(object):
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
         frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
         frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
-        frm_daheng_camera = tk.LabelFrame(frm_scans, text='Daheng camera')
+        frm_daheng_camera = tk.LabelFrame(self.win, text='Daheng camera')
         frm_daheng_camera_settings = tk.LabelFrame(frm_daheng_camera, text='Settings')
-        frm_daheng_camera_image = tk.LabelFrame(frm_daheng_camera, text='The Image')
+        self.frm_daheng_camera_image = tk.LabelFrame(frm_daheng_camera, text='The Image')
+        #camera_image = ZoomCanvas(self.frm_daheng_camera_image)
+        #camera_image.pack(padx=2, pady=2, expand=True)
 
         vcmd = (self.win.register(self.parent.callback))
 
@@ -632,8 +641,8 @@ class Feedbacker(object):
                                           command=None)
 
         self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
-        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background', command=self.remove_background)
-
+        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
+                                               command=self.remove_background)
 
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
@@ -646,11 +655,9 @@ class Feedbacker(object):
         frm_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         frm_wp_power_cal.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_wp_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        frm_daheng_camera.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        frm_daheng_camera.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         frm_daheng_camera_settings.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_daheng_camera_image.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-
-
+        self.frm_daheng_camera_image.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
         frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
@@ -716,13 +723,13 @@ class Feedbacker(object):
         lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+        self.cb_background.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.but_meas_all.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_view_live.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
-        self.cb_split_scan.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_view_live.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.cb_split_scan.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
         lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -853,12 +860,89 @@ class Feedbacker(object):
         self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
         self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
+        # setting up Daheng stuff
+        self.but_initialize_daheng = tk.Button(frm_daheng_camera_settings, text="Initialize",
+                                               command=self.initialize_daheng)
+        self.but_initialize_daheng.grid(row=0, column=0)
+        self.but_close_daheng = tk.Button(frm_daheng_camera_settings, text="Disconnect", command=self.close_daheng)
+        self.but_close_daheng.grid(row=0, column=1)
+        self.var_index_camera = tk.StringVar(self.win, value="1")
+        self.ent_default_cam_index = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_index_camera, width=3,
+                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_default_cam_index.grid(row=1, column=0)
 
-        #setting up Daheng stuff
-        self.but_initialize_daheng = tk.Button(frm_daheng_camera_settings, text="Initialize", command=initialize_daheng)
-        self.but_initialize_daheng.grid(row=0,column=0)
-        self.but_close_daheng = tk.Button(frm_daheng_camera_settings, text="Disconnect", command=close_daheng)
-        self.but_close_daheng.grid(row=0,column=1)
+        lbl_daheng_exposure = tk.Label(frm_daheng_camera_settings, text="Exp:")
+        lbl_daheng_exposure.grid(row=2, column=0)
+        lbl_daheng_gain = tk.Label(frm_daheng_camera_settings, text="Gain:")
+        lbl_daheng_gain.grid(row=3, column=0)
+        lbl_daheng_avg = tk.Label(frm_daheng_camera_settings, text="Avg:")
+        lbl_daheng_avg.grid(row=4, column=0)
+
+        self.var_daheng_exposure = tk.StringVar(self.win, value="100000")
+        self.ent_daheng_exposure = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_exposure, width=10,
+                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_exposure.grid(row=2, column=1)
+        self.ent_daheng_exposure.bind("<KeyRelease>", self.exp_gain_value_changed)
+
+        self.var_daheng_gain = tk.StringVar(self.win, value="0")
+        self.ent_daheng_gain = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_gain, width=10,
+                                        validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_gain.grid(row=3, column=1)
+        self.ent_daheng_gain.bind("<KeyRelease>", self.exp_gain_value_changed)
+
+        self.var_daheng_avg = tk.StringVar(self.win, value="1")
+        self.ent_daheng_avg = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_avg, width=10,
+                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_avg.grid(row=4, column=1)
+
+        self.but_live_daheng = tk.Button(frm_daheng_camera_settings, text="Live",
+                                         command=self.live_daheng_thread)
+        self.but_live_daheng.grid(row=5, column=0)
+
+        self.but_single_daheng = tk.Button(frm_daheng_camera_settings, text="Single",
+                                         command=self.single_daheng_thread)
+        self.but_single_daheng.grid(row=5, column=1)
+
+        self.but_scan_daheng = tk.Button(frm_daheng_camera_settings, text="Stage Scan!",
+                                           command=self.scan_daheng_thread)
+        self.but_scan_daheng.grid(row=5, column=2)
+        self.but_com_daheng = tk.Button(frm_daheng_camera_settings, text="Zoom in COM",
+                                         command=self.zoom_around_com)
+        self.but_com_daheng.grid(row=6, column=0)
+
+        self.but_reset_daheng = tk.Button(frm_daheng_camera_settings, text="Reset Zoom",
+                                        command=self.reset_zoom)
+        self.but_reset_daheng.grid(row=6, column=1)
+
+        self.var_daheng_radius = tk.StringVar(self.win, value="200")
+        self.ent_daheng_radius = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_radius, width=8,
+                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_radius.grid(row=7, column=0)
+
+        lbl_daheng_stage_from = tk.Label(frm_daheng_camera_settings,text="From")
+        lbl_daheng_stage_to = tk.Label(frm_daheng_camera_settings,text="To")
+        lbl_daheng_stage_steps = tk.Label(frm_daheng_camera_settings,text="Steps")
+        lbl_daheng_stage_from.grid(row=8, column=0)
+        lbl_daheng_stage_to.grid(row=8, column=1)
+        lbl_daheng_stage_steps.grid(row=8, column=2)
+
+        self.var_daheng_stage_from = tk.StringVar(self.win, value="6")
+        self.ent_daheng_stage_from = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_from, width=5,
+                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_from.grid(row=9, column=0)
+
+        self.var_daheng_stage_to = tk.StringVar(self.win, value="12")
+        self.ent_daheng_stage_to = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_to,
+                                              width=5,
+                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_to.grid(row=9, column=1)
+
+        self.var_daheng_stage_steps = tk.StringVar(self.win, value="10")
+        self.ent_daheng_stage_steps = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_steps,
+                                            width=5,
+                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_steps.grid(row=9, column=2)
+
 
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -916,7 +1000,6 @@ class Feedbacker(object):
         self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-
         # setting up frm_ratio
         self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -955,25 +1038,167 @@ class Feedbacker(object):
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
 
-    def initialize_daheng(self):
+    def single_daheng_thread(self):
+        self.daheng_thread = threading.Thread(target=self.take_single_image_daheng)
+        self.daheng_thread.daemon = True
+        self.daheng_thread.start()
+
+    def scan_daheng_thread(self):
+        self.daheng_thread = threading.Thread(target=self.scan_stage_daheng)
+        self.daheng_thread.daemon = True
+        self.daheng_thread.start()
+
+    def live_daheng_thread(self):
+        self.daheng_is_live = not self.daheng_is_live
+        self.update_daheng_live_button()
+
+        self.daheng_thread = threading.Thread(target=self.live_daheng)
+        self.daheng_thread.daemon = True
+        self.daheng_thread.start()
+
+    def update_daheng_live_button(self):
+        if self.daheng_is_live == True:
+            self.but_live_daheng.config(fg="green", relief='sunken')
+        else:
+            self.but_live_daheng.config(fg="red", relief='raised')
+
+    def live_daheng(self):
+        while self.daheng_is_live:
+            # self.daheng_camera.set_exposure_gain(int(self.var_daheng_exposure.get()), int(self.var_daheng_gain.get()))
+            im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
+            self.current_daheng_image = im
+            self.plot_daheng(im)
+            print("Image taken!")
+
+    def scan_stage_daheng(self):
+        from_ = float(self.var_daheng_stage_from.get())
+        to_ = float(self.var_daheng_stage_to.get())
+        steps_ = int(self.var_daheng_stage_steps.get())
+        stage_steps = np.linspace(from_,to_,steps_)
+        if self.daheng_camera is not None:
+            res = np.zeros([self.daheng_camera.imshape[0],self.daheng_camera.imshape[1],int(steps_)])
+            for ind, pos in enumerate(stage_steps):
+                self.strvar_WPDummy_should.set(pos)
+                self.move_WPDummy()
+                im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
+                self.plot_daheng(im)
+                res[:,:,ind] = im
+                print(ind, "success")
         return 1
+    def take_single_image_daheng(self):
+        if self.daheng_camera is not None:
+            im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
+            self.current_daheng_image = im
+            self.plot_daheng(im)
+
+    def plot_daheng(self, im):
+
+        if self.daheng_zoom is not None:
+            im = im[int(self.daheng_zoom[0]):int(self.daheng_zoom[1]),int(self.daheng_zoom[2]):int(self.daheng_zoom[3])]
+
+        image = Image.fromarray(im)
+
+        # Resize the image to fit within the specified maximum height
+        max_height = 180
+        new_width = int(image.width * max_height / max(image.height, max_height))
+        image.thumbnail((new_width, max(max_height, image.height)))
+        photo = ImageTk.PhotoImage(image)
+        image_frame = self.frm_daheng_camera_image
+        if hasattr(image_frame, 'image_label'):
+            image_frame.image_label.config(image=photo)
+            image_frame.image_label.image = photo
+        else:
+            image_frame.image_label = tk.Label(image_frame, image=photo)
+            image_frame.image_label.pack(fill=tk.BOTH, expand=True)
+
+    def zoom_around_com(self):
+        radius = int(self.var_daheng_radius.get())
+        if self.daheng_camera is not None:
+            og_shape = self.daheng_camera.imshape
+            if self.current_daheng_image is not None:
+                x,y = self.calculate_com(self.current_daheng_image)
+                x1 = x-radius
+                x2 = x + radius
+                y1 = y - radius
+                y2 = y + radius
+                if x + radius > og_shape[1]:
+                    x2 = og_shape[1]-1
+                if x - radius < 0:
+                    x1 = 0
+                if y + radius > og_shape[0]:
+                    y2 = og_shape[0]-1
+                if y - radius < 0:
+                    y1 = 0
+                self.daheng_zoom=[y1,y2,x1,x2]
+
+    def reset_zoom(self):
+        self.daheng_zoom = None
+
+
+    def calculate_com(self,im):
+        # Convert the image data to a NumPy array
+        image_array = np.array(im)
+
+        # Create a grid of coordinates
+        y_coords, x_coords = np.indices(image_array.shape)
+
+        # Calculate the weighted sum of x and y coordinates
+        sum_x = np.sum(x_coords * image_array)
+        sum_y = np.sum(y_coords * image_array)
+
+        # Calculate the total sum of pixel values
+        total_sum = np.sum(image_array)
+
+        # Calculate the center of mass
+        center_x = sum_x / total_sum
+        center_y = sum_y / total_sum
+        return center_x, center_y
+
+    def exp_gain_value_changed(self, event):
+        if self.daheng_camera is not None:
+            try:
+                exposure = int(self.var_daheng_exposure.get())
+                gain = int(self.var_daheng_gain.get())
+                self.daheng_camera.set_exposure_gain(exposure, gain)
+            except:
+                print("Enter something reasonable!!")
+
+    def initialize_daheng(self):
+        device_manager = gx.DeviceManager()
+        index = int(self.var_index_camera.get())
+        self.daheng_camera = dh.DahengCamera(index)
+        if self.daheng_camera is not None:
+            self.but_initialize_daheng.config(fg="green")
+            self.daheng_active = True
+            self.daheng_camera.set_exposure_gain(int(self.var_daheng_exposure.get()), int(self.var_daheng_gain.get()))
+            return 1
+        else:
+            self.but_initialize_daheng.config(fg="red")
+            return 0
 
     def close_daheng(self):
-        return 1
-
+        if self.daheng_camera is not None:
+            self.but_close_daheng.config(fg="green")
+            self.daheng_active = False
+            self.daheng_camera = None
+            return 1
+        else:
+            self.but_close_daheng.config(fg="red")
+            return 0
 
     def get_background(self):
         im = self.take_image(int(self.ent_avgs.get()))
         self.background = im
 
     def remove_background(self):
-        self.background = np.zeros([512,512])
+        self.background = np.zeros([512, 512])
 
     def fixyaxis(self):
         if self.var_fixyaxis.get() == 1:
-            #ymin, ymax = self.axHarmonics.get_ylim()
+            # ymin, ymax = self.axHarmonics.get_ylim()
             self.ymin_harmonics = self.current_harmonics_profile_min
-            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (self.current_harmonics_profile_max - self.current_harmonics_profile_min)
+            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
+                    self.current_harmonics_profile_max - self.current_harmonics_profile_min)
 
     def change_mcp_cam(self, event):
         selected_value = self.strvar_mcp_cam_choice.get()
@@ -990,7 +1215,7 @@ class Feedbacker(object):
             self.PIKE_cam = False
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
-            self.background = np.zeros([512,512])
+            self.background = np.zeros([512, 512])
 
         print(f"PIKE_cam: {self.PIKE_cam}")
         print(f"ANDOR_cam: {self.ANDOR_cam}")
@@ -1253,7 +1478,7 @@ class Feedbacker(object):
         try:
             self.WPDummy = apt.Motor(int(self.ent_WPDummy_Nr.get()))
             self.but_WPDummy_Ini.config(fg='green')
-            print("WPG connected")
+            print("WPDummy connected")
         except:
             self.but_WPDummy_Ini.config(fg='red')
             print("Not able to initalize Dummy Waveplate")
@@ -1555,7 +1780,7 @@ class Feedbacker(object):
         else:
             print('Damn no cam')
 
-        return image-self.background
+        return image - self.background
 
     def save_im(self, image):
         """
@@ -1652,7 +1877,6 @@ class Feedbacker(object):
         self.strvar_ratio_steps.set(str(total_steps))
         print("Measurement Done!!!")
 
-
     def enabl_mcp_live(self):
         """
         Enables the MCP measurement.
@@ -1669,11 +1893,10 @@ class Feedbacker(object):
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
-
     def update_live_button(self):
         if self.live_is_pressed:
             self.but_view_live.config(relief="sunken")
-            self.but_view_live.config(fg = 'red')
+            self.but_view_live.config(fg='red')
         else:
             self.but_view_live.config(relief="raised")
             self.but_view_live.config(fg='green')
@@ -2495,7 +2718,7 @@ class Feedbacker(object):
         None
         """
 
-        #mcpimage = mcpimage - self.background
+        # mcpimage = mcpimage - self.background
 
         if self.PIKE_cam is True:
             self.axMCP.clear()
@@ -2537,7 +2760,6 @@ class Feedbacker(object):
             self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
             if self.var_fixyaxis.get() == 1:
                 self.axHarmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
-
 
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
