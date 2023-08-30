@@ -5,3 +5,4 @@ opencv-python~=4.7.0.72
 Pillow~=9.4.0
 pylablib~=1.4.1
 simple_pid~=2.0.0
+h5py

@@ -6,6 +6,7 @@ from tkinter import ttk
 from collections import deque
 from datetime import date
 import datetime
+import h5py
 
 import cv2
 import matplotlib
@@ -96,6 +97,9 @@ class Feedbacker(object):
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
         self.f = open(self.autolog, "a+")
+
+        self.autolog_images = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log-images.txt'
+        self.g = open(self.autolog_images, "a+")
 
         # creating frames
 
@@ -1083,8 +1087,7 @@ class Feedbacker(object):
                 im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
                 self.plot_daheng(im)
                 res[:,:,ind] = im
-                print(ind, "success")
-        return 1
+        self.save_daheng_scans(res,stage_steps)
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
             im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
@@ -1782,6 +1785,38 @@ class Feedbacker(object):
 
         return image - self.background
 
+    def save_daheng_scans(self,res,pos):
+        nr = self.get_start_image_images()
+
+        data_filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+
+
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        try:
+            if self.parent.vars_red[1].get() == 1:
+                rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
+            else:
+                rl = 0
+        except:
+            rl = np.nan
+
+        try:
+            if self.parent.vars_green[1].get() == 1:
+                gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
+            else:
+                gl = 0
+        except:
+            gl = np.nan
+
+        log_entry = str(int(nr)) + '\t' + str(pos[0]) + '\t' + str(pos[-1]) + '\t' + str(int(np.size(pos)))  + '\t' + str(gl) + '\t' + str(rl) + '\t' + timestamp + '\n'
+        self.g.write(log_entry)
+        hf = h5py.File(data_filename, 'w')
+        hf.create_dataset('images', data=res)
+        hf.create_dataset('positions', data=pos)
+        hf.create_dataset('green_lens', data=gl)
+        hf.create_dataset('red_lens', data=rl)
+        hf.close()
+
     def save_im(self, image):
         """
         Saves the captured image to a file and writes in the log file
@@ -1948,6 +1983,38 @@ class Feedbacker(object):
         self.mcp_thread = threading.Thread(target=self.measure_simple)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
+
+    def get_start_image_images(self):
+        """
+        Gets the index of the starting image.
+
+        This method retrieves the index of the starting image from the autolog file.
+        It reads the autolog file to get the latest image index, increments it by one,
+        and returns the result as the starting index for the next image.
+
+        Returns
+        -------
+        int
+            The index of the starting image.
+
+        Raises
+        ------
+        Exception
+            If there is an error in retrieving the starting image index.
+        """
+        # self.f = open(self.autolog, "a+")
+        self.g.seek(0)
+        lines = np.loadtxt(self.autolog_images, comments="#", delimiter="\t", unpack=False, usecols=(0,))
+        if lines.size > 0:
+            try:
+                start_image = lines[-1] + 1
+            except:
+                start_image = lines + 1
+            print("The last image had index " + str(int(start_image - 1)))
+        else:
+            start_image = 0
+        # self.f.close()
+        return start_image
 
     def get_start_image(self):
         """
@@ -3023,6 +3090,7 @@ class Feedbacker(object):
         None
         """
         self.f.close()
+        self.g.close()
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()
