@@ -7,7 +7,7 @@ from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
 gs=None
 aberration=None
 
-types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike'] #defines the settings that we want to have!
+types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary'] #defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):
@@ -653,6 +653,9 @@ class TypeLens(BaseType):
         # creating labels
         lbl_ben = ttk.Label(lbl_frm, text='Bending strength (1/f) [1/m]:')
         lbl_wavelength = ttk.Label(lbl_frm, text='Wavelength [nm]:')
+        lbl_slope = ttk.Label(lbl_frm, text='Calibration slope [mm * m]:')
+        lbl_zero = ttk.Label(lbl_frm, text='Zero reference [1/f]:')
+        lbl_focus_position = ttk.Label(lbl_frm, text='Focus shift [mm]:')
 
         # creating entries
         vcmd = (parent.register(self.callback))
@@ -664,11 +667,66 @@ class TypeLens(BaseType):
         self.ent_wavelength = ttk.Entry(lbl_frm, width=10, validate='all',
                                  textvariable=self.strvar_wavelength)
 
+        self.strvar_slope = tk.StringVar()
+        self.ent_slope = ttk.Entry(lbl_frm, width=10, validate='all',
+                                        textvariable=self.strvar_slope)
+
+        self.strvar_zero = tk.StringVar()
+        self.ent_zero = ttk.Entry(lbl_frm, width=10, validate='all',
+                                   textvariable=self.strvar_zero)
+
+        self.strvar_focus_position = tk.StringVar()
+        self.ent_focus_position = ttk.Entry(lbl_frm, width=10, validate='all',
+                                  textvariable=self.strvar_focus_position)
+
         # setup
         lbl_ben.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
         lbl_wavelength.grid(row=0, column=2, sticky='e', padx=(10, 0), pady=5)
         self.ent_ben.grid(row=0, column=1, sticky='w', padx=(0, 10))
         self.ent_wavelength.grid(row=0, column=3, sticky='w', padx=(0, 10))
+        lbl_slope.grid(row=1, column=0, sticky='e', padx=(10, 0), pady=5)
+        lbl_zero.grid(row=1, column=2, sticky='e', padx=(10, 0), pady=5)
+        self.ent_slope.grid(row=1, column=1, sticky='w', padx=(0, 10))
+        self.ent_zero.grid(row=1, column=3, sticky='w', padx=(0, 10))
+        lbl_focus_position.grid(row=2, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_focus_position.grid(row=2, column=1, sticky='w', padx=(0, 10))
+
+        # Set a flag to prevent recursive updates
+        self.updating = False
+
+        self.strvar_focus_position.trace_add("write", self.update_ben)
+        self.strvar_ben.trace_add("write", self.update_position)
+
+    def update_ben(self,*args):
+
+        if self.updating:
+            return
+        self.updating = True
+
+        try:
+            sl = float(self.strvar_slope.get())
+            zer = float(self.strvar_zero.get())
+            shift = float(self.strvar_focus_position.get())
+            new_ben = zer + shift * 1/sl
+            self.strvar_ben.set(str(np.round(new_ben,3)))
+        except:
+            pass
+        self.updating = False
+    def update_position(self,*args):
+
+        if self.updating:
+            return
+        self.updating = True
+
+        try:
+            sl = float(self.strvar_slope.get())
+            zer = float(self.strvar_zero.get())
+            bending = float(self.strvar_ben.get())
+            new_pos = (sl-zer)*bending
+            self.strvar_focus_position.set(str(np.round(new_pos,2)))
+        except:
+            pass
+        self.updating = False
 
     def phase(self):
         """
@@ -689,8 +747,14 @@ class TypeLens(BaseType):
         else:
             print('set a wavelength')
 
-        rad_sign = np.sign(ben)
-        rad = 2 / np.abs(ben)  # R=2*f
+        #so it does not crash when dividing by 0 (no lens essentially)
+        if ben != 0:
+            rad_sign = np.sign(ben)
+            rad = 2 / np.abs(ben)  # R=2*f
+        else:
+            rad_sign = np.sign(1)
+            rad = 1000000  # R=2*f
+
         x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
         y = np.linspace(-chip_height / 2, chip_height / 2, slm_size[0])
         [X, Y] = np.meshgrid(x, y)
@@ -710,7 +774,7 @@ class TypeLens(BaseType):
         dict : dict
             A dictionary of the current state.
         """
-        dict = {'ben': self.ent_ben.get(), 'wavelength': self.ent_wavelength.get()}
+        dict = {'ben': self.ent_ben.get(), 'wavelength': self.ent_wavelength.get(), 'slope': self.ent_slope.get(), 'zeroref': self.ent_zero.get(), 'focuspos': self.ent_focus_position.get()}
         return dict
 
     def load_(self, dict):
@@ -724,6 +788,9 @@ class TypeLens(BaseType):
         """
         self.strvar_ben.set(dict['ben'])
         self.strvar_wavelength.set(dict['wavelength'])
+        self.strvar_slope.set(dict['slope'])
+        self.strvar_zero.set(dict['zeroref'])
+        self.strvar_focus_position.set(dict['focuspos'])
 
 
 class TypeMultibeam(BaseType):
