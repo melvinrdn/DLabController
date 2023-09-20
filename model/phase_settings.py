@@ -722,7 +722,7 @@ class TypeLens(BaseType):
             sl = float(self.strvar_slope.get())
             zer = float(self.strvar_zero.get())
             bending = float(self.strvar_ben.get())
-            new_pos = (sl-zer)*bending
+            new_pos = sl*(bending-zer)
             self.strvar_focus_position.set(str(np.round(new_pos,2)))
         except:
             pass
@@ -788,10 +788,12 @@ class TypeLens(BaseType):
         """
         self.strvar_ben.set(dict['ben'])
         self.strvar_wavelength.set(dict['wavelength'])
-        self.strvar_slope.set(dict['slope'])
-        self.strvar_zero.set(dict['zeroref'])
-        self.strvar_focus_position.set(dict['focuspos'])
-
+        try:
+            self.strvar_slope.set(dict['slope'])
+            self.strvar_zero.set(dict['zeroref'])
+            self.strvar_focus_position.set(dict['focuspos'])
+        except:
+            print("You are using an old settings file")
 
 class TypeMultibeam(BaseType):
     """
