@@ -598,7 +598,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_steps)
 
-        lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (1/m)")
+        lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (mm)")
         # scan parameters GREEN FOCUS POSITIOM
         self.strvar_GFP_from = tk.StringVar(self.win, '0.02')
         self.ent_GFP_from = tk.Entry(
@@ -616,7 +616,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_steps)
 
-        lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (1/m)")
+        lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (mm)")
         # scan parameters RED FOCUS POSITIOM
         self.strvar_RFP_from = tk.StringVar(self.win, '-0.15')
         self.ent_RFP_from = tk.Entry(
@@ -2466,9 +2466,10 @@ class Feedbacker(object):
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
             # things go to hell if division by zero
-            if b == 0:
-                b = 0.00001
-            self.lens_green.strvar_ben.set(str(b))
+            #if b == 0:
+            #    b = 0.00001
+            #self.lens_green.strvar_ben.set(str(b))
+            self.lens_green.strvar_focus_position.set(str(b))
             self.parent.open_pub_green()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
@@ -2485,9 +2486,10 @@ class Feedbacker(object):
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
             # things go to hell if division by zero
-            if b == 0:
-                b = 0.00001
-            self.lens_red.strvar_ben.set(str(b))
+            #if b == 0:
+            #    b = 0.00001
+            #self.lens_red.strvar_ben.set(str(b))
+            self.lens_red.strvar_focus_position.set(str(b))
             self.parent.open_pub_red()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
