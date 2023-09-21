@@ -533,6 +533,7 @@ class TypeBinary(BaseType):
         lbl_dir = ttk.Label(lbl_frm, text='Direction for split:')
         lbl_rat = ttk.Label(lbl_frm, text='Area amount (in %):')
         lbl_phi = ttk.Label(lbl_frm, text='Phase change (in pi):')
+        lbl_stripes = ttk.Label(lbl_frm, text='Number of stripes:')
         self.cbx_dir = ttk.Combobox(
             lbl_frm,
             values=['Horizontal', 'Vertical'],
@@ -544,14 +545,20 @@ class TypeBinary(BaseType):
         self.ent_phi = ttk.Entry(lbl_frm, width=12, validate='all',
                                  validatecommand=(vcmd, '%d', '%P', '%S'),
                                  textvariable=self.strvar_phi)
+        self.strvar_stripes = tk.StringVar()
+        self.ent_stripes = ttk.Entry(lbl_frm, width=12, validate='all',
+                                 validatecommand=(vcmd, '%d', '%P', '%S'),
+                                 textvariable=self.strvar_stripes)
 
         # Setting up
         lbl_dir.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
         lbl_rat.grid(row=1, column=0, sticky='e', padx=(10, 0))
         lbl_phi.grid(row=2, column=0, sticky='e', padx=(10, 0), pady=5)
+        lbl_stripes.grid(row=3, column=0, sticky='e', padx=(10, 0), pady=5)
         self.cbx_dir.grid(row=0, column=1, sticky='w', padx=(0, 10))
         self.ent_area.grid(row=1, column=1, sticky='w', padx=(0, 10))
         self.ent_phi.grid(row=2, column=1, sticky='w', padx=(0, 10))
+        self.ent_stripes.grid(row=3, column=1, sticky='w', padx=(0, 10))
 
     def phase(self):
         """
@@ -563,27 +570,50 @@ class TypeBinary(BaseType):
             The phase matrix generated based on the binary settings.
         """
         direc = self.cbx_dir.get()
-        if self.ent_area.get() != '':
-            area = float(self.ent_area.get())
-        else:
-            area = 0
-        if self.ent_phi.get() != '':
-            tmp = float(self.ent_phi.get())
-            phi = tmp * bit_depth / 2  # Converting to 0-2pi
-        else:
-            phi = 0
+        if self.ent_stripes == '':
+            if self.ent_area.get() != '':
+                area = float(self.ent_area.get())
+            else:
+                area = 0
+            if self.ent_phi.get() != '':
+                tmp = float(self.ent_phi.get())
+                phi = tmp * bit_depth / 2  # Converting to 0-2pi
+            else:
+                phi = 0
 
-        phase_mat = np.zeros(slm_size)
+            phase_mat = np.zeros(slm_size)
 
-        if direc == 'Horizontal':
-            cutpixel = int(round(slm_size[0] * area / 100))
-            tmp = np.ones([cutpixel, slm_size[1]]) * phi
-            phase_mat[0:cutpixel, :] = tmp
-        elif direc == 'Vertical':
-            cutpixel = int(round(slm_size[1] * area / 100))
-            tmp = np.ones([slm_size[0], cutpixel]) * phi
-            phase_mat[:, 0:cutpixel] = tmp
-        del tmp
+            if direc == 'Horizontal':
+                cutpixel = int(round(slm_size[0] * area / 100))
+                tmp = np.ones([cutpixel, slm_size[1]]) * phi
+                phase_mat[0:cutpixel, :] = tmp
+            elif direc == 'Vertical':
+                cutpixel = int(round(slm_size[1] * area / 100))
+                tmp = np.ones([slm_size[0], cutpixel]) * phi
+                phase_mat[:, 0:cutpixel] = tmp
+            del tmp
+        else:
+            if self.ent_phi.get() != '':
+                tmp = float(self.ent_phi.get())
+                phi = tmp * bit_depth / 2  # Converting to 0-2pi
+            else:
+                phi = 0
+            phase_mat = np.zeros(slm_size)
+            nr = int(self.ent_stripes.get())
+            if nr > 0:
+                if direc == 'Horizontal':
+                    length = slm_size[0]
+                    sublength = int(np.floor(length/nr))
+                    for i in range(0,nr):
+                        if np.mod(i,2) == 0:
+                            phase_mat[i*sublength:(i+1)*sublength,:] = phi
+                else:
+                    length = slm_size[1]
+                    sublength = int(np.floor(length / nr))
+                    for i in range(0, nr):
+                        if np.mod(i, 2) == 0:
+                            phase_mat[:,i * sublength:(i + 1) * sublength] = phi
+
         return phase_mat
 
     def save_(self):
