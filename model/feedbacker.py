@@ -1840,18 +1840,24 @@ class Feedbacker(object):
         try:
             if self.parent.vars_red[1].get() == 1:
                 rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
+                rl_pos = np.round(float(self.lens_red.strvar_focus_position.get()), 3)
             else:
                 rl = 0
+                rl_pos = 0
         except:
             rl = np.nan
+            rl_pos = np.nan
 
         try:
             if self.parent.vars_green[1].get() == 1:
                 gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
+                gl_pos = np.round(float(self.lens_green.strvar_focus_position.get()), 3)
             else:
                 gl = 0
+                gl_pos = 0
         except:
             gl = np.nan
+            gl_pos = np.nan
 
         log_entry = str(
             int(nr)) + '\t' + self.ent_red_current_power.get() + '\t' + self.ent_green_current_power.get() + '\t' + str(
@@ -1860,8 +1866,10 @@ class Feedbacker(object):
             np.round(np.std(np.unwrap(self.d_phase)),
                      2)) + '\t' + self.ent_mcp.get() + '\t' + str(
             self.name_cam) + '\t' + self.ent_avgs.get() + '\t' + self.ent_exposure_time.get() + '\t' + str(
-            gl) + '\t' + str(
-            rl) + '\t' + timestamp + '\n'
+            gl)  + '\t' + str(
+            gl_pos) +'\t' + str(
+            rl) + '\t' + str(
+            rl_pos) +'\t' + timestamp + '\n'
         self.f.write(log_entry)
         # self.f.close()
 
