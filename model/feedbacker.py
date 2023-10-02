@@ -295,12 +295,20 @@ class Feedbacker(object):
         self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
         self.cbox_mcp_cam_choice['values'] = ('Pike Camera', 'Andor Camera')
 
-        lbl_exposure_time = tk.Label(frm_measure, text='Exposure time:')
+        lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
         self.strvar_exposure_time = tk.StringVar(self.win, '10000')
         self.ent_exposure_time = tk.Entry(
             frm_measure, width=25, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_exposure_time)
+
+        lbl_temperature = tk.Label(frm_measure, text='Temp (C):')
+        lbl_temperature_status = tk.Label(frm_measure, text='Status:')
+
+        self.strvar_temperature = tk.StringVar(self.win, 'none')
+        self.strvar_temperature_status = tk.StringVar(self.win,'none')
+        lbl_actual_temperature = tk.Label(frm_measure, textvariable=self.strvar_temperature)
+        lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
 
         lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
         self.strvar_mcp = tk.StringVar(self.win, '-1550')
@@ -372,7 +380,7 @@ class Feedbacker(object):
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
 
-        lbl_WPDummy = tk.Label(frm_stage, text='Dummy Stage:')
+        lbl_WPDummy = tk.Label(frm_stage, text='Focus Stage:')
         self.strvar_WPDummy_is = tk.StringVar(self.win, '')
         self.ent_WPDummy_is = tk.Entry(
             frm_stage, width=10, validate='all',
@@ -723,6 +731,12 @@ class Feedbacker(object):
 
         lbl_exposure_time.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_exposure_time.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_temperature.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_temperature_status.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_actual_temperature.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        lbl_actual_temperature_status.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
 
         lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
@@ -1219,9 +1233,21 @@ class Feedbacker(object):
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
             self.background = np.zeros([512, 512])
-
+            #self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
+            #self.strvar_temperature.set(str(self.cam.get_temperature()))
+            self.update_camera_status_thread()
         print(f"PIKE_cam: {self.PIKE_cam}")
         print(f"ANDOR_cam: {self.ANDOR_cam}")
+
+    def update_camera_status_thread(self):
+        self.temp_thread = threading.Thread(target=self.update_camera_status)
+        self.temp_thread.daemon = True
+        self.temp_thread.start()
+    def update_camera_status(self):
+        while self.ANDOR_cam:
+            self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
+            self.strvar_temperature.set(str(np.round(float(self.cam.get_temperature()),2)))
+            time.sleep(1)
 
     def update_maxgreenratio(self, var, index, mode):
         try:
@@ -2838,6 +2864,7 @@ class Feedbacker(object):
             if self.var_fixyaxis.get() == 1:
                 self.axHarmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
 
+            self.axHarmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
 
