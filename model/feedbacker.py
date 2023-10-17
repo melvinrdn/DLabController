@@ -2,6 +2,7 @@ import os
 import threading
 import time
 import tkinter as tk
+from tkinter.filedialog import asksaveasfile
 from tkinter import ttk
 from collections import deque
 from datetime import date
@@ -110,7 +111,8 @@ class Feedbacker(object):
         # Spectrometer
         frm_plt = tk.LabelFrame(self.win, text='Spectrometer')
         frm_spc_but = tk.LabelFrame(self.win, text='Spectrometer options')
-        frm_spc_but_set = tk.Frame(frm_spc_but)
+        frm_spc_but_set = tk.LabelFrame(frm_spc_but, text='Acquisition parameters')
+        frm_spc_export = tk.LabelFrame(frm_spc_but, text='Export options')
 
         frm_mcp_image = tk.LabelFrame(self.win, text='MCP')
         frm_mcp_options = tk.LabelFrame(self.win, text='MCP options')
@@ -122,9 +124,9 @@ class Feedbacker(object):
         frm_measure = tk.LabelFrame(frm_scans, text='Measurement')
         frm_phase_scan = tk.LabelFrame(frm_scans, text='Phase Scan')
         frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
-        frm_wp_power_cal = tk.LabelFrame(frm_scans, text='WP - Power calibration')
-        frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans!')
-        frm_daheng_camera = tk.LabelFrame(self.win, text='Daheng camera')
+        frm_wp_power_cal = tk.LabelFrame(frm_scans, text='Power Calibration')
+        frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans')
+        frm_daheng_camera = tk.LabelFrame(self.win, text='Daheng Camera')
         frm_daheng_camera_settings = tk.LabelFrame(frm_daheng_camera, text='Settings')
         self.frm_daheng_camera_image = tk.LabelFrame(frm_daheng_camera, text='The Image')
         #camera_image = ZoomCanvas(self.frm_daheng_camera_image)
@@ -148,7 +150,7 @@ class Feedbacker(object):
             frm_spc_but_set, width=9, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_exp)
-        lbl_spc_gain = tk.Label(frm_spc_but_set, text='Nr. of averages:')
+        lbl_spc_gain = tk.Label(frm_spc_but_set, text='Nbr. of averages:')
         self.strvar_spc_avg = tk.StringVar(self.win, '1')
         self.ent_spc_avg = tk.Entry(
             frm_spc_but_set, width=9, validate='all',
@@ -156,17 +158,23 @@ class Feedbacker(object):
             textvariable=self.strvar_spc_avg)
         but_spc_activate = tk.Button(frm_spc_but_set, text='Activate',
                                      command=self.spec_activate, width=8)
-        but_spc_deactivate = tk.Button(frm_spc_but_set, text='Deactivate',
+        but_spc_deactivate = tk.Button(frm_spc_but_set, text='Desactivate',
                                        command=self.spec_deactivate, width=8)
-        but_spc_start = tk.Button(frm_spc_but, text='Start\nSpectrometer',
+        but_spc_start = tk.Button(frm_spc_but_set, text='Start',
                                   command=self.spc_img, height=2)
-        but_spc_stop = tk.Button(frm_spc_but, text='Stop\nSpectrometer',
+        but_spc_stop = tk.Button(frm_spc_but_set, text='Stop',
                                  command=self.stop_measure, height=2)
-        but_spc_phi = tk.Button(frm_spc_but, text='fast 2pi',
+        but_spc_phi = tk.Button(frm_spc_but_set, text='Fast 2pi',
                                 command=self.fast_scan, height=2)
-        but_auto_scale = tk.Button(frm_plt_set, text='auto-scale',
+
+        self.but_spc_export_fringes = tk.Button(frm_spc_export, text='Save spectral fringes',
+                                     command=self.enable_save_spc_fringes, width=20)
+        self.but_spc_export_phase_stab = tk.Button(frm_spc_export, text='Save phase stability',
+                                     command=self.enable_save_spc_phase_stability, width=20)
+
+        but_auto_scale = tk.Button(frm_plt_set, text='Auto-scale',
                                    command=self.auto_scale_spec_axis, width=13)
-        but_bck = tk.Button(frm_plt_set, text='take background',
+        but_bck = tk.Button(frm_plt_set, text='Take background',
                             command=self.take_background, width=13)
         lbl_std = tk.Label(frm_plt_set, text='sigma:', width=6)
         self.lbl_std_val = tk.Label(frm_plt_set, text='None', width=6)
@@ -657,6 +665,7 @@ class Feedbacker(object):
                                                command=self.remove_background)
 
         frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_spc_export.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
@@ -685,9 +694,9 @@ class Feedbacker(object):
         # setting up buttons frm_spc
         frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
 
-        but_spc_start.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        but_spc_stop.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        but_spc_phi.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        but_spc_start.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        but_spc_stop.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        but_spc_phi.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
         lbl_spc_ind.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         but_spc_activate.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
@@ -696,6 +705,9 @@ class Feedbacker(object):
         but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         lbl_spc_gain.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.but_spc_export_fringes.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_spc_export_phase_stab.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_spc_set
         but_auto_scale.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -984,7 +996,7 @@ class Feedbacker(object):
         self.fourier_line, = self.ax2r.plot([])
         self.fourier_indicator = self.ax2r.plot([], 'v')[0]
         self.fourier_text = self.ax2r.text(0.4, 0.5, "")
-        self.ax1r.set_xlim(0, 200)
+        self.ax1r.set_xlim(510, 520)
         self.ax1r.set_ylim(0, 3000)
         self.ax1r.grid()
         self.ax2r.set_xlim(0, 50)
@@ -2717,10 +2729,12 @@ class Feedbacker(object):
 
             # get raw trace
             timestamp, data = avs.get_spectrum(self.active_spec_handle)
+            wavelength = avs.AVS_GetLambda(self.active_spec_handle)
 
             start = int(self.ent_area1x.get())
             stop = int(self.ent_area1y.get())
             self.trace = data[start:stop]
+            self.wavelength = wavelength[start:stop]
 
             # print(timestamp)
 
@@ -2800,7 +2814,7 @@ class Feedbacker(object):
             raise AttributeError('Take a spectrum before trying autoscale')
         self.ax1r.clear()
         self.trace_line, = self.ax1r.plot([])
-        self.ax1r.set_xlim(0, len(self.trace))
+        self.ax1r.set_xlim(np.min(self.wavelength), np.max(self.wavelength))
         self.ax1r.set_ylim(0, np.max(self.trace) * 1.2)
         self.ax1r.grid('both')
         self.figr.canvas.draw()
@@ -2881,7 +2895,7 @@ class Feedbacker(object):
         print(maxindex)
 
         self.ax1r.clear()
-        self.ax1r.plot(self.trace)
+        self.ax1r.plot(self.wavelength, self.trace)
         self.ax2r.clear()
         self.ax2r.plot(self.abs_im_fft)
         self.ax2r.plot(maxindex, self.abs_im_fft[maxindex] * 1.2, 'v')
@@ -2902,7 +2916,7 @@ class Feedbacker(object):
 
         self.figr.canvas.restore_region(self.ax1r_blit)
         self.figr.canvas.restore_region(self.ax2r_blit)
-        self.trace_line.set_data(np.arange(len(self.trace)), self.trace)
+        self.trace_line.set_data(self.wavelength, self.trace)
         self.ax1r.draw_artist(self.trace_line)
         self.fourier_line.set_data(np.arange(50), self.abs_im_fft[:50])
         self.ax1r.draw_artist(self.fourier_line)
@@ -3114,6 +3128,69 @@ class Feedbacker(object):
         None
         """
         self.stop_pid = True
+
+    def enable_save_spc_fringes(self):
+        """
+        Run the thread to save the spectrometer data (spectral fringe and phase stability) into a .txt file.
+
+        Returns
+        -------
+        None
+        """
+        self.save_fringe_thread = threading.Thread(target=self.save_spc_fringes)
+        self.save_fringe_thread.daemon = True
+        self.save_fringe_thread.start()
+
+    def save_spc_fringes(self):
+        """
+        Save the spectral fringes into a .txt file.
+
+        Returns
+        -------
+        None
+        """
+        self.but_spc_export_fringes.config(fg='red')
+        file_path = asksaveasfile(initialfile = f'fringes_{date.today()}', defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        fringes = np.array([self.wavelength, self.trace]).T
+
+        if file_path is not None:
+            header = "Wavelength (nm)\tCounts (arb.u)"
+            np.savetxt(file_path.name, fringes, delimiter="\t", header=header)
+            file_path.close()
+            print(f"Spectral fringes saved to {file_path.name}")
+            self.but_spc_export_fringes.config(fg='green')
+
+    def enable_save_spc_phase_stability(self):
+        """
+        Run the thread to save the spectrometer data (spectral fringe and phase stability) into a .txt file.
+
+        Returns
+        -------
+        None
+        """
+        self.save_phase_stability_thread = threading.Thread(target=self.save_spc_phase_stability)
+        self.save_phase_stability_thread.daemon = True
+        self.save_phase_stability_thread.start()
+
+    def save_spc_phase_stability(self):
+        """
+        Save the spectral fringes into a .txt file.
+
+        Returns
+        -------
+        None
+        """
+        self.but_spc_export_phase_stab.config(fg='red')
+        file_path = asksaveasfile(initialfile = f'phase_stability_{date.today()}',defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        phase_stability = np.array([np.arange(1000), self.im_phase]).T
+
+        if file_path is not None:
+            header = "Time (arb.u)\tTwo-color phase (rad)"
+            np.savetxt(file_path.name, phase_stability, delimiter="\t", header=header)
+            file_path.close()
+            print(f"Phase stability saved to {file_path.name}")
+        self.but_spc_export_phase_stab.config(fg='green')
+
 
     def on_close(self):
         """
