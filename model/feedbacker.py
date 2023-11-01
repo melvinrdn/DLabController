@@ -2,7 +2,7 @@ import os
 import threading
 import time
 import tkinter as tk
-from tkinter.filedialog import asksaveasfile
+from tkinter.filedialog import asksaveasfile, askopenfilename
 from tkinter import ttk
 from collections import deque
 from datetime import date
@@ -29,6 +29,7 @@ from pylablib.devices import Andor
 import pylablib as pll
 
 import views.focus_diagnostic as dh
+from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
 
 
 class Feedbacker(object):
@@ -82,10 +83,19 @@ class Feedbacker(object):
 
         self.ymin_harmonics = None
         self.ymax_harmonics = None
+
+        self.ymin_harmonics_calibrate = None
+        self.ymax_harmonics_calibrate = None
+
         self.current_harmonics_profile_max = None
         self.current_harmonics_profile_min = None
 
+        self.current_harmonics_profile_max_calibrate = None
+        self.current_harmonics_profile_min_calibrate = None
+
         self.background = None
+
+        self.calibration_image = np.zeros([512, 512])
 
         self.live_is_pressed = False
 
@@ -102,133 +112,163 @@ class Feedbacker(object):
         self.autolog_images = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log-images.txt'
         self.g = open(self.autolog_images, "a+")
 
+        self.autolog_superg = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log-superg.txt'
+        self.sg = open(self.autolog_superg, "a+")
+
         # creating frames
 
-        frm_mid = tk.Frame(self.win)
-        frm_bot = tk.Frame(self.win)
-        frm_scans = tk.Frame(self.win)
+        frm_mid = ttk.Frame(self.win)
+        frm_bot = ttk.Frame(self.win)
+        frm_scans = ttk.Frame(self.win)
+        frm_mcp_all = ttk.Frame(self.win)
 
         # Spectrometer
-        frm_plt = tk.LabelFrame(self.win, text='Spectrometer')
-        frm_spc_but = tk.LabelFrame(self.win, text='Spectrometer options')
-        frm_spc_but_set = tk.LabelFrame(frm_spc_but, text='Acquisition parameters')
-        frm_spc_export = tk.LabelFrame(frm_spc_but, text='Export options')
+        frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
 
-        frm_mcp_image = tk.LabelFrame(self.win, text='MCP')
-        frm_mcp_options = tk.LabelFrame(self.win, text='MCP options')
+        self.frm_notebook_param_spc = ttk.Notebook(self.win)
+        frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_export = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_plt_set = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_ratio = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_pid = ttk.Frame(self.frm_notebook_param_spc)
+        self.frm_notebook_param_spc.add(frm_spc_settings, text="Acquisition parameters")
+        self.frm_notebook_param_spc.add(frm_spc_pid, text="PID options")
+        self.frm_notebook_param_spc.add(frm_spc_plt_set, text="Plot options")
+        self.frm_notebook_param_spc.add(frm_spc_ratio, text="Phase extraction options")
+        self.frm_notebook_param_spc.add(frm_spc_export, text="Export options")
 
-        frm_plt_set = tk.LabelFrame(frm_mid, text='Plot options')
-        frm_ratio = tk.LabelFrame(frm_mid, text='Phase extraction')
-        frm_pid = tk.LabelFrame(frm_mid, text='PID controller')
+        frm_measure = ttk.LabelFrame(frm_scans, text='Measurement')
 
-        frm_measure = tk.LabelFrame(frm_scans, text='Measurement')
-        frm_phase_scan = tk.LabelFrame(frm_scans, text='Phase Scan')
-        frm_stage = tk.LabelFrame(frm_scans, text='Stage Control')
-        frm_wp_power_cal = tk.LabelFrame(frm_scans, text='Power Calibration')
-        frm_wp_scans = tk.LabelFrame(frm_scans, text='Power Scans')
-        frm_daheng_camera = tk.LabelFrame(self.win, text='Daheng Camera')
-        frm_daheng_camera_settings = tk.LabelFrame(frm_daheng_camera, text='Settings')
-        self.frm_daheng_camera_image = tk.LabelFrame(frm_daheng_camera, text='The Image')
-        #camera_image = ZoomCanvas(self.frm_daheng_camera_image)
-        #camera_image.pack(padx=2, pady=2, expand=True)
+        self.frm_notebook_scans = ttk.Notebook(frm_scans)
+        frm_wp_scans = ttk.Frame(frm_scans)
+        frm_phase_scan = ttk.Frame(frm_scans)
+        self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
+        self.frm_notebook_scans.add(frm_phase_scan, text="Phase scan")
+
+        self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
+        frm_stage = ttk.Frame(frm_scans)
+        frm_wp_power_cal = ttk.Frame(frm_scans)
+        self.frm_notebook_waveplate.add(frm_stage, text="Waveplate control")
+        self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
+
+        frm_daheng_camera = ttk.LabelFrame(self.win, text='Daheng Camera')
+        self.frm_daheng_camera_settings = ttk.LabelFrame(frm_daheng_camera, text='Settings')
+        self.frm_daheng_camera_image = ttk.Frame(frm_daheng_camera)
+
+        self.frm_notebook_mcp = ttk.Notebook(frm_mcp_all)
+        frm_mcp_image = ttk.Frame(frm_mcp_all)
+        frm_mcp_calibrate = ttk.Frame(frm_mcp_all)
+        frm_mcp_treated = ttk.Frame(frm_mcp_all)
+        self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
+        self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate')
+        self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
+
+        frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
+        frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
+
+        # frm_mcp_image = ttk.LabelFrame(self.win, text='MCP')
+        frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
 
         vcmd = (self.win.register(self.parent.callback))
+
+        self.but_hide_frm_daheng = ttk.Button(frm_daheng_camera, text="Hide/Show", command=self.hide_frm_daheng)
+        self.but_hide_frm_daheng.grid(row=0, column=0)
 
         # creating buttons n labels
         but_exit = tk.Button(frm_bot, text='EXIT', command=self.on_close)
         but_feedback = tk.Button(frm_bot, text='Feedback', command=self.feedback)
 
-        lbl_spc_ind = tk.Label(frm_spc_but_set, text='Spectrometer index:')
+        lbl_spc_ind = tk.Label(frm_spc_settings, text='Spectrometer index:')
         self.strvar_spc_ind = tk.StringVar(self.win, '1')
         self.ent_spc_ind = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
+            frm_spc_settings, width=9, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_ind)
-        lbl_spc_exp = tk.Label(frm_spc_but_set, text='Exposure time (ms):')
+        lbl_spc_exp = tk.Label(frm_spc_settings, text='Exposure time (ms):')
         self.strvar_spc_exp = tk.StringVar(self.win, '50')
         self.ent_spc_exp = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
+            frm_spc_settings, width=9, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_exp)
-        lbl_spc_gain = tk.Label(frm_spc_but_set, text='Nbr. of averages:')
+        lbl_spc_gain = tk.Label(frm_spc_settings, text='Nbr. of averages:')
         self.strvar_spc_avg = tk.StringVar(self.win, '1')
         self.ent_spc_avg = tk.Entry(
-            frm_spc_but_set, width=9, validate='all',
+            frm_spc_settings, width=9, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_avg)
-        but_spc_activate = tk.Button(frm_spc_but_set, text='Activate',
+        but_spc_activate = tk.Button(frm_spc_settings, text='Activate',
                                      command=self.spec_activate, width=8)
-        but_spc_deactivate = tk.Button(frm_spc_but_set, text='Desactivate',
+        but_spc_deactivate = tk.Button(frm_spc_settings, text='Desactivate',
                                        command=self.spec_deactivate, width=8)
-        but_spc_start = tk.Button(frm_spc_but_set, text='Start',
-                                  command=self.spc_img, height=2)
-        but_spc_stop = tk.Button(frm_spc_but_set, text='Stop',
-                                 command=self.stop_measure, height=2)
-        but_spc_phi = tk.Button(frm_spc_but_set, text='Fast 2pi',
-                                command=self.fast_scan, height=2)
+        but_spc_start = tk.Button(frm_spc_settings, text='Start',
+                                  command=self.spc_img)
+        but_spc_stop = tk.Button(frm_spc_settings, text='Stop',
+                                 command=self.stop_measure)
+        but_spc_phi = tk.Button(frm_spc_settings, text='Fast 2pi',
+                                command=self.fast_scan)
 
         self.but_spc_export_fringes = tk.Button(frm_spc_export, text='Save spectral fringes',
-                                     command=self.enable_save_spc_fringes, width=20)
+                                                command=self.enable_save_spc_fringes, width=20)
         self.but_spc_export_phase_stab = tk.Button(frm_spc_export, text='Save phase stability',
-                                     command=self.enable_save_spc_phase_stability, width=20)
+                                                   command=self.enable_save_spc_phase_stability, width=20)
 
-        but_auto_scale = tk.Button(frm_plt_set, text='Auto-scale',
+        but_auto_scale = tk.Button(frm_spc_plt_set, text='Auto-scale',
                                    command=self.auto_scale_spec_axis, width=13)
-        but_bck = tk.Button(frm_plt_set, text='Take background',
+        but_bck = tk.Button(frm_spc_plt_set, text='Take background',
                             command=self.take_background, width=13)
-        lbl_std = tk.Label(frm_plt_set, text='sigma:', width=6)
-        self.lbl_std_val = tk.Label(frm_plt_set, text='None', width=6)
-        lbl_phi = tk.Label(frm_ratio, text='Phase shift:')
-        lbl_phi_2 = tk.Label(frm_ratio, text='pi')
+        lbl_std = tk.Label(frm_spc_plt_set, text='sigma:', width=6)
+        self.lbl_std_val = tk.Label(frm_spc_plt_set, text='None', width=6)
+        lbl_phi = tk.Label(frm_spc_ratio, text='Phase shift:')
+        lbl_phi_2 = tk.Label(frm_spc_ratio, text='pi')
         self.strvar_flat = tk.StringVar()
         self.ent_flat = tk.Entry(
-            frm_ratio, width=11, validate='all',
+            frm_spc_ratio, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_flat)
 
         text = '20'
         self.strvar_indexfft = tk.StringVar(self.win, text)
-        lbl_indexfft = tk.Label(frm_ratio, text='Index fft:')
-        lbl_angle = tk.Label(frm_ratio, text='Phase:')
+        lbl_indexfft = tk.Label(frm_spc_ratio, text='Index fft:')
+        lbl_angle = tk.Label(frm_spc_ratio, text='Phase:')
         self.ent_indexfft = tk.Entry(
-            frm_ratio, width=11,
+            frm_spc_ratio, width=11,
             textvariable=self.strvar_indexfft)
-        self.lbl_angle = tk.Label(frm_ratio, text='angle')
+        self.lbl_angle = tk.Label(frm_spc_ratio, text='angle')
 
         text = '1950'
         self.strvar_area1x = tk.StringVar(self.win, text)
         self.ent_area1x = tk.Entry(
-            frm_ratio, width=11,
+            frm_spc_ratio, width=11,
             textvariable=self.strvar_area1x)
 
         text = '2100'
         self.strvar_area1y = tk.StringVar(self.win, text)
         self.ent_area1y = tk.Entry(
-            frm_ratio, width=11,
+            frm_spc_ratio, width=11,
             textvariable=self.strvar_area1y)
 
-        lbl_setp = tk.Label(frm_pid, text='Setpoint:')
+        lbl_setp = tk.Label(frm_spc_pid, text='Setpoint:')
         self.strvar_setp = tk.StringVar(self.win, '0')
         self.ent_setp = tk.Entry(
-            frm_pid, width=11, validate='all',
+            frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_setp)
-        lbl_pidp = tk.Label(frm_pid, text='P-value:')
+        lbl_pidp = tk.Label(frm_spc_pid, text='P-value:')
         self.strvar_pidp = tk.StringVar(self.win, '-0.17')
         self.ent_pidp = tk.Entry(
-            frm_pid, width=11, validate='all',
+            frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidp)
-        lbl_pidi = tk.Label(frm_pid, text='I-value:')
+        lbl_pidi = tk.Label(frm_spc_pid, text='I-value:')
         self.strvar_pidi = tk.StringVar(self.win, '-1.5')
         self.ent_pidi = tk.Entry(
-            frm_pid, width=11, validate='all',
+            frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidi)
-        but_pid_setp = tk.Button(frm_pid, text='Setpoint', command=self.set_setpoint)
-        but_pid_enbl = tk.Button(frm_pid, text='Start PID', command=self.enbl_pid)
-        but_pid_stop = tk.Button(frm_pid, text='Stop PID', command=self.pid_stop)
-        but_pid_setk = tk.Button(frm_pid, text='Set PID values', command=self.set_pid_val)
+        but_pid_setp = tk.Button(frm_spc_pid, text='Setpoint', command=self.set_setpoint)
+        but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
+        but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
+        but_pid_setk = tk.Button(frm_spc_pid, text='Set PID values', command=self.set_pid_val)
 
         lbl_from = tk.Label(frm_phase_scan, text='From:')
         self.strvar_from = tk.StringVar(self.win, '-3.14')
@@ -259,19 +299,19 @@ class Feedbacker(object):
         # Daheng camera
 
         self.var_camera_1 = tk.IntVar()
-        self.cb_camera_1 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1,
+        self.cb_camera_1 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1,
                                           onvalue=1,
                                           offvalue=0,
                                           command=None)
 
         self.var_camera_3 = tk.IntVar()
-        self.cb_camera_3 = tk.Checkbutton(frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3,
+        self.cb_camera_3 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3,
                                           onvalue=1,
                                           offvalue=0,
                                           command=None)
 
         self.var_camera_2 = tk.IntVar()
-        self.cb_camera_2 = tk.Checkbutton(frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2,
+        self.cb_camera_2 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2,
                                           onvalue=1,
                                           offvalue=0,
                                           command=None)
@@ -314,7 +354,7 @@ class Feedbacker(object):
         lbl_temperature_status = tk.Label(frm_measure, text='Status:')
 
         self.strvar_temperature = tk.StringVar(self.win, 'none')
-        self.strvar_temperature_status = tk.StringVar(self.win,'none')
+        self.strvar_temperature_status = tk.StringVar(self.win, 'none')
         lbl_actual_temperature = tk.Label(frm_measure, textvariable=self.strvar_temperature)
         lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
 
@@ -409,11 +449,6 @@ class Feedbacker(object):
         self.but_WPDummy_Home = tk.Button(frm_stage, text='Home', command=self.home_WPDummy)
         self.but_WPDummy_Read = tk.Button(frm_stage, text='Read', command=self.read_WPDummy)
         self.but_WPDummy_Move = tk.Button(frm_stage, text='Move', command=self.move_WPDummy)
-
-        self.var_WPDummypower = tk.IntVar()
-        self.cb_WPDummypower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_WPDummypower, onvalue=1,
-                                              offvalue=0,
-                                              command=None)
 
         lbl_Delay = tk.Label(frm_stage, text='Delay:')
         self.strvar_Delay_is = tk.StringVar(self.win, '')
@@ -664,45 +699,40 @@ class Feedbacker(object):
         self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
                                                command=self.remove_background)
 
-        frm_spc_but.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        frm_spc_export.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_notebook_param_spc.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        # frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
         frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_phase_scan.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        frm_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        frm_wp_power_cal.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        frm_wp_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
         frm_daheng_camera.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        frm_daheng_camera_settings.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_daheng_camera_image.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.frm_daheng_camera_settings.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_daheng_camera_image.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
         frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_plt_set.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_ratio.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        frm_pid.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-
-        frm_ratio.config(width=162, height=104)
-
-        frm_ratio.grid_propagate(False)
-
         # setting up buttons frm_spc
-        frm_spc_but_set.grid(row=0, column=0, sticky='nsew')
 
         but_spc_start.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        but_spc_stop.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
-        but_spc_phi.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        but_spc_stop.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        but_spc_phi.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
         lbl_spc_ind.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         but_spc_activate.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         lbl_spc_exp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_exp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         lbl_spc_gain.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_spc_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -719,7 +749,7 @@ class Feedbacker(object):
         but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         but_feedback.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-        # setting up frm_pid
+        # setting up frm_spc_pid
         lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         lbl_pidp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         lbl_pidi.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
@@ -821,7 +851,6 @@ class Feedbacker(object):
 
         self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
         self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
-        self.cb_WPDummypower.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -891,88 +920,115 @@ class Feedbacker(object):
         self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
         # setting up Daheng stuff
-        self.but_initialize_daheng = tk.Button(frm_daheng_camera_settings, text="Initialize",
+        self.but_initialize_daheng = tk.Button(self.frm_daheng_camera_settings, text="Initialize",
                                                command=self.initialize_daheng)
         self.but_initialize_daheng.grid(row=0, column=0)
-        self.but_close_daheng = tk.Button(frm_daheng_camera_settings, text="Disconnect", command=self.close_daheng)
+        self.but_close_daheng = tk.Button(self.frm_daheng_camera_settings, text="Disconnect", command=self.close_daheng)
         self.but_close_daheng.grid(row=0, column=1)
         self.var_index_camera = tk.StringVar(self.win, value="1")
-        self.ent_default_cam_index = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_index_camera, width=3,
+        self.ent_default_cam_index = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_index_camera,
+                                              width=3,
                                               validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_default_cam_index.grid(row=1, column=0)
 
-        lbl_daheng_exposure = tk.Label(frm_daheng_camera_settings, text="Exp:")
+        lbl_daheng_exposure = tk.Label(self.frm_daheng_camera_settings, text="Exp:")
         lbl_daheng_exposure.grid(row=2, column=0)
-        lbl_daheng_gain = tk.Label(frm_daheng_camera_settings, text="Gain:")
+        lbl_daheng_gain = tk.Label(self.frm_daheng_camera_settings, text="Gain:")
         lbl_daheng_gain.grid(row=3, column=0)
-        lbl_daheng_avg = tk.Label(frm_daheng_camera_settings, text="Avg:")
+        lbl_daheng_avg = tk.Label(self.frm_daheng_camera_settings, text="Avg:")
         lbl_daheng_avg.grid(row=4, column=0)
 
         self.var_daheng_exposure = tk.StringVar(self.win, value="100000")
-        self.ent_daheng_exposure = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_exposure, width=10,
+        self.ent_daheng_exposure = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_exposure,
+                                            width=10,
                                             validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_exposure.grid(row=2, column=1)
         self.ent_daheng_exposure.bind("<KeyRelease>", self.exp_gain_value_changed)
 
         self.var_daheng_gain = tk.StringVar(self.win, value="0")
-        self.ent_daheng_gain = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_gain, width=10,
+        self.ent_daheng_gain = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_gain, width=10,
                                         validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_gain.grid(row=3, column=1)
         self.ent_daheng_gain.bind("<KeyRelease>", self.exp_gain_value_changed)
 
         self.var_daheng_avg = tk.StringVar(self.win, value="1")
-        self.ent_daheng_avg = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_avg, width=10,
+        self.ent_daheng_avg = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_avg, width=10,
                                        validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_avg.grid(row=4, column=1)
 
-        self.but_live_daheng = tk.Button(frm_daheng_camera_settings, text="Live",
+        self.but_live_daheng = tk.Button(self.frm_daheng_camera_settings, text="Live",
                                          command=self.live_daheng_thread)
         self.but_live_daheng.grid(row=5, column=0)
 
-        self.but_single_daheng = tk.Button(frm_daheng_camera_settings, text="Single",
-                                         command=self.single_daheng_thread)
+        self.but_single_daheng = tk.Button(self.frm_daheng_camera_settings, text="Single",
+                                           command=self.single_daheng_thread)
         self.but_single_daheng.grid(row=5, column=1)
 
-        self.but_scan_daheng = tk.Button(frm_daheng_camera_settings, text="Stage Scan!",
-                                           command=self.scan_daheng_thread)
+        self.but_scan_daheng = tk.Button(self.frm_daheng_camera_settings, text="Stage Scan!",
+                                         command=self.scan_daheng_thread)
         self.but_scan_daheng.grid(row=5, column=2)
-        self.but_com_daheng = tk.Button(frm_daheng_camera_settings, text="Zoom in COM",
-                                         command=self.zoom_around_com)
+        self.but_com_daheng = tk.Button(self.frm_daheng_camera_settings, text="Zoom in COM",
+                                        command=self.zoom_around_com)
         self.but_com_daheng.grid(row=6, column=0)
 
-        self.but_reset_daheng = tk.Button(frm_daheng_camera_settings, text="Reset Zoom",
-                                        command=self.reset_zoom)
+        self.but_reset_daheng = tk.Button(self.frm_daheng_camera_settings, text="Reset Zoom",
+                                          command=self.reset_zoom)
         self.but_reset_daheng.grid(row=6, column=1)
 
         self.var_daheng_radius = tk.StringVar(self.win, value="200")
-        self.ent_daheng_radius = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_radius, width=8,
-                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_radius = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_radius, width=8,
+                                          validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_radius.grid(row=7, column=0)
 
-        lbl_daheng_stage_from = tk.Label(frm_daheng_camera_settings,text="From")
-        lbl_daheng_stage_to = tk.Label(frm_daheng_camera_settings,text="To")
-        lbl_daheng_stage_steps = tk.Label(frm_daheng_camera_settings,text="Steps")
+        lbl_daheng_stage_from = tk.Label(self.frm_daheng_camera_settings, text="From")
+        lbl_daheng_stage_to = tk.Label(self.frm_daheng_camera_settings, text="To")
+        lbl_daheng_stage_steps = tk.Label(self.frm_daheng_camera_settings, text="Steps")
         lbl_daheng_stage_from.grid(row=8, column=0)
         lbl_daheng_stage_to.grid(row=8, column=1)
         lbl_daheng_stage_steps.grid(row=8, column=2)
 
         self.var_daheng_stage_from = tk.StringVar(self.win, value="6")
-        self.ent_daheng_stage_from = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_from, width=5,
-                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_from = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_stage_from,
+                                              width=5,
+                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_stage_from.grid(row=9, column=0)
 
         self.var_daheng_stage_to = tk.StringVar(self.win, value="12")
-        self.ent_daheng_stage_to = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_to,
-                                              width=5,
-                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_to = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_stage_to,
+                                            width=5,
+                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_stage_to.grid(row=9, column=1)
 
         self.var_daheng_stage_steps = tk.StringVar(self.win, value="10")
-        self.ent_daheng_stage_steps = tk.Entry(frm_daheng_camera_settings, textvariable=self.var_daheng_stage_steps,
-                                            width=5,
-                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_stage_steps = tk.Entry(self.frm_daheng_camera_settings,
+                                               textvariable=self.var_daheng_stage_steps,
+                                               width=5,
+                                               validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_stage_steps.grid(row=9, column=2)
 
+        self.var_daheng_supergaussian_from = tk.StringVar(self.win, value="0")
+        self.ent_daheng_supergaussian_from = tk.Entry(self.frm_daheng_camera_settings,
+                                                      textvariable=self.var_daheng_supergaussian_from, width=5,
+                                                      validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_supergaussian_from.grid(row=10, column=0)
+
+        self.var_daheng_supergaussian_to = tk.StringVar(self.win, value="0.008")
+        self.ent_daheng_supergaussian_to = tk.Entry(self.frm_daheng_camera_settings,
+                                                    textvariable=self.var_daheng_supergaussian_to,
+                                                    width=5,
+                                                    validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_supergaussian_to.grid(row=10, column=1)
+
+        self.var_daheng_supergaussian_steps = tk.StringVar(self.win, value="10")
+        self.ent_daheng_supergaussian_steps = tk.Entry(self.frm_daheng_camera_settings,
+                                                       textvariable=self.var_daheng_supergaussian_steps,
+                                                       width=5,
+                                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_daheng_supergaussian_steps.grid(row=10, column=2)
+
+        self.but_scan_supergaussian_daheng = tk.Button(self.frm_daheng_camera_settings, text="Supergaussian Scan",
+                                                       command=self.scan_supergaussian_daheng_thread)
+        self.but_scan_supergaussian_daheng.grid(row=11, column=2)
 
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -986,6 +1042,31 @@ class Feedbacker(object):
         self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
         self.tk_widget_figrMCP.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.imgMCP.draw()
+
+        self.figrMCP_calibrate = Figure(figsize=(5, 4), dpi=100)
+        self.axMCP_calibrate = self.figrMCP_calibrate.add_subplot(211)
+        self.axHarmonics_calibrate = self.figrMCP_calibrate.add_subplot(212)
+        self.axMCP_calibrate.set_xlim(0, 515)
+        self.axMCP_calibrate.set_ylim(0, 515)
+        self.axHarmonics_calibrate.set_xlim(0, 515)
+        self.figrMCP_calibrate.tight_layout()
+        self.figrMCP_calibrate.canvas.draw()
+        self.imgMCP_calibrate = FigureCanvasTkAgg(self.figrMCP_calibrate, frm_mcp_calibrate_image)
+        self.tk_widget_figrMCP_calibrate = self.imgMCP_calibrate.get_tk_widget()
+        self.tk_widget_figrMCP_calibrate.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_calibrate.draw()
+
+        self.but_mcp_calibration = tk.Button(frm_mcp_calibrate_options, text="Load Test Image",
+                                             command=self.load_test_calibration_image_thread)
+        self.but_mcp_calibration.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
+        self.var_mcp_calibration_shear_val = tk.StringVar(self.win, "0")
+        self.ent_mcp_calibration_shear_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_shear_val,
+                                                      width=3, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_shear_val.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_shear_val.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         sizefactor = 1
 
@@ -1030,7 +1111,7 @@ class Feedbacker(object):
         self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-        # setting up frm_ratio
+        # setting up frm_spc_ratio
         self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -1053,10 +1134,6 @@ class Feedbacker(object):
         self.spec_interface_initialized = False
         self.active_spec_handle = None
 
-        self.camera_daheng_1 = False
-        self.camera_daheng_2 = False
-        self.camera_daheng_3 = False
-
         self.PIKE_cam = True
         self.ANDOR_cam = False
 
@@ -1067,6 +1144,27 @@ class Feedbacker(object):
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
+        self.hide_frm_daheng()
+
+    def load_test_calibration_image_thread(self):
+        self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image)
+        self.load_calib_thread.daemon = True
+        self.load_calib_thread.start()
+
+    def load_test_calibration_image(self):
+        file_path = askopenfilename(filetypes=[("TIFF files", "*.tiff;*.tif")])
+        im_temp = np.asarray(Image.open(file_path))
+        self.calibration_image = im_temp
+        self.plot_calibration_image(self.calibration_image)
+
+    def hide_frm_daheng(self):
+        if self.frm_daheng_camera_settings.grid_info():
+            self.frm_daheng_camera_settings.grid_remove()
+            if self.frm_daheng_camera_image.grid_info():
+                self.frm_daheng_camera_image.grid_remove()
+        else:
+            self.frm_daheng_camera_settings.grid()
+            self.frm_daheng_camera_image.grid()
 
     def single_daheng_thread(self):
         self.daheng_thread = threading.Thread(target=self.take_single_image_daheng)
@@ -1075,6 +1173,11 @@ class Feedbacker(object):
 
     def scan_daheng_thread(self):
         self.daheng_thread = threading.Thread(target=self.scan_stage_daheng)
+        self.daheng_thread.daemon = True
+        self.daheng_thread.start()
+
+    def scan_supergaussian_daheng_thread(self):
+        self.daheng_thread = threading.Thread(target=self.scan_supergaussian_daheng)
         self.daheng_thread.daemon = True
         self.daheng_thread.start()
 
@@ -1098,22 +1201,62 @@ class Feedbacker(object):
             im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
             self.current_daheng_image = im
             self.plot_daheng(im)
-            print("Image taken!")
+            print("Focus picture taken !")
 
     def scan_stage_daheng(self):
         from_ = float(self.var_daheng_stage_from.get())
         to_ = float(self.var_daheng_stage_to.get())
         steps_ = int(self.var_daheng_stage_steps.get())
-        stage_steps = np.linspace(from_,to_,steps_)
+        stage_steps = np.linspace(from_, to_, steps_)
         if self.daheng_camera is not None:
-            res = np.zeros([self.daheng_camera.imshape[0],self.daheng_camera.imshape[1],int(steps_)])
+            res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
             for ind, pos in enumerate(stage_steps):
                 self.strvar_WPDummy_should.set(pos)
                 self.move_WPDummy()
                 im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
                 self.plot_daheng(im)
-                res[:,:,ind] = im
-        self.save_daheng_scans(res,stage_steps)
+                res[:, :, ind] = im
+        self.save_daheng_scans(res, stage_steps)
+
+    def scan_supergaussian_daheng(self):
+        from_ = float(self.var_daheng_supergaussian_from.get())
+        to_ = float(self.var_daheng_supergaussian_to.get())
+        steps_ = int(self.var_daheng_supergaussian_steps.get())
+        radius_steps = np.linspace(from_, to_, steps_)
+        x = np.linspace(-chip_width, chip_width, slm_size[1])
+        y = np.linspace(-chip_height, chip_height, slm_size[0])
+        [X, Y] = np.meshgrid(x, y)
+        rho = np.sqrt(X ** 2 + Y ** 2)
+        rho /= 2
+        # note : make sure that there another phase on the slm, otherwise a double scan leads to an error
+
+        if self.daheng_camera is not None:
+            for ind, pos in enumerate(radius_steps):
+                desired_radius = pos
+                indices = np.where(rho <= desired_radius)
+                p1 = np.zeros_like(X)
+                p1[indices] = np.pi
+                phase = p1 / (2 * np.pi) * bit_depth
+                phase_map = self.parent.phase_map_red + phase
+                self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_red.get()))
+                self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_red.get()), phase_map,
+                                           slm_size[1], slm_size[0])
+                time.sleep(2)
+                print('stabilization')
+                im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
+
+                im = Image.fromarray(im)
+                im = im.convert('L')
+                nr = self.get_start_image_superg()
+                data_filename = 'C:/data/' + str(date.today()) + '/' + str(int(nr)) + '-' + str(int(ind)) + '-' + str(
+                    f'{pos:.5f}') + '.bmp'
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                log_entry = str(int(nr)) + '\t' + str(pos) + '\t' + timestamp + '\n'
+                self.sg.write(log_entry)
+                im.save(data_filename)
+                print(f'saved {pos}')
+            print('done')
+
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
             im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
@@ -1123,7 +1266,8 @@ class Feedbacker(object):
     def plot_daheng(self, im):
 
         if self.daheng_zoom is not None:
-            im = im[int(self.daheng_zoom[0]):int(self.daheng_zoom[1]),int(self.daheng_zoom[2]):int(self.daheng_zoom[3])]
+            im = im[int(self.daheng_zoom[0]):int(self.daheng_zoom[1]),
+                 int(self.daheng_zoom[2]):int(self.daheng_zoom[3])]
 
         image = Image.fromarray(im)
 
@@ -1145,26 +1289,25 @@ class Feedbacker(object):
         if self.daheng_camera is not None:
             og_shape = self.daheng_camera.imshape
             if self.current_daheng_image is not None:
-                x,y = self.calculate_com(self.current_daheng_image)
-                x1 = x-radius
+                x, y = self.calculate_com(self.current_daheng_image)
+                x1 = x - radius
                 x2 = x + radius
                 y1 = y - radius
                 y2 = y + radius
                 if x + radius > og_shape[1]:
-                    x2 = og_shape[1]-1
+                    x2 = og_shape[1] - 1
                 if x - radius < 0:
                     x1 = 0
                 if y + radius > og_shape[0]:
-                    y2 = og_shape[0]-1
+                    y2 = og_shape[0] - 1
                 if y - radius < 0:
                     y1 = 0
-                self.daheng_zoom=[y1,y2,x1,x2]
+                self.daheng_zoom = [y1, y2, x1, x2]
 
     def reset_zoom(self):
         self.daheng_zoom = None
 
-
-    def calculate_com(self,im):
+    def calculate_com(self, im):
         # Convert the image data to a NumPy array
         image_array = np.array(im)
 
@@ -1245,8 +1388,8 @@ class Feedbacker(object):
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
             self.background = np.zeros([512, 512])
-            #self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
-            #self.strvar_temperature.set(str(self.cam.get_temperature()))
+            # self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
+            # self.strvar_temperature.set(str(self.cam.get_temperature()))
             self.update_camera_status_thread()
         print(f"PIKE_cam: {self.PIKE_cam}")
         print(f"ANDOR_cam: {self.ANDOR_cam}")
@@ -1255,10 +1398,11 @@ class Feedbacker(object):
         self.temp_thread = threading.Thread(target=self.update_camera_status)
         self.temp_thread.daemon = True
         self.temp_thread.start()
+
     def update_camera_status(self):
         while self.ANDOR_cam:
             self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
-            self.strvar_temperature.set(str(np.round(float(self.cam.get_temperature()),2)))
+            self.strvar_temperature.set(str(np.round(float(self.cam.get_temperature()), 2)))
             time.sleep(1)
 
     def update_maxgreenratio(self, var, index, mode):
@@ -1268,10 +1412,6 @@ class Feedbacker(object):
             maxG = float(self.ent_green_power.get()) * 1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
             self.strvar_ratio_to.set(str(np.round(x * maxG / c, 3)))
-
-            # print(x)
-            # print(c)
-            # print(maxG)
         except:
             print("pls enter a reasonable value")
 
@@ -1585,16 +1725,7 @@ class Feedbacker(object):
         None
         """
         try:
-            if self.var_WPDummypower.get() == 1:
-                power = float(self.strvar_WPDummy_should.get())
-                if power > float(self.ent_green_power.get()):
-                    power = float(self.ent_green_power.get())
-                    print("Value above maximum! Desired power set to maximum instead")
-                pos = self.power_to_angle(power, float(self.ent_green_power.get()),
-                                          float(self.ent_green_phase.get())) + 90
-            else:
-                pos = float(self.strvar_WPDummy_should.get())
-
+            pos = float(self.strvar_WPDummy_should.get())
             print("WP Dummy is moving to {}".format(np.round(pos, 2)))
             self.WPDummy.move_to(pos, True)
             print(f"WPG moved to {str(self.WPDummy.position)}")
@@ -1738,8 +1869,6 @@ class Feedbacker(object):
         self.strvar_green_power.set(str(self.calibrator.max_green))
         self.strvar_red_phase.set(str(self.calibrator.phase_red))
         self.strvar_green_phase.set(str(self.calibrator.phase_green))
-        # except:
-        #    print("Failure in opening the Calibrator")
 
     def read_red_power(self):
         """
@@ -1823,11 +1952,10 @@ class Feedbacker(object):
 
         return image - self.background
 
-    def save_daheng_scans(self,res,pos):
+    def save_daheng_scans(self, res, pos):
         nr = self.get_start_image_images()
 
         data_filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.h5'
-
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
@@ -1846,7 +1974,8 @@ class Feedbacker(object):
         except:
             gl = np.nan
 
-        log_entry = str(int(nr)) + '\t' + str(pos[0]) + '\t' + str(pos[-1]) + '\t' + str(int(np.size(pos)))  + '\t' + str(gl) + '\t' + str(rl) + '\t' + timestamp + '\n'
+        log_entry = str(int(nr)) + '\t' + str(pos[0]) + '\t' + str(pos[-1]) + '\t' + str(
+            int(np.size(pos))) + '\t' + str(gl) + '\t' + str(rl) + '\t' + timestamp + '\n'
         self.g.write(log_entry)
         hf = h5py.File(data_filename, 'w')
         hf.create_dataset('images', data=res)
@@ -1904,10 +2033,10 @@ class Feedbacker(object):
             np.round(np.std(np.unwrap(self.d_phase)),
                      2)) + '\t' + self.ent_mcp.get() + '\t' + str(
             self.name_cam) + '\t' + self.ent_avgs.get() + '\t' + self.ent_exposure_time.get() + '\t' + str(
-            gl)  + '\t' + str(
-            gl_pos) +'\t' + str(
+            gl) + '\t' + str(
+            gl_pos) + '\t' + str(
             rl) + '\t' + str(
-            rl_pos) +'\t' + timestamp + '\n'
+            rl_pos) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
         # self.f.close()
 
@@ -2062,6 +2191,22 @@ class Feedbacker(object):
         # self.f.close()
         return start_image
 
+    def get_start_image_superg(self):
+
+        # self.f = open(self.autolog, "a+")
+        self.sg.seek(0)
+        lines = np.loadtxt(self.autolog_superg, comments="#", delimiter="\t", unpack=False, usecols=(0,))
+        if lines.size > 0:
+            try:
+                start_image = lines[-1] + 1
+            except:
+                start_image = lines + 1
+            print("The last image had index " + str(int(start_image - 1)))
+        else:
+            start_image = 0
+        # self.f.close()
+        return start_image
+
     def get_start_image(self):
         """
         Gets the index of the starting image.
@@ -2093,273 +2238,6 @@ class Feedbacker(object):
             start_image = 0
         # self.f.close()
         return start_image
-
-    def init_cam_mono_1(self):
-
-        # create a device manager
-        device_manager = gx.DeviceManager()
-        dev_num, dev_info_list = device_manager.update_device_list()
-
-        if dev_num == 0:
-            print("No connected devices")
-            return
-
-        # open the first device
-        self.cam_1 = device_manager.open_device_by_index(int(1))
-
-        # set exposure
-        self.cam_1.ExposureTime.set(float(100000))  # TODO exposure box
-
-        # set gain
-        self.cam_1.Gain.set(float(10))  # TODO gain box
-
-        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
-            # set trigger mode
-            self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
-
-        else:
-            # set trigger mode and trigger source
-            self.cam_1.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam_1.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
-
-        self.cam_1.stream_on()
-
-        self.focus_cam_acq_mono_1(int(1))  # TODO average box
-        self.cam_1.stream_off()
-        self.cam_1.close_device()
-
-    def init_cam_mono_2(self):
-
-        # create a device manager
-        device_manager = gx.DeviceManager()
-        dev_num, dev_info_list = device_manager.update_device_list()
-
-        if dev_num == 0:
-            print("No connected devices")
-            return
-
-        # open the second device
-        self.cam_2 = device_manager.open_device_by_index(int(2))
-
-        # set exposure
-        self.cam_2.ExposureTime.set(float(100000))
-
-        # set gain
-        self.cam_2.Gain.set(float(10))
-
-        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
-            # set trigger mode
-
-            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
-        else:
-            # set trigger mode and trigger source
-            self.cam_2.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam_2.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
-
-        self.cam_2.stream_on()
-        self.focus_cam_acq_mono_2(int(1))
-        self.cam_2.stream_off()
-        self.cam_2.close_device()
-
-    def init_cam_mono_3(self):
-
-        # create a device manager
-        device_manager = gx.DeviceManager()
-        dev_num, dev_info_list = device_manager.update_device_list()
-
-        if dev_num == 0:
-            print("No connected devices")
-            return
-
-        # open the first device
-        self.cam_3 = device_manager.open_device_by_index(int(3))
-
-        # set exposure
-        self.cam_3.ExposureTime.set(float(100000))
-
-        # set gain
-        self.cam_3.Gain.set(float(10))
-
-        if dev_info_list[0].get("device_class") == gx.GxDeviceClassList.USB2:
-            # set trigger mode
-            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
-        else:
-            # set trigger mode and trigger source
-            self.cam_3.TriggerMode.set(gx.GxSwitchEntry.ON)
-            self.cam_3.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
-
-        self.cam_3.stream_on()
-        self.focus_cam_acq_mono_3(int(1))
-        self.cam_3.stream_off()
-        self.cam_3.close_device()
-
-    def focus_cam_acq_mono_1(self, num):
-        """
-        acquisition function for camera in single picture mode
-        """
-        sum_image_1 = None
-
-        for i in range(num):
-            self.cam_1.TriggerSoftware.send_command()
-            self.cam_1.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam_1.Gain.set(float(1))  # TODO exposure box
-
-            raw_image_1 = self.cam_1.data_stream[0].get_image()
-            if raw_image_1 is None:
-                print('oups1')
-                continue
-            numpy_image_1 = raw_image_1.get_numpy_array()
-            if numpy_image_1 is None:
-                print('oups1')
-                continue
-
-            if sum_image_1 is None:
-                sum_image_1 = numpy_image_1.astype('float64')
-            else:
-                sum_image_1 += numpy_image_1.astype('float64')
-
-        nr = self.get_start_image()
-
-        average_image_1 = (sum_image_1 / num).astype('uint8')
-        picture_1 = Image.fromarray(average_image_1)
-        picture_1 = picture_1.resize((600, 400), resample=0)
-        picture_1 = ImageTk.PhotoImage(picture_1)
-
-        self.focus_cam_save_1 = True  # TODO possibility to change
-
-        if self.focus_cam_save_1:
-            folder_path_1 = 'C:/data/' + str(date.today()) + '/' + 'camera_1' + '/'
-            if not os.path.exists(folder_path_1):
-                os.makedirs(folder_path_1)
-
-            base_filename_1 = 'camera_1_' + str(date.today()) + '-' + str(int(nr))
-            filename_1 = base_filename_1 + '.bmp'
-            full_path_1 = os.path.join(folder_path_1, filename_1)
-            last_image_1 = picture_1
-
-            if last_image_1 is not None:
-                pil_image_1 = ImageTk.getimage(last_image_1)
-                pil_image_1.save(full_path_1)
-                print(f"Image of camera 1 taken over {num} averages saved as {full_path_1}")
-            else:
-                print("No image to save")
-
-    def focus_cam_acq_mono_2(self, num):
-        """
-        acquisition function for camera in single picture mode
-        """
-        sum_image_2 = None
-
-        for i in range(num):
-            self.cam_2.TriggerSoftware.send_command()
-            self.cam_2.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam_2.Gain.set(float(1))  # TODO exposure box
-
-            raw_image_2 = self.cam_2.data_stream[0].get_image()
-            if raw_image_2 is None:
-                print('oups2')
-                continue
-            numpy_image_2 = raw_image_2.get_numpy_array()
-            if numpy_image_2 is None:
-                print('oups2')
-                continue
-
-            if sum_image_2 is None:
-                sum_image_2 = numpy_image_2.astype('float64')
-            else:
-                sum_image_2 += numpy_image_2.astype('float64')
-
-        nr = self.get_start_image()
-
-        average_image_2 = (sum_image_2 / num).astype('uint8')
-        picture_2 = Image.fromarray(average_image_2)
-        picture_2 = picture_2.resize((600, 400), resample=0)
-        picture_2 = ImageTk.PhotoImage(picture_2)
-
-        self.focus_cam_save_2 = True
-
-        if self.focus_cam_save_2:
-            folder_path_2 = 'C:/data/' + str(date.today()) + '/' + 'camera_2' + '/'
-            if not os.path.exists(folder_path_2):
-                os.makedirs(folder_path_2)
-
-            base_filename_2 = 'camera_2_' + str(date.today()) + '-' + str(int(nr))
-            filename_2 = base_filename_2 + '.bmp'
-            full_path_2 = os.path.join(folder_path_2, filename_2)
-            last_image_2 = picture_2
-
-            if last_image_2 is not None:
-                pil_image_2 = ImageTk.getimage(last_image_2)
-                pil_image_2.save(full_path_2)
-                print(f"Image of camera 2 taken over {num} averages saved as {full_path_2}")
-            else:
-                print("No image to save")
-
-    def focus_cam_acq_mono_3(self, num):
-        """
-        acquisition function for camera in single picture mode
-        """
-        sum_image_3 = None
-
-        for i in range(num):
-            self.cam_3.TriggerSoftware.send_command()
-            self.cam_3.ExposureTime.set(float(10000))  # TODO gain box
-            self.cam_3.Gain.set(float(1))  # TODO exposure box
-
-            raw_image_3 = self.cam_3.data_stream[0].get_image()
-            if raw_image_3 is None:
-                print('oups3')
-                continue
-            numpy_image_3 = raw_image_3.get_numpy_array()
-            if numpy_image_3 is None:
-                print('oups3')
-                continue
-
-            if sum_image_3 is None:
-                sum_image_3 = numpy_image_3.astype('float64')
-            else:
-                sum_image_3 += numpy_image_3.astype('float64')
-
-        nr = self.get_start_image()
-
-        average_image_3 = (sum_image_3 / num).astype('uint8')
-        picture_3 = Image.fromarray(average_image_3)
-        picture_3 = picture_3.resize((600, 400), resample=0)
-        picture_3 = ImageTk.PhotoImage(picture_3)
-
-        self.focus_cam_save_3 = True
-
-        if self.focus_cam_save_3:
-            folder_path_3 = 'C:/data/' + str(date.today()) + '/' + 'camera_3' + '/'
-            if not os.path.exists(folder_path_3):
-                os.makedirs(folder_path_3)
-
-            base_filename_3 = 'camera_3_' + str(date.today()) + '-' + str(int(nr))
-            filename_3 = base_filename_3 + '.bmp'
-            full_path_3 = os.path.join(folder_path_3, filename_3)
-            last_image_3 = picture_3
-
-            if last_image_3 is not None:
-                pil_image_3 = ImageTk.getimage(last_image_3)
-                pil_image_3.save(full_path_3)
-                print(f"Image of camera 3 taken over {num} averages saved as {full_path_3}")
-            else:
-                print("No image to save")
-
-    def cam_mono_acq_1(self):
-        self.render_thread_mono_1 = threading.Thread(target=self.init_cam_mono_1)
-        self.render_thread_mono_1.daemon = True
-        self.render_thread_mono_1.start()
-
-    def cam_mono_acq_2(self):
-        self.render_thread_mono_2 = threading.Thread(target=self.init_cam_mono_2)
-        self.render_thread_mono_2.daemon = True
-        self.render_thread_mono_2.start()
-
-    def cam_mono_acq_3(self):
-        self.render_thread_mono_3 = threading.Thread(target=self.init_cam_mono_3)
-        self.render_thread_mono_3.daemon = True
-        self.render_thread_mono_3.start()
 
     def red_only_scan(self):
         """
@@ -2433,11 +2311,11 @@ class Feedbacker(object):
 
             self.strvar_WPG_should.set(str(1e3 * g))
             self.move_WPG()
-            time.sleep(1)
+            time.sleep(0.5)
 
             self.strvar_WPR_should.set(str(r))
             self.move_WPR()
-            time.sleep(1)
+            time.sleep(0.5)
 
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
@@ -2462,7 +2340,7 @@ class Feedbacker(object):
         print("getting to scan starting point...")
         self.strvar_setp.set(self.phis[0])
         self.set_setpoint()
-        time.sleep(1)
+        time.sleep(0.1)
         print("Ready to scan the phase!")
         for ind, phi in enumerate(self.phis):
             start_time = time.time()
@@ -2474,21 +2352,6 @@ class Feedbacker(object):
             self.plot_MCP(im)
             t1 = time.time()
             print(f"Camera MCP {t1 - t0}")
-
-            """
-
-            if self.camera_daheng_1:
-                self.cam_mono_acq_1()  # Nozzle 1
-                time.sleep(1)
-            if self.camera_daheng_2:
-                self.cam_mono_acq_2()  # Focus
-                time.sleep(1)
-            if self.camera_daheng_3:
-                self.cam_mono_acq_3()  # Nozzle 2
-                time.sleep(1)
-                
-            """
-
             end_time = time.time()
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
@@ -2512,9 +2375,9 @@ class Feedbacker(object):
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
             # things go to hell if division by zero
-            #if b == 0:
+            # if b == 0:
             #    b = 0.00001
-            #self.lens_green.strvar_ben.set(str(b))
+            # self.lens_green.strvar_ben.set(str(b))
             self.lens_green.strvar_focus_position.set(str(b))
             self.parent.open_pub_green()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
@@ -2532,9 +2395,9 @@ class Feedbacker(object):
 
         for ind, b in enumerate(np.linspace(start, end, int(steps))):
             # things go to hell if division by zero
-            #if b == 0:
+            # if b == 0:
             #    b = 0.00001
-            #self.lens_red.strvar_ben.set(str(b))
+            # self.lens_red.strvar_ben.set(str(b))
             self.lens_red.strvar_focus_position.set(str(b))
             self.parent.open_pub_red()
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
@@ -2543,7 +2406,6 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.save_im(im)
                 self.plot_MCP(im)
-                # self.cam_mono_acq()
 
     def view_live(self):
         while self.live_is_pressed:
@@ -2821,6 +2683,32 @@ class Feedbacker(object):
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
 
+    def plot_calibration_image(self, image):
+        image = np.flipud(image)
+        self.axMCP_calibrate.clear()
+        self.axMCP_calibrate.imshow(image.T)
+        # self.axMCP.set_aspect('equal')
+
+        self.axMCP_calibrate.set_xlabel("Energy equivalent")
+        self.axMCP_calibrate.set_ylabel("Y (px)")
+        self.axMCP_calibrate.set_xlim(0, 512)
+        self.axMCP_calibrate.set_ylim(0, 512)
+
+        self.axHarmonics_calibrate.clear()
+        self.axHarmonics_calibrate.plot(np.arange(512), np.sum(image, 1))
+        self.axHarmonics_calibrate.set_xlabel("Energy equivalent")
+        self.axHarmonics_calibrate.set_ylabel("Counts (arb.u.)")
+
+        self.axHarmonics_calibrate.set_xlim(0, 512)
+        self.current_harmonics_profile_max_calibrate = np.max(np.sum(image, 1))
+        self.current_harmonics_profile_min_calibrate = np.min(np.sum(image, 1))
+        if self.var_fixyaxis.get() == 1:
+            self.axHarmonics_calibrate.set_ylim(self.ymin_harmonics_calibrate, self.ymax_harmonics_calibrate)
+
+        self.axHarmonics_calibrate.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(image))), int(np.max(image))))
+        self.figrMCP_calibrate.tight_layout()
+        self.imgMCP_calibrate.draw()
+
     def plot_MCP(self, mcpimage):
         """
         Plot the MCP image and harmonics plot.
@@ -2840,7 +2728,7 @@ class Feedbacker(object):
         if self.PIKE_cam is True:
             self.axMCP.clear()
             self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
-            self.axMCP.set_aspect('equal')
+            # self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")
             self.axMCP.set_ylabel("Y (px)")
@@ -2860,7 +2748,7 @@ class Feedbacker(object):
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
             self.axMCP.imshow(mcpimage.T)
-            self.axMCP.set_aspect('equal')
+            # self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")
             self.axMCP.set_ylabel("Y (px)")
@@ -3150,7 +3038,8 @@ class Feedbacker(object):
         None
         """
         self.but_spc_export_fringes.config(fg='red')
-        file_path = asksaveasfile(initialfile = f'fringes_{date.today()}', defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        file_path = asksaveasfile(initialfile=f'fringes_{date.today()}', defaultextension=".txt",
+                                  filetypes=[("Text Files", "*.txt")])
         fringes = np.array([self.wavelength, self.trace]).T
 
         if file_path is not None:
@@ -3181,7 +3070,8 @@ class Feedbacker(object):
         None
         """
         self.but_spc_export_phase_stab.config(fg='red')
-        file_path = asksaveasfile(initialfile = f'phase_stability_{date.today()}',defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
+        file_path = asksaveasfile(initialfile=f'phase_stability_{date.today()}', defaultextension=".txt",
+                                  filetypes=[("Text Files", "*.txt")])
         phase_stability = np.array([np.arange(1000), self.im_phase]).T
 
         if file_path is not None:
@@ -3190,7 +3080,6 @@ class Feedbacker(object):
             file_path.close()
             print(f"Phase stability saved to {file_path.name}")
         self.but_spc_export_phase_stab.config(fg='green')
-
 
     def on_close(self):
         """

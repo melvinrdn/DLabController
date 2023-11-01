@@ -15,7 +15,6 @@ from views import daheng_camera, andor_xuv_camera, pike_camera
 from stages_and_sensors import thorlabs_stages
 print('Done')
 
-#test
 
 class DLabController(object):
     """
@@ -41,11 +40,11 @@ class DLabController(object):
         self.publish_window_red = None
 
         self.feedback_win = None
-        self.andor_camera_win = None
-        self.daheng_camera_win = None
-        self.pike_camera_win = None
+        #self.andor_camera_win = None
+        #self.daheng_camera_win = None
+        #self.pike_camera_win = None
 
-        self.thorlabs_stages_win = None
+        #self.thorlabs_stages_win = None
 
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
@@ -60,7 +59,7 @@ class DLabController(object):
         self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
         self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
 
-        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
+        #self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
         self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
         but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
@@ -75,12 +74,12 @@ class DLabController(object):
         but_load_red.grid(row=1, sticky='ew')
 
         lbl_screen_green = ttk.Label(self.frm_top_green, text='Display number :')
-        self.strvar_green = tk.StringVar(value='3')
+        self.strvar_green = tk.StringVar(value='2')
         self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=8, from_=1, to=5, textvariable=self.strvar_green)
         self.ent_scr_green.grid(row=0, column=1, sticky='w')
 
         lbl_screen_red = ttk.Label(self.frm_top_red, text='Display number :')
-        self.strvar_red = tk.StringVar(value='2')
+        self.strvar_red = tk.StringVar(value='1')
         self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=8, from_=1, to=5, textvariable=self.strvar_red)
         self.ent_scr_red.grid(row=0, column=1, sticky='w')
 
@@ -98,7 +97,7 @@ class DLabController(object):
         self.frm_mid_red.grid(row=2, column=1, sticky='nsew')
         self.frm_bottom_red.grid(row=3, column=1, sticky='nsew')
 
-        self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
+        #self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
         self.frm_bottom_side_panel.grid(row=3, column=2, sticky='nsew')
 
         lbl_screen_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -118,15 +117,17 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
-        but_pike_camera = ttk.Button(self.frm_side_panel, text='PIKE Camera', command=self.open_pike_camera)
-        but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
-        but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
+        #but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
+        #but_pike_camera = ttk.Button(self.frm_side_panel, text='PIKE Camera', command=self.open_pike_camera)
+        #but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
+        #but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
+        #but_parameters_scan = ttk.Button(self.frm_side_panel, text='Parameters scan', command=self.open_parameters_scan)
 
-        but_andor_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        but_pike_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        but_daheng_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
-        but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
+        #but_andor_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        #but_pike_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
+        #but_daheng_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        #but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
+        #but_parameters_scan.grid(row=4, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
         but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -153,6 +154,7 @@ class DLabController(object):
         None
         """
         self.feedback_win = feedbacker.Feedbacker(self)
+
 
     def open_daheng_camera(self):
         """
