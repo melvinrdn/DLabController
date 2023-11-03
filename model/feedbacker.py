@@ -30,6 +30,7 @@ import pylablib as pll
 
 import views.focus_diagnostic as dh
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
+import model.helpers as help
 
 
 class Feedbacker(object):
@@ -96,6 +97,13 @@ class Feedbacker(object):
         self.background = None
 
         self.calibration_image = np.zeros([512, 512])
+        self.calibration_image_update = np.zeros([512, 512])
+        self.calibration_image_update_energy = np.zeros([512, 512])
+        self.eaxis = None
+        self.eaxis_correct = None
+
+        self.roix = [0, 512]
+        self.roiy = [0, 512]
 
         self.live_is_pressed = False
 
@@ -158,13 +166,19 @@ class Feedbacker(object):
         self.frm_notebook_mcp = ttk.Notebook(frm_mcp_all)
         frm_mcp_image = ttk.Frame(frm_mcp_all)
         frm_mcp_calibrate = ttk.Frame(frm_mcp_all)
+        frm_mcp_calibrate_energy = ttk.Frame(frm_mcp_all)
         frm_mcp_treated = ttk.Frame(frm_mcp_all)
         self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
-        self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate')
+        self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
+        self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
         self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
 
         frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
         frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
+        frm_mcp_calibrate_options_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Options')
+        frm_mcp_calibrate_image_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Image')
+        frm_mcp_treated_options = ttk.LabelFrame(frm_mcp_treated, text='Options')
+        frm_mcp_treated_image = ttk.LabelFrame(frm_mcp_treated, text='Images')
 
         # frm_mcp_image = ttk.LabelFrame(self.win, text='MCP')
         frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
@@ -331,6 +345,11 @@ class Feedbacker(object):
         self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
                                             offvalue=0,
                                             command=None)
+        self.var_saveh5 = tk.IntVar()
+        self.cb_saveh5 = tk.Checkbutton(frm_measure, text='Save as h5', variable=self.var_saveh5, onvalue=1,
+                                        offvalue=0,
+                                        command=None)
+
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
         self.strvar_avgs = tk.StringVar(self.win, '20')
         self.ent_avgs = tk.Entry(
@@ -706,7 +725,10 @@ class Feedbacker(object):
         frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
+        frm_mcp_calibrate_options_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_image_energy.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_treated_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_treated_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
@@ -784,6 +806,7 @@ class Feedbacker(object):
         self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
         self.cb_background.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        self.cb_saveh5.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
 
         self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_scan.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
@@ -1059,14 +1082,151 @@ class Feedbacker(object):
         self.but_mcp_calibration = tk.Button(frm_mcp_calibrate_options, text="Load Test Image",
                                              command=self.load_test_calibration_image_thread)
         self.but_mcp_calibration.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_mcp_calibration_take = tk.Button(frm_mcp_calibrate_options, text="Take Image",
+                                                  command=self.load_test_calibration_image_take_thread)
+        self.but_mcp_calibration_take.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         lbl_mcp_calibration_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
         self.var_mcp_calibration_shear_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_shear_val.trace_add("write", self.update_calibration)
         self.ent_mcp_calibration_shear_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_shear_val,
-                                                      width=3, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         lbl_mcp_calibration_shear_val.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_shear_val.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_ROIX_val = tk.Label(frm_mcp_calibrate_options, text="ROIX:")
+        self.var_mcp_calibration_ROIX1_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_ROIX1_val.trace_add("write", self.update_calibration)
+        self.var_mcp_calibration_ROIX2_val = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_ROIX2_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_ROIX1_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIX1_val,
+                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_mcp_calibration_ROIX2_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIX2_val,
+                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_ROIX_val.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIX1_val.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIX2_val.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_ROIY_val = tk.Label(frm_mcp_calibrate_options, text="ROIY:")
+        self.var_mcp_calibration_ROIY1_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_ROIY1_val.trace_add("write", self.update_calibration)
+        self.var_mcp_calibration_ROIY2_val = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_ROIY2_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_ROIY1_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIY1_val,
+                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_mcp_calibration_ROIY2_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIY2_val,
+                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_ROIY_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIY1_val.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIY2_val.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_background_val = tk.Label(frm_mcp_calibrate_options, text="Background:")
+        self.var_mcp_calibration_background_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_background_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_background_val = tk.Entry(frm_mcp_calibrate_options,
+                                                           textvariable=self.var_mcp_calibration_background_val,
+                                                           width=6, validate='all',
+                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_background_val.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_background_val.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.figrMCP_calibrate_energy = Figure(figsize=(5, 4), dpi=100)
+        self.axHarmonics_calibrate_energy1 = self.figrMCP_calibrate_energy.add_subplot(211)
+        self.axHarmonics_calibrate_energy2 = self.figrMCP_calibrate_energy.add_subplot(212)
+        self.axHarmonics_calibrate_energy1.set_xlim(0, 515)
+        self.axHarmonics_calibrate_energy2.set_xlim(0, 515)
+        self.figrMCP_calibrate_energy.tight_layout()
+        self.figrMCP_calibrate_energy.canvas.draw()
+        self.imgMCP_calibrate_energy = FigureCanvasTkAgg(self.figrMCP_calibrate_energy, frm_mcp_calibrate_image_energy)
+        self.tk_widget_figrMCP_calibrate_energy = self.imgMCP_calibrate_energy.get_tk_widget()
+        self.tk_widget_figrMCP_calibrate_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_calibrate_energy.draw()
+
+        lbl_mcp_calibration_energy_smooth = tk.Label(frm_mcp_calibrate_options_energy, text="Smooth:")
+        self.var_mcp_calibration_energy_smooth = tk.StringVar(self.win, "5")
+        self.var_mcp_calibration_energy_smooth.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_smooth = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                          textvariable=self.var_mcp_calibration_energy_smooth,
+                                                          width=4, validate='all',
+                                                          validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_energy_smooth.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_smooth.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_prom = tk.Label(frm_mcp_calibrate_options_energy, text="Peak prominence:")
+        self.var_mcp_calibration_energy_prom = tk.StringVar(self.win, "20")
+        self.var_mcp_calibration_energy_prom.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_prom = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                        textvariable=self.var_mcp_calibration_energy_prom,
+                                                        width=6, validate='all',
+                                                        validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_energy_prom.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_prom.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_ignore = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks:")
+        self.var_mcp_calibration_energy_ignore1 = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_energy_ignore1.trace_add("write", self.update_calibration_energy)
+        self.var_mcp_calibration_energy_ignore2 = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_energy_ignore2.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_ignore1 = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                           textvariable=self.var_mcp_calibration_energy_ignore1,
+                                                           width=4, validate='all',
+                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_mcp_calibration_energy_ignore2 = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                           textvariable=self.var_mcp_calibration_energy_ignore2,
+                                                           width=4, validate='all',
+                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_energy_ignore.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_firstharmonic = tk.Label(frm_mcp_calibrate_options_energy, text="First Harmonic")
+        self.var_mcp_calibration_energy_firstharmonic = tk.StringVar(self.win, "17")
+        self.var_mcp_calibration_energy_firstharmonic.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_firstharmonic = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                                 textvariable=self.var_mcp_calibration_energy_firstharmonic,
+                                                                 width=4, validate='all',
+                                                                 validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_energy_firstharmonic.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_firstharmonic.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_order = tk.Label(frm_mcp_calibrate_options_energy, text="Harmonic Spacing")
+        self.var_mcp_calibration_energy_order = tk.StringVar(self.win, "2")
+        self.var_mcp_calibration_energy_order.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_order = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                         textvariable=self.var_mcp_calibration_energy_order,
+                                                         width=4, validate='all',
+                                                         validatecommand=(vcmd, '%d', '%P', '%S'))
+        lbl_mcp_calibration_energy_order.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_order.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.figrMCP_treated = Figure(figsize=(5, 4), dpi=100)
+        self.axMCP_treated = self.figrMCP_treated.add_subplot(211)
+        self.axHarmonics_treated = self.figrMCP_treated.add_subplot(212)
+        # self.axMCP_treated.set_xlim(0, 515)
+        # self.axMCP_treated.set_ylim(0, 515)
+        # self.axHarmonics_treated.set_xlim(0, 515)
+        self.figrMCP_treated.tight_layout()
+        self.figrMCP_treated.canvas.draw()
+        self.imgMCP_treated = FigureCanvasTkAgg(self.figrMCP_treated, frm_mcp_treated_image)
+        self.tk_widget_figrMCP_treated = self.imgMCP_treated.get_tk_widget()
+        self.tk_widget_figrMCP_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_treated.draw()
+
+        self.var_show_treated = tk.IntVar()
+        self.cb_show_treated = tk.Checkbutton(frm_mcp_treated_options, text='Show Treated Image Live',
+                                              variable=self.var_show_treated, onvalue=1,
+                                              offvalue=0,
+                                              command=None)
+        self.cb_show_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.but_show_treated_image = tk.Button(frm_mcp_treated_options, text="Show Treated Image",
+                                                command=self.treat_image_test)
+        self.but_show_treated_image.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
 
         sizefactor = 1
 
@@ -1146,10 +1306,92 @@ class Feedbacker(object):
 
         self.hide_frm_daheng()
 
+    def final_image_treatment(self, im):
+        bg = int(self.var_mcp_calibration_background_val.get())
+        x1 = int(self.var_mcp_calibration_ROIX1_val.get())
+        x2 = int(self.var_mcp_calibration_ROIX2_val.get())
+        y1 = int(self.var_mcp_calibration_ROIY1_val.get())
+        y2 = int(self.var_mcp_calibration_ROIY2_val.get())
+        shear = float(self.var_mcp_calibration_shear_val.get())
+        correct_E_axis, treated = help.treat_image_new(im, self.eaxis, x1, x2, y1, y2, bg, shear)
+        return correct_E_axis, treated
+
+    def update_calibration_energy(self, var, index, mode):
+        im = np.flipud(self.calibration_image_update)
+        profile = np.sum(im, axis=1)
+        try:
+            smooth = int(self.var_mcp_calibration_energy_smooth.get())
+            prom = int(self.var_mcp_calibration_energy_prom.get())
+            order = int(self.var_mcp_calibration_energy_order.get())
+            firstharmonic = int(self.var_mcp_calibration_energy_firstharmonic.get())
+
+            data, peaks = help.fit_energy_calibration_peaks(profile, prom=prom, smoothing=smooth)
+            condition = (peaks > int(self.var_mcp_calibration_energy_ignore1.get())) & (
+                    peaks < int(self.var_mcp_calibration_energy_ignore2.get()))
+            peaks = peaks[condition]
+
+            h = 6.62607015e-34
+            c = 299792458
+            qe = 1.60217662e-19
+            lam = 1030e-9
+            Eq = h * c / lam
+
+            first_harmonic = firstharmonic
+            E = np.ones_like(peaks) * first_harmonic * Eq / qe + np.arange(0, np.size(peaks)) * order * Eq / qe
+            p = np.polyfit(peaks, E, 3)
+            x_axis = np.arange(0, np.shape(im)[1])
+            scale_x_axis = np.polyval(p, x_axis)
+            E_axis = scale_x_axis
+            self.eaxis = E_axis
+
+            self.plot_calibration_image_energy(profile, data, peaks, E_axis)
+        except:
+            print("Enter odd number for smooth! and something reasonable for peak prominence!")
+
+    def update_calibration(self, var, index, mode):
+        im = self.calibration_image
+        try:
+            im = im - int(self.var_mcp_calibration_background_val.get())
+        except:
+            print("Enter something reasonable for the background!!")
+        try:
+            im = help.shear_image(im, float(self.var_mcp_calibration_shear_val.get()), axis=1)
+        except:
+            print("Enter a reasonable value for the shear!")
+        try:
+            x_cut1 = int(self.var_mcp_calibration_ROIX1_val.get())
+            x_cut2 = int(self.var_mcp_calibration_ROIX2_val.get())
+            y_cut1 = int(self.var_mcp_calibration_ROIY1_val.get())
+            y_cut2 = int(self.var_mcp_calibration_ROIY2_val.get())
+        except:
+            x_cut1 = 0
+            x_cut2 = 512
+            y_cut1 = 0
+            y_cut2 = 512
+        try:
+            mask = np.zeros_like(im)
+            mask[512 - x_cut2:512 - x_cut1, y_cut1:y_cut2] = 1
+            im = im * mask
+        except:
+            print("Enter a reasonable value for the ROI!")
+
+        self.calibration_image_update = im
+        self.plot_calibration_image(self.calibration_image_update)
+
+    def load_test_calibration_image_take_thread(self):
+        self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image_take)
+        self.load_calib_thread.daemon = True
+        self.load_calib_thread.start()
+
     def load_test_calibration_image_thread(self):
         self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image)
         self.load_calib_thread.daemon = True
         self.load_calib_thread.start()
+
+    def load_test_calibration_image_take(self):
+        im_temp = self.take_image(int(self.ent_avgs.get()))
+        self.calibration_image = im_temp
+        self.plot_calibration_image(self.calibration_image)
 
     def load_test_calibration_image(self):
         file_path = askopenfilename(filetypes=[("TIFF files", "*.tiff;*.tif")])
@@ -1371,6 +1613,9 @@ class Feedbacker(object):
             self.ymin_harmonics = self.current_harmonics_profile_min
             self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
                     self.current_harmonics_profile_max - self.current_harmonics_profile_min)
+            self.ymin_harmonics_calibrate = self.current_harmonics_profile_min_calibrate
+            self.ymax_harmonics_calibrate = self.current_harmonics_profile_max_calibrate + 0.1 * (
+                    self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate)
 
     def change_mcp_cam(self, event):
         selected_value = self.strvar_mcp_cam_choice.get()
@@ -2311,11 +2556,11 @@ class Feedbacker(object):
 
             self.strvar_WPG_should.set(str(1e3 * g))
             self.move_WPG()
-            time.sleep(0.5)
+            time.sleep(0.2)
 
             self.strvar_WPR_should.set(str(r))
             self.move_WPR()
-            time.sleep(0.5)
+            time.sleep(0.2)
 
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
@@ -2340,7 +2585,7 @@ class Feedbacker(object):
         print("getting to scan starting point...")
         self.strvar_setp.set(self.phis[0])
         self.set_setpoint()
-        time.sleep(0.1)
+        time.sleep(0.05)
         print("Ready to scan the phase!")
         for ind, phi in enumerate(self.phis):
             start_time = time.time()
@@ -2683,6 +2928,30 @@ class Feedbacker(object):
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
 
+    def treat_image_test(self):
+        im = self.calibration_image
+        E_new, im_new = self.final_image_treatment(im)
+        self.eaxis_correct = E_new
+        self.plot_treated_image(im_new)
+
+    def plot_treated_image(self, image):
+        self.axMCP_treated.clear()
+        pcm = self.axMCP_treated.pcolormesh(self.eaxis_correct, np.arange(0, 512), image.T)
+        cbar = self.figrMCP_treated.colorbar(pcm, ax=self.axMCP_treated)
+        #pcm.set_clim(vmin=0, vmax=1234)  # Set your desired limits
+        self.axMCP_treated.set_xlim(20, 45)
+        self.axMCP_treated.set_xlabel("Energy (eV)")
+        self.axMCP_treated.set_ylabel(" y (px) ")
+        self.axHarmonics_treated.clear()
+        self.axHarmonics_treated.plot(self.eaxis_correct, np.sum(image, 1), color='k')
+        for har in np.arange(15, 35):
+            self.axHarmonics_treated.axvline(har * 1.2037300291262136, color='r', alpha=0.4)
+        self.axHarmonics_treated.set_xlim(20, 45)
+        self.axHarmonics_treated.set_xlabel("Energy (eV)")
+        self.figrMCP_treated.tight_layout()
+        self.imgMCP_treated.draw()
+        cbar.remove()
+
     def plot_calibration_image(self, image):
         image = np.flipud(image)
         self.axMCP_calibrate.clear()
@@ -2708,6 +2977,40 @@ class Feedbacker(object):
         self.axHarmonics_calibrate.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(image))), int(np.max(image))))
         self.figrMCP_calibrate.tight_layout()
         self.imgMCP_calibrate.draw()
+
+    def plot_calibration_image_energy(self, profile, data, peaks, E_axis):
+        # image = np.flipud(image)
+        # self.axMCP_calibrate.clear()
+        # self.axMCP_calibrate.imshow(image.T)
+        # self.axMCP.set_aspect('equal')
+
+        # self.axMCP_calibrate.set_xlabel("Energy equivalent")
+        # self.axMCP_calibrate.set_ylabel("Y (px)")
+        # self.axMCP_calibrate.set_xlim(0, 512)
+        # self.axMCP_calibrate.set_ylim(0, 512)
+
+        self.axHarmonics_calibrate_energy1.clear()
+        self.axHarmonics_calibrate_energy1.plot(np.arange(512), profile, color='g')
+        self.axHarmonics_calibrate_energy1.plot(np.arange(512), data, color='k')
+        self.axHarmonics_calibrate_energy1.scatter(peaks, data[peaks], color='r')
+
+        self.axHarmonics_calibrate_energy1.set_xlabel("Energy equivalent")
+        self.axHarmonics_calibrate_energy1.set_ylabel("Counts (arb.u.)")
+
+        self.axHarmonics_calibrate_energy1.set_xlim(0, 512)
+
+        self.axHarmonics_calibrate_energy2.clear()
+        self.axHarmonics_calibrate_energy2.plot(E_axis, profile, color='r')
+        self.axHarmonics_calibrate_energy2.set_xlabel("Energy (eV)")
+        self.axHarmonics_calibrate_energy2.set_ylabel("Counts (arb.u.)")
+        # self.current_harmonics_profile_max_calibrate = np.max(np.sum(image, 1))
+        # self.current_harmonics_profile_min_calibrate = np.min(np.sum(image, 1))
+        # if self.var_fixyaxis.get() == 1:
+        #    self.axHarmonics_calibrate.set_ylim(self.ymin_harmonics_calibrate, self.ymax_harmonics_calibrate)
+
+        # self.axHarmonics_calibrate.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(image))), int(np.max(image))))
+        self.figrMCP_calibrate_energy.tight_layout()
+        self.imgMCP_calibrate_energy.draw()
 
     def plot_MCP(self, mcpimage):
         """
@@ -2747,7 +3050,9 @@ class Feedbacker(object):
 
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
-            self.axMCP.imshow(mcpimage.T)
+            pcm = self.axMCP.pcolormesh(np.arange(0,512),np.arange(0,512), mcpimage.T)
+            cbar = self.figrMCP.colorbar(pcm, ax=self.axMCP)
+
             # self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")
@@ -2769,6 +3074,22 @@ class Feedbacker(object):
             self.axHarmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
             self.figrMCP.tight_layout()
             self.imgMCP.draw()
+            cbar.remove()
+
+            # print("Test")
+
+            if self.var_show_treated.get() == 1:
+                #    print("This was pressed!!!")
+                Etemp, treated = self.final_image_treatment(mcpimage)
+                self.plot_treated_image(treated)
+
+            #   print(np.sum(treated))
+            # self.axMCP_treated.clear()
+            # self.axMCP_treated.pcolormesh(self.eaxis_correct,np.arange(0,512),treated.T)
+            # self.axHarmonics_treated.clear()
+            # self.axHarmonics_treated.plot(self.eaxis_correct,np.sum(treated,1))
+            # self.figrMCP_treated.tight_layout()
+            # self.imgMCP_treated.draw()
 
     def plot_fft(self):
         """
