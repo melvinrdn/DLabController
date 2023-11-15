@@ -107,6 +107,29 @@ class Feedbacker(object):
 
         self.live_is_pressed = False
 
+        self.measurement_array = None
+        self.measurement_array_flat = None
+        self.measurement_treated_array = None
+        self.measurement_treated_array_flat = None
+        self.focus_image_array = None
+        self.focus_image_array_flat = None
+        self.measurement_counter = 0
+        self.measurement_running = 0
+        self.phase_array = None
+        self.phase_meas_array = None
+        self.phase_meas_array_flat = None
+        self.phase_std_array = None
+        self.phase_std_array_flat = None
+        self.ratio_array = None
+        self.pi_radius_array = None
+        self.red_power_array = None
+        self.green_power_array = None
+        self.mcp_voltage = None
+        self.time_stamps_array = None
+        self.time_stamps_array_flat = None
+        self.aquisition_time = None
+        self.averages = None
+
         self.daheng_active = False
         self.daheng_camera = None
         self.daheng_is_live = False
@@ -120,8 +143,9 @@ class Feedbacker(object):
         self.autolog_images = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log-images.txt'
         self.g = open(self.autolog_images, "a+")
 
-        self.autolog_superg = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log-superg.txt'
-        self.sg = open(self.autolog_superg, "a+")
+        self.autolog_slm_param_scan = 'C:/data/' + str(date.today()) + '/' + str(
+            date.today()) + '-' + 'auto-log-slm_param_scan.txt'
+        self.slmps = open(self.autolog_slm_param_scan, "a+")
 
         # creating frames
 
@@ -150,8 +174,10 @@ class Feedbacker(object):
         self.frm_notebook_scans = ttk.Notebook(frm_scans)
         frm_wp_scans = ttk.Frame(frm_scans)
         frm_phase_scan = ttk.Frame(frm_scans)
+        frm_slm_param_scan = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
-        self.frm_notebook_scans.add(frm_phase_scan, text="Phase scan")
+        self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
+        self.frm_notebook_scans.add(frm_slm_param_scan, text="SLM parameters scan")
 
         self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
         frm_stage = ttk.Frame(frm_scans)
@@ -334,6 +360,7 @@ class Feedbacker(object):
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
+        self.but_meas_slm_param = tk.Button(frm_measure, text='SLM param Scan', command=self.enabl_scan_slm_param)
         self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
 
         self.var_split_scan = tk.IntVar()
@@ -350,8 +377,14 @@ class Feedbacker(object):
                                         offvalue=0,
                                         command=None)
 
+        self.var_export_treated_image = tk.IntVar()
+        self.cb_export_treated_image = tk.Checkbutton(frm_measure, text='Export Treated Image',
+                                                      variable=self.var_export_treated_image, onvalue=1,
+                                                      offvalue=0,
+                                                      command=None)
+
         lbl_avgs = tk.Label(frm_measure, text='Avgs:')
-        self.strvar_avgs = tk.StringVar(self.win, '20')
+        self.strvar_avgs = tk.StringVar(self.win, '1')
         self.ent_avgs = tk.Entry(
             frm_measure, width=5, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -363,7 +396,7 @@ class Feedbacker(object):
         self.cbox_mcp_cam_choice['values'] = ('Pike Camera', 'Andor Camera')
 
         lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
-        self.strvar_exposure_time = tk.StringVar(self.win, '10000')
+        self.strvar_exposure_time = tk.StringVar(self.win, '100000')
         self.ent_exposure_time = tk.Entry(
             frm_measure, width=25, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -807,11 +840,13 @@ class Feedbacker(object):
 
         self.cb_background.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
         self.cb_saveh5.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        self.cb_export_treated_image.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
         self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_view_live.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_slm_param.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
         self.cb_split_scan.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_phase_scan
@@ -1029,29 +1064,40 @@ class Feedbacker(object):
                                                validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
         self.ent_daheng_stage_steps.grid(row=9, column=2)
 
-        self.var_daheng_supergaussian_from = tk.StringVar(self.win, value="0")
-        self.ent_daheng_supergaussian_from = tk.Entry(self.frm_daheng_camera_settings,
-                                                      textvariable=self.var_daheng_supergaussian_from, width=5,
-                                                      validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_supergaussian_from.grid(row=10, column=0)
+        lbl_slm_param_scan_info = tk.Label(frm_slm_param_scan, text="Choose your fighter!")
+        lbl_slm_param_scan_info.grid(row=0, column=0)
+        lbl_slm_param_scan_from = tk.Label(frm_slm_param_scan, text='from:')
+        lbl_slm_param_scan_from.grid(row=0, column=2)
+        lbl_slm_param_scan_to = tk.Label(frm_slm_param_scan, text='to:')
+        lbl_slm_param_scan_to.grid(row=0, column=3)
+        lbl_slm_param_scan_steps = tk.Label(frm_slm_param_scan, text='steps:')
+        lbl_slm_param_scan_steps.grid(row=0, column=4)
 
-        self.var_daheng_supergaussian_to = tk.StringVar(self.win, value="0.008")
-        self.ent_daheng_supergaussian_to = tk.Entry(self.frm_daheng_camera_settings,
-                                                    textvariable=self.var_daheng_supergaussian_to,
-                                                    width=5,
-                                                    validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_supergaussian_to.grid(row=10, column=1)
+        self.var_scan_slm_param_option = tk.StringVar(self.win, "Nothing")
+        self.rb_supergaussian_scan = tk.Radiobutton(frm_slm_param_scan, variable=self.var_scan_slm_param_option,
+                                                    value="Supergaussian",
+                                                    text="Supergaussian")
+        self.rb_supergaussian_scan.grid(row=1, column=0)
 
-        self.var_daheng_supergaussian_steps = tk.StringVar(self.win, value="10")
-        self.ent_daheng_supergaussian_steps = tk.Entry(self.frm_daheng_camera_settings,
-                                                       textvariable=self.var_daheng_supergaussian_steps,
-                                                       width=5,
-                                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_supergaussian_steps.grid(row=10, column=2)
+        self.var_supergaussian_from = tk.StringVar(self.win, value="0")
+        self.ent_supergaussian_from = tk.Entry(frm_slm_param_scan,
+                                               textvariable=self.var_supergaussian_from, width=5,
+                                               validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_supergaussian_from.grid(row=1, column=2)
 
-        self.but_scan_supergaussian_daheng = tk.Button(self.frm_daheng_camera_settings, text="Supergaussian Scan",
-                                                       command=self.scan_supergaussian_daheng_thread)
-        self.but_scan_supergaussian_daheng.grid(row=11, column=2)
+        self.var_supergaussian_to = tk.StringVar(self.win, value="0.008")
+        self.ent_supergaussian_to = tk.Entry(frm_slm_param_scan,
+                                             textvariable=self.var_supergaussian_to,
+                                             width=5,
+                                             validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_supergaussian_to.grid(row=1, column=3)
+
+        self.var_supergaussian_steps = tk.StringVar(self.win, value="10")
+        self.ent_supergaussian_steps = tk.Entry(frm_slm_param_scan,
+                                                textvariable=self.var_supergaussian_steps,
+                                                width=5,
+                                                validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+        self.ent_supergaussian_steps.grid(row=1, column=4)
 
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -1418,10 +1464,10 @@ class Feedbacker(object):
         self.daheng_thread.daemon = True
         self.daheng_thread.start()
 
-    def scan_supergaussian_daheng_thread(self):
-        self.daheng_thread = threading.Thread(target=self.scan_supergaussian_daheng)
-        self.daheng_thread.daemon = True
-        self.daheng_thread.start()
+    def enabl_scan_slm_param(self):
+        self.scan_slm_param_thread = threading.Thread(target=self.measure_slm_scan)
+        self.scan_slm_param_thread.daemon = True
+        self.scan_slm_param_thread.start()
 
     def live_daheng_thread(self):
         self.daheng_is_live = not self.daheng_is_live
@@ -1459,45 +1505,6 @@ class Feedbacker(object):
                 self.plot_daheng(im)
                 res[:, :, ind] = im
         self.save_daheng_scans(res, stage_steps)
-
-    def scan_supergaussian_daheng(self):
-        from_ = float(self.var_daheng_supergaussian_from.get())
-        to_ = float(self.var_daheng_supergaussian_to.get())
-        steps_ = int(self.var_daheng_supergaussian_steps.get())
-        radius_steps = np.linspace(from_, to_, steps_)
-        x = np.linspace(-chip_width, chip_width, slm_size[1])
-        y = np.linspace(-chip_height, chip_height, slm_size[0])
-        [X, Y] = np.meshgrid(x, y)
-        rho = np.sqrt(X ** 2 + Y ** 2)
-        rho /= 2
-        # note : make sure that there another phase on the slm, otherwise a double scan leads to an error
-
-        if self.daheng_camera is not None:
-            for ind, pos in enumerate(radius_steps):
-                desired_radius = pos
-                indices = np.where(rho <= desired_radius)
-                p1 = np.zeros_like(X)
-                p1[indices] = np.pi
-                phase = p1 / (2 * np.pi) * bit_depth
-                phase_map = self.parent.phase_map_red + phase
-                self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_red.get()))
-                self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_red.get()), phase_map,
-                                           slm_size[1], slm_size[0])
-                time.sleep(2)
-                print('stabilization')
-                im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-
-                im = Image.fromarray(im)
-                im = im.convert('L')
-                nr = self.get_start_image_superg()
-                data_filename = 'C:/data/' + str(date.today()) + '/' + str(int(nr)) + '-' + str(int(ind)) + '-' + str(
-                    f'{pos:.5f}') + '.bmp'
-                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                log_entry = str(int(nr)) + '\t' + str(pos) + '\t' + timestamp + '\n'
-                self.sg.write(log_entry)
-                im.save(data_filename)
-                print(f'saved {pos}')
-            print('done')
 
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
@@ -2229,6 +2236,46 @@ class Feedbacker(object):
         hf.create_dataset('red_lens', data=rl)
         hf.close()
 
+    def save_h5(self):
+        nr = self.get_start_image()
+        filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+
+        with h5py.File(filename, 'w') as hf:
+            hf.create_dataset('raw_images', data=self.measurement_array)
+            hf.create_dataset('treated_images', data=self.measurement_treated_array)
+            hf.create_dataset('e_axis', data=self.eaxis_correct)
+            hf.create_dataset('phases', data=self.phase_array)
+            hf.create_dataset('ratios', data=self.ratio_array)
+            hf.create_dataset('phase_meas', data=self.phase_meas_array)
+            hf.create_dataset('phase_std', data=self.phase_std_array)
+            hf.create_dataset('power_red', data=self.red_power_array)
+            hf.create_dataset('power_green', data=self.green_power_array)
+            hf.create_dataset('exposure_time', data=self.aquisition_time)
+            hf.create_dataset('averages', data=self.averages)
+            hf.create_dataset('voltage', data=self.mcp_voltage)
+            time_stamps_array_converted = np.array(self.time_stamps_array, dtype='S')
+            hf.create_dataset('timestamps', data=time_stamps_array_converted)
+
+        log_entry = str(int(nr)) + '\n'
+        self.f.write(log_entry)
+
+    def save_h5_slm_scan(self):
+        nr = self.get_start_image_slm_param_scan()
+        filename = 'C:/data/' + str(date.today()) + '/' + 'slm_param_scan_' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+
+        with h5py.File(filename, 'w') as hf:
+            hf.create_dataset('raw_images', data=self.measurement_array)
+            hf.create_dataset('treated_images', data=self.measurement_treated_array)
+            hf.create_dataset('focus_images', data=self.focus_image_array)
+            hf.create_dataset('radius', data=self.pi_radius_array)
+            hf.create_dataset('e_axis', data=self.eaxis_correct)
+            time_stamps_array_converted = np.array(self.time_stamps_array, dtype='S')
+            hf.create_dataset('timestamps', data=time_stamps_array_converted)
+
+        log_entry = str(int(nr)) + '\n'
+        self.slmps.write(log_entry)
+
+
     def save_im(self, image):
         """
         Saves the captured image to a file and writes in the log file
@@ -2436,11 +2483,11 @@ class Feedbacker(object):
         # self.f.close()
         return start_image
 
-    def get_start_image_superg(self):
+    def get_start_image_slm_param_scan(self):
 
         # self.f = open(self.autolog, "a+")
-        self.sg.seek(0)
-        lines = np.loadtxt(self.autolog_superg, comments="#", delimiter="\t", unpack=False, usecols=(0,))
+        self.slmps.seek(0)
+        lines = np.loadtxt(self.autolog_slm_param_scan, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
                 start_image = lines[-1] + 1
@@ -2593,7 +2640,19 @@ class Feedbacker(object):
             self.set_setpoint()
             t0 = time.time()
             im = self.take_image(int(self.ent_avgs.get()))
-            self.save_im(im)
+            if self.measurement_running and self.var_saveh5.get():
+                self.measurement_array_flat[self.measurement_counter, :, :] = im
+                if self.var_export_treated_image.get():
+                    E_new, im_new = self.final_image_treatment(im)
+                    self.measurement_treated_array_flat[self.measurement_counter, :, :] = im_new
+                self.time_stamps_array_flat[self.measurement_counter] = str(
+                    datetime.datetime.now().strftime("%H:%M:%S"))
+                self.phase_meas_array_flat[self.measurement_counter] = np.round(np.mean(np.unwrap(self.d_phase)), 2)
+                self.phase_std_array_flat[self.measurement_counter] = np.round(np.std(np.unwrap(self.d_phase)), 2)
+                print(self.measurement_counter)
+                self.measurement_counter = self.measurement_counter + 1
+            else:
+                self.save_im(im)
             self.plot_MCP(im)
             t1 = time.time()
             print(f"Camera MCP {t1 - t0}")
@@ -2656,6 +2715,148 @@ class Feedbacker(object):
         while self.live_is_pressed:
             im = self.take_image(int(self.ent_avgs.get()))
             self.plot_MCP(im)
+
+    def measure_slm_scan(self):
+        self.but_meas_slm_param.config(fg='red')
+
+        status = self.var_scan_slm_param_option.get()
+
+        if status == "Nothing":
+            print("Nothing is selected")
+
+        elif status == "Supergaussian":
+            print("Supergaussian is selected")
+            self.slmps.write("# Supergaussian scan, " + self.ent_comment.get() + "\n")
+
+            pi_radius_steps = int(self.ent_supergaussian_steps.get())
+            self.measurement_counter = 0
+            self.measurement_array = np.zeros([pi_radius_steps]) * np.nan
+            self.focus_image_array = np.zeros([pi_radius_steps]) * np.nan
+            self.measurement_treated_array = np.zeros([pi_radius_steps]) * np.nan
+
+            self.time_stamps_array = np.zeros([pi_radius_steps]) * np.nan
+            self.time_stamps_array = self.time_stamps_array.astype('str')
+
+            self.pi_radius_array = np.linspace(float(self.ent_supergaussian_from.get()),
+                                                   float(self.ent_supergaussian_to.get()),
+                                                   int(self.ent_supergaussian_steps.get()))
+            self.aquisition_time = int(self.ent_exposure_time.get())
+            self.averages = int(self.ent_avgs.get())
+            self.mcp_voltage = float(self.ent_mcp.get())
+
+
+            self.focus_image_array_flat = self.focus_image_array.flatten()
+
+            self.focus_image_array_flat = np.zeros([self.focus_image_array_flat.size, 1080, 1440]) * np.nan
+
+            self.measurement_array_flat = self.measurement_array.flatten()
+            self.measurement_array_flat = np.zeros([self.measurement_array_flat.size, 512, 512]) * np.nan
+            self.measurement_treated_array_flat = self.measurement_array.flatten()
+            self.measurement_treated_array_flat = np.zeros([self.measurement_treated_array_flat.size, 512, 512]) * np.nan
+            self.time_stamps_array_flat = self.time_stamps_array.flatten()
+
+
+            self.measurement_running = 1
+            self.scan_supergaussian()
+
+        self.but_meas_slm_param.config(fg='green')
+        if self.measurement_running:
+            self.measurement_running = 0
+            self.measurement_counter = 0
+
+
+            self.measurement_array = self.measurement_array_flat.reshape(
+                [self.measurement_array.shape[0], 512, 512])
+
+            self.measurement_treated_array = self.measurement_treated_array_flat.reshape(
+                [self.measurement_treated_array.shape[0], 512, 512])
+
+            self.focus_image_array = self.focus_image_array_flat.reshape(
+                [self.focus_image_array.shape[0], 1080, 1440])
+
+            self.save_h5_slm_scan()
+
+        # Indicate completion by setting the event
+        self.scan_is_done = True
+        self.scan_is_done_threading.set()
+
+    def scan_supergaussian(self):
+        # this is for IR beam only
+        self.radius_steps = np.linspace(float(self.ent_supergaussian_from.get()), float(self.ent_supergaussian_to.get()), int(self.ent_supergaussian_steps.get()))
+
+        x = np.linspace(-chip_width, chip_width, slm_size[1])
+        y = np.linspace(-chip_height, chip_height, slm_size[0])
+        [X, Y] = np.meshgrid(x, y)
+        rho = np.sqrt(X ** 2 + Y ** 2)
+        rho /= 2
+        # note : make sure that there another phase on the slm, otherwise a double scan leads to an error
+
+        if self.daheng_camera is not None:
+            for ind, desired_radius in enumerate(self.radius_steps):
+                # Set the new wavefront on the SLM
+                indices = np.where(rho <= desired_radius)
+                p1 = np.zeros_like(X)
+                p1[indices] = np.pi
+                phase = p1 / (2 * np.pi) * bit_depth
+                phase_map = self.parent.phase_map_red + phase
+                self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_red.get()))
+                self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_red.get()), phase_map,
+                                           slm_size[1], slm_size[0])
+                time.sleep(2)
+
+
+                im_MCP = self.take_image(int(self.ent_avgs.get()))
+                im_focus = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
+                #im_focus = Image.fromarray(im_focus)
+
+                if self.measurement_running and self.var_saveh5.get():
+                    self.measurement_array_flat[self.measurement_counter, :, :] = im_MCP
+                    self.focus_image_array_flat[self.measurement_counter, :, :] = im_focus
+                    if self.var_export_treated_image.get():
+                        E_new, im_new = self.final_image_treatment(im_MCP)
+                        self.measurement_treated_array_flat[self.measurement_counter, :, :] = im_new
+                    self.time_stamps_array_flat[self.measurement_counter] = str(
+                        datetime.datetime.now().strftime("%H:%M:%S"))
+                    print(self.measurement_counter)
+                    self.measurement_counter = self.measurement_counter + 1
+                else:
+                    self.save_im(im_MCP)
+
+                self.plot_MCP(im_MCP)
+
+    def phase_scan(self):
+        start_image = self.get_start_image()
+        self.phis = np.linspace(float(self.ent_from.get()), float(self.ent_to.get()), int(self.ent_steps.get()))
+        print("getting to scan starting point...")
+        self.strvar_setp.set(self.phis[0])
+        self.set_setpoint()
+        time.sleep(0.05)
+        print("Ready to scan the phase!")
+        for ind, phi in enumerate(self.phis):
+            start_time = time.time()
+            self.strvar_setp.set(phi)
+            self.set_setpoint()
+            t0 = time.time()
+            im = self.take_image(int(self.ent_avgs.get()))
+            if self.measurement_running and self.var_saveh5.get():
+                self.measurement_array_flat[self.measurement_counter, :, :] = im
+                if self.var_export_treated_image.get():
+                    E_new, im_new = self.final_image_treatment(im)
+                    self.measurement_treated_array_flat[self.measurement_counter, :, :] = im_new
+                self.time_stamps_array_flat[self.measurement_counter] = str(
+                    datetime.datetime.now().strftime("%H:%M:%S"))
+                self.phase_meas_array_flat[self.measurement_counter] = np.round(np.mean(np.unwrap(self.d_phase)), 2)
+                self.phase_std_array_flat[self.measurement_counter] = np.round(np.std(np.unwrap(self.d_phase)), 2)
+                print(self.measurement_counter)
+                self.measurement_counter = self.measurement_counter + 1
+            else:
+                self.save_im(im)
+            self.plot_MCP(im)
+            t1 = time.time()
+            print(f"Camera MCP {t1 - t0}")
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
 
     def measure_all(self):
         print("yay i made it into the measure all function")
@@ -2721,6 +2922,38 @@ class Feedbacker(object):
                     self.red_green_ratio_scan()
                 else:
                     self.f.write("# RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                    ratio_steps = int(self.ent_ratio_steps.get())
+                    phase_steps = int(self.ent_steps.get())
+                    self.measurement_counter = 0
+                    self.measurement_array = np.zeros([ratio_steps, phase_steps]) * np.nan
+                    self.measurement_treated_array = np.zeros([ratio_steps, phase_steps]) * np.nan
+
+                    self.phase_std_array = np.zeros([ratio_steps, phase_steps]) * np.nan
+                    self.phase_meas_array = np.zeros([ratio_steps, phase_steps]) * np.nan
+                    self.time_stamps_array = np.zeros([ratio_steps, phase_steps]) * np.nan
+                    self.time_stamps_array = self.time_stamps_array.astype('str')
+
+                    self.phase_array = np.linspace(float(self.ent_from.get()), float(self.ent_to.get()),
+                                                   int(self.ent_steps.get()))
+                    self.ratio_array = np.linspace(float(self.ent_ratio_from.get()), float(self.ent_ratio_to.get()),
+                                                   int(self.ent_ratio_steps.get()))
+                    pr, pg = self.get_power_values_for_ratio_scan()
+                    self.red_power_array = pr
+                    self.green_power_array = pg
+                    self.aquisition_time = int(self.ent_exposure_time.get())
+                    self.averages = int(self.ent_avgs.get())
+                    self.mcp_voltage = float(self.ent_mcp.get())
+
+                    self.measurement_array_flat = self.measurement_array.flatten()
+                    self.measurement_array_flat = np.zeros([self.measurement_array_flat.size, 512, 512]) * np.nan
+                    self.measurement_treated_array_flat = self.measurement_array.flatten()
+                    self.measurement_treated_array_flat = np.zeros(
+                        [self.measurement_treated_array_flat.size, 512, 512]) * np.nan
+                    self.phase_std_array_flat = self.phase_std_array.flatten()
+                    self.phase_meas_array_flat = self.phase_std_array.flatten()
+                    self.time_stamps_array_flat = self.time_stamps_array.flatten()
+
+                    self.measurement_running = 1
                     self.red_green_ratio_scan()
             else:
                 print("Are you sure you do not want to scan the phase for each ratio?")
@@ -2738,6 +2971,21 @@ class Feedbacker(object):
 
         # self.f.close()
         self.but_meas_all.config(fg='green')
+        if self.measurement_running:
+            self.measurement_running = 0
+            self.measurement_counter = 0
+            self.measurement_array = self.measurement_array_flat.reshape(
+                [self.measurement_array.shape[0], self.measurement_array.shape[1], 512, 512])
+
+            self.measurement_treated_array = self.measurement_treated_array_flat.reshape(
+                [self.measurement_treated_array.shape[0], self.measurement_treated_array.shape[1], 512, 512])
+
+            self.phase_std_array = self.phase_std_array_flat.reshape(self.phase_std_array.shape)
+            self.phase_meas_array = self.phase_meas_array_flat.reshape(self.phase_std_array.shape)
+            self.time_stamps_array = self.time_stamps_array_flat.reshape(self.phase_std_array.shape)
+
+            self.save_h5()
+
         # Indicate completion by setting the event
         self.scan_is_done = True
         self.scan_is_done_threading.set()
@@ -2938,7 +3186,7 @@ class Feedbacker(object):
         self.axMCP_treated.clear()
         pcm = self.axMCP_treated.pcolormesh(self.eaxis_correct, np.arange(0, 512), image.T)
         cbar = self.figrMCP_treated.colorbar(pcm, ax=self.axMCP_treated)
-        #pcm.set_clim(vmin=0, vmax=1234)  # Set your desired limits
+        # pcm.set_clim(vmin=0, vmax=1234)  # Set your desired limits
         self.axMCP_treated.set_xlim(20, 45)
         self.axMCP_treated.set_xlabel("Energy (eV)")
         self.axMCP_treated.set_ylabel(" y (px) ")
@@ -3050,7 +3298,7 @@ class Feedbacker(object):
 
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
-            pcm = self.axMCP.pcolormesh(np.arange(0,512),np.arange(0,512), mcpimage.T)
+            pcm = self.axMCP.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T)
             cbar = self.figrMCP.colorbar(pcm, ax=self.axMCP)
 
             # self.axMCP.set_aspect('equal')
