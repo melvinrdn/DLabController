@@ -305,6 +305,12 @@ class Feedbacker(object):
             frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidi)
+        lbl_pidd = tk.Label(frm_spc_pid, text='D-value:')
+        self.strvar_pidd = tk.StringVar(self.win, '0')
+        self.ent_pidd = tk.Entry(
+            frm_spc_pid, width=11, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_pidd)
         but_pid_setp = tk.Button(frm_spc_pid, text='Setpoint', command=self.set_setpoint)
         but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
         but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
@@ -808,11 +814,15 @@ class Feedbacker(object):
         lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         lbl_pidp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         lbl_pidi.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidd.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
         self.ent_setp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_pidp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_pidi.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        but_pid_setp.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        but_pid_setk.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidd.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        but_pid_setp.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        but_pid_setk.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
         but_pid_enbl.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         but_pid_stop.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
@@ -3532,6 +3542,8 @@ class Feedbacker(object):
         """
         self.pid.Kp = float(self.ent_pidp.get())
         self.pid.Ki = float(self.ent_pidi.get())
+        self.pid.Kd = float(self.ent_pidd.get())
+
         # print(self.pid.tunings)
 
     def pid_strt(self):
