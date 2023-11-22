@@ -1223,7 +1223,7 @@ class Feedbacker(object):
         lbl_mcp_calibration_energy_prom.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_prom.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
-        lbl_mcp_calibration_energy_ignore = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks:")
+        lbl_mcp_calibration_energy_ignore = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks from/to:")
         self.var_mcp_calibration_energy_ignore1 = tk.StringVar(self.win, "0")
         self.var_mcp_calibration_energy_ignore1.trace_add("write", self.update_calibration_energy)
         self.var_mcp_calibration_energy_ignore2 = tk.StringVar(self.win, "512")
@@ -1239,6 +1239,16 @@ class Feedbacker(object):
         lbl_mcp_calibration_energy_ignore.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_ignore_list = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks around:")
+        self.var_mcp_calibration_energy_ignore_list = tk.StringVar(self.win, "")
+        self.var_mcp_calibration_energy_ignore_list.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_ignore_list = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                           textvariable=self.var_mcp_calibration_energy_ignore_list,
+                                                           width=10)
+        lbl_mcp_calibration_energy_ignore_list.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore_list.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+
 
         lbl_mcp_calibration_energy_firstharmonic = tk.Label(frm_mcp_calibrate_options_energy, text="First Harmonic")
         self.var_mcp_calibration_energy_firstharmonic = tk.StringVar(self.win, "17")
@@ -1385,7 +1395,17 @@ class Feedbacker(object):
             condition = (peaks > int(self.var_mcp_calibration_energy_ignore1.get())) & (
                     peaks < int(self.var_mcp_calibration_energy_ignore2.get()))
             peaks = peaks[condition]
+            try:
+                ignore_list = [int(x) for x in self.ent_mcp_calibration_energy_ignore_list.get().split(',') if x.strip().isdigit()]
+                if ignore_list:
+                    for num in ignore_list:
+                        range_value = 5
+                        peaks = peaks[~((num - range_value <= peaks) & (peaks <= num + range_value))]
 
+
+
+            except:
+                a=1
             h = 6.62607015e-34
             c = 299792458
             qe = 1.60217662e-19
