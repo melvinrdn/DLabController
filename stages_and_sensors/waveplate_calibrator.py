@@ -47,7 +47,7 @@ class Calibrator(object):
 
         self.calibration_angle_red, self.calibration_power_red = np.loadtxt('ressources/calibration/wpr_red_calib_new.txt', delimiter='\t', skiprows=0,
                                                                             unpack=True)
-        self.calibration_angle_green, self.calibration_power_green = np.loadtxt('ressources/calibration/wpg_green_calib_broken_one.txt', delimiter='\t', skiprows=0, unpack=True)
+        self.calibration_angle_green, self.calibration_power_green = np.loadtxt('ressources/calibration/wpg_green_calib_12_05_2023.txt', delimiter='\t', skiprows=0, unpack=True)
 
         self.ax1r.plot(self.calibration_angle_red, self.calibration_power_red, 'ro')
         self.ax2r.plot(self.calibration_angle_green, self.calibration_power_green, 'go')

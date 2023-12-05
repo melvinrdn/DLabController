@@ -3243,6 +3243,7 @@ class Feedbacker(object):
 
         self.axHarmonics_calibrate.clear()
         self.axHarmonics_calibrate.plot(np.arange(512), np.sum(image, 1))
+        self.axHarmonics_calibrate.axhline(0, color='k', alpha = 0.5)
         self.axHarmonics_calibrate.set_xlabel("Energy equivalent")
         self.axHarmonics_calibrate.set_ylabel("Counts (arb.u.)")
 
