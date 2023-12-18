@@ -150,7 +150,7 @@ class DLabController(object):
         -------
         None
         """
-        self.diagnostic_board_win = diagnostic_board.DiagnosticBoard()
+        self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
 
 
     def open_pub_green(self):

@@ -2332,7 +2332,8 @@ class Feedbacker(object):
     def save_daheng_scans(self, res, pos):
         nr = self.get_start_image_images()
 
-        data_filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+        data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(datetime.date.today()) +'-focus-images-' + str(
+            int(nr)) + '.h5'
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         try:
