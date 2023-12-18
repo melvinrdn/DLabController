@@ -1,4 +1,3 @@
-import os
 import threading
 import time
 import tkinter as tk
@@ -23,12 +22,12 @@ from drivers import gxipy_driver as gx
 from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 import drivers.santec_driver._slm_py as slm
-from ressources.slm_infos import slm_size, bit_depth
-from stages_and_sensors import waveplate_calibrator as cal
+import drivers.jena_piezo.jena_piezo as jena
+from ressources.calibration import waveplate_calibrator as cal
 from pylablib.devices import Andor
 import pylablib as pll
 
-import views.focus_diagnostic as dh
+import diagnostic_board.focus_diagnostic as dh
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
 import model.helpers as help
 
@@ -75,6 +74,9 @@ class Feedbacker(object):
         self.WPR = None
         self.WPDummy = None
         self.Delay = None
+
+        self.pid_stage = None
+        self.pid_stage_initialized = False
 
         self.meas_has_started = False
 
@@ -135,6 +137,8 @@ class Feedbacker(object):
         self.daheng_is_live = False
         self.current_daheng_image = None
         self.daheng_zoom = None
+
+        self.calibrator = None
 
         # This opens the autologfile from the start! closes it on close command
         self.autolog = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + 'auto-log.txt'
@@ -315,6 +319,34 @@ class Feedbacker(object):
         but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
         but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
         but_pid_setk = tk.Button(frm_spc_pid, text='Set PID values', command=self.set_pid_val)
+
+        lbl_pid_stage_com = tk.Label(frm_spc_pid, text='COM Port:')
+        self.var_pid_cl = tk.IntVar()
+        self.cb_pid_cl = tk.Checkbutton(frm_spc_pid, text='Closed Loop', variable=self.var_pid_cl, onvalue=1,
+                                        offvalue=0,
+                                        command=None)
+        self.var_pid_stage_enable = tk.IntVar()
+        self.cb_pid_stage_enable = tk.Checkbutton(frm_spc_pid, text='PID with Piezo', variable=self.var_pid_stage_enable, onvalue=1,
+                                        offvalue=0,
+                                        command=None)
+        self.but_pid_stage_init = tk.Button(frm_spc_pid, text='Init', command=self.init_pid_piezo)
+        but_pid_stage_read = tk.Button(frm_spc_pid, text='Read', command=self.read_pid_piezo)
+        but_pid_stage_move = tk.Button(frm_spc_pid, text='Move', command=self.move_pid_piezo)
+        self.strvar_stage_pid_com = tk.StringVar(self.win, 'COM9')
+        self.ent_pid_stage_com = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_stage_pid_com)
+        self.strvar_pid_stage_actual_position = tk.StringVar(self.win, '')
+        self.ent_pid_stage_actual_position = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_pid_stage_actual_position)
+        self.strvar_pid_stage_set_position = tk.StringVar(self.win, '40.00')
+        self.ent_pid_stage_set_position = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_pid_stage_set_position)
 
         lbl_from = tk.Label(frm_phase_scan, text='From:')
         self.strvar_from = tk.StringVar(self.win, '-3.14')
@@ -571,14 +603,14 @@ class Feedbacker(object):
 
         lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
 
-        self.strvar_red_power = tk.StringVar(self.win, '4.34')
+        self.strvar_red_power = tk.StringVar(self.win, '0')
 
         self.ent_red_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_power)
 
         lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
-        self.strvar_red_phase = tk.StringVar(self.win, '-27.76')
+        self.strvar_red_phase = tk.StringVar(self.win, '')
         self.ent_red_phase = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_red_phase)
@@ -591,14 +623,14 @@ class Feedbacker(object):
 
         lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
 
-        self.strvar_green_power = tk.StringVar(self.win, '307.8')
+        self.strvar_green_power = tk.StringVar(self.win, '0')
 
         self.ent_green_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_power)
 
         lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
-        self.strvar_green_phase = tk.StringVar(self.win, '42.08')
+        self.strvar_green_phase = tk.StringVar(self.win, '')
         self.ent_green_phase = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_phase)
@@ -825,6 +857,17 @@ class Feedbacker(object):
         but_pid_setk.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
         but_pid_enbl.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         but_pid_stop.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+
+        # lbl_pid_stage_com.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        self.cb_pid_cl.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.cb_pid_stage_enable.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.but_pid_stage_init.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_move.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_read.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_actual_position.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_set_position.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_com.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_measure
         lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1244,11 +1287,10 @@ class Feedbacker(object):
         self.var_mcp_calibration_energy_ignore_list = tk.StringVar(self.win, "")
         self.var_mcp_calibration_energy_ignore_list.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_ignore_list = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                           textvariable=self.var_mcp_calibration_energy_ignore_list,
-                                                           width=10)
+                                                               textvariable=self.var_mcp_calibration_energy_ignore_list,
+                                                               width=10)
         lbl_mcp_calibration_energy_ignore_list.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore_list.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-
 
         lbl_mcp_calibration_energy_firstharmonic = tk.Label(frm_mcp_calibrate_options_energy, text="First Harmonic")
         self.var_mcp_calibration_energy_firstharmonic = tk.StringVar(self.win, "17")
@@ -1370,7 +1412,43 @@ class Feedbacker(object):
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
+        self.open_calibrator_on_start()
         self.hide_frm_daheng()
+
+    def init_pid_piezo(self):
+        try:
+            if self.pid_stage_initialized == False:
+                self.pid_stage = jena.NV40(self.strvar_stage_pid_com.get(), closed_loop=self.var_pid_cl.get())
+                self.pid_stage_initialized = True
+                self.move_pid_piezo()
+                self.but_pid_stage_init.config(fg='green')
+            else:
+                self.pid_stage = None
+                self.but_pid_stage_init.config(fg='black')
+                self.pid_stage_initialized = False
+        except:
+            print("Init of JenaPiezo went wrong :((")
+            self.but_pid_stage_init.config(fg='red')
+
+    def read_pid_piezo(self):
+        if self.pid_stage_initialized == True:
+            try:
+                pos = self.pid_stage.get_position()
+                self.strvar_pid_stage_actual_position.set(str(np.round(pos, 2)))
+            except:
+                print("Jena Piezo readout went wrong:))")
+        else:
+            print("Would you please initialize the stage first?!")
+
+    def move_pid_piezo(self):
+        if self.pid_stage_initialized == True:
+            try:
+                self.pid_stage.set_position(float(self.strvar_pid_stage_set_position.get()))
+                self.read_pid_piezo()
+            except:
+                print("Moving jena piezo went wrong :((")
+        else:
+            print("Would you please initialize the stage first?!")
 
     def final_image_treatment(self, im):
         bg = int(self.var_mcp_calibration_background_val.get())
@@ -1396,7 +1474,8 @@ class Feedbacker(object):
                     peaks < int(self.var_mcp_calibration_energy_ignore2.get()))
             peaks = peaks[condition]
             try:
-                ignore_list = [int(x) for x in self.ent_mcp_calibration_energy_ignore_list.get().split(',') if x.strip().isdigit()]
+                ignore_list = [int(x) for x in self.ent_mcp_calibration_energy_ignore_list.get().split(',') if
+                               x.strip().isdigit()]
                 if ignore_list:
                     for num in ignore_list:
                         range_value = 5
@@ -1405,7 +1484,7 @@ class Feedbacker(object):
 
 
             except:
-                a=1
+                a = 1
             h = 6.62607015e-34
             c = 299792458
             qe = 1.60217662e-19
@@ -2152,6 +2231,22 @@ class Feedbacker(object):
         self.strvar_red_phase.set(str(self.calibrator.phase_red))
         self.strvar_green_phase.set(str(self.calibrator.phase_green))
 
+    def open_calibrator_on_start(self):
+        """
+        Open the calibrator to initialize current calibration value
+
+        Returns
+        -------
+        None
+        """
+        # try:
+        self.calibrator = cal.Calibrator()
+        self.strvar_red_power.set(str(self.calibrator.max_red))
+        self.strvar_green_power.set(str(self.calibrator.max_green))
+        self.strvar_red_phase.set(str(self.calibrator.phase_red))
+        self.strvar_green_phase.set(str(self.calibrator.phase_green))
+        self.calibrator.on_close()
+
     def read_red_power(self):
         """
         Reads the corresponding red power if one knows the attenuation and the pulse picker on the Pharos.
@@ -2291,7 +2386,8 @@ class Feedbacker(object):
 
     def save_h5_slm_scan(self):
         nr = self.get_start_image_slm_param_scan()
-        filename = 'C:/data/' + str(date.today()) + '/' + 'slm_param_scan_' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+        filename = 'C:/data/' + str(date.today()) + '/' + 'slm_param_scan_' + str(date.today()) + '-' + str(
+            int(nr)) + '.h5'
 
         with h5py.File(filename, 'w') as hf:
             hf.create_dataset('raw_images', data=self.measurement_array)
@@ -2304,7 +2400,6 @@ class Feedbacker(object):
 
         log_entry = str(int(nr)) + '\n'
         self.slmps.write(log_entry)
-
 
     def save_im(self, image):
         """
@@ -2768,12 +2863,11 @@ class Feedbacker(object):
             self.time_stamps_array = self.time_stamps_array.astype('str')
 
             self.pi_radius_array = np.linspace(float(self.ent_supergaussian_from.get()),
-                                                   float(self.ent_supergaussian_to.get()),
-                                                   int(self.ent_supergaussian_steps.get()))
+                                               float(self.ent_supergaussian_to.get()),
+                                               int(self.ent_supergaussian_steps.get()))
             self.aquisition_time = int(self.ent_exposure_time.get())
             self.averages = int(self.ent_avgs.get())
             self.mcp_voltage = float(self.ent_mcp.get())
-
 
             self.focus_image_array_flat = self.focus_image_array.flatten()
 
@@ -2782,9 +2876,9 @@ class Feedbacker(object):
             self.measurement_array_flat = self.measurement_array.flatten()
             self.measurement_array_flat = np.zeros([self.measurement_array_flat.size, 512, 512]) * np.nan
             self.measurement_treated_array_flat = self.measurement_array.flatten()
-            self.measurement_treated_array_flat = np.zeros([self.measurement_treated_array_flat.size, 512, 512]) * np.nan
+            self.measurement_treated_array_flat = np.zeros(
+                [self.measurement_treated_array_flat.size, 512, 512]) * np.nan
             self.time_stamps_array_flat = self.time_stamps_array.flatten()
-
 
             self.measurement_running = 1
             self.scan_supergaussian()
@@ -2793,7 +2887,6 @@ class Feedbacker(object):
         if self.measurement_running:
             self.measurement_running = 0
             self.measurement_counter = 0
-
 
             self.measurement_array = self.measurement_array_flat.reshape(
                 [self.measurement_array.shape[0], 512, 512])
@@ -2812,7 +2905,8 @@ class Feedbacker(object):
 
     def scan_supergaussian(self):
         # this is for IR beam only
-        self.radius_steps = np.linspace(float(self.ent_supergaussian_from.get()), float(self.ent_supergaussian_to.get()), int(self.ent_supergaussian_steps.get()))
+        self.radius_steps = np.linspace(float(self.ent_supergaussian_from.get()),
+                                        float(self.ent_supergaussian_to.get()), int(self.ent_supergaussian_steps.get()))
 
         x = np.linspace(-chip_width, chip_width, slm_size[1])
         y = np.linspace(-chip_height, chip_height, slm_size[0])
@@ -2834,10 +2928,9 @@ class Feedbacker(object):
                                            slm_size[1], slm_size[0])
                 time.sleep(2)
 
-
                 im_MCP = self.take_image(int(self.ent_avgs.get()))
                 im_focus = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-                #im_focus = Image.fromarray(im_focus)
+                # im_focus = Image.fromarray(im_focus)
 
                 if self.measurement_running and self.var_saveh5.get():
                     self.measurement_array_flat[self.measurement_counter, :, :] = im_MCP
@@ -3092,10 +3185,13 @@ class Feedbacker(object):
             phi = float(self.ent_flat.get())
         else:
             phi = 0
-        phase_map = self.parent.phase_map_green + phi / 2 * bit_depth
+        if self.var_pid_stage_enable.get() == 1:
+            self.move_pid_piezo()
+        else:
+            phase_map = self.parent.phase_map_green + phi / 2 * bit_depth
 
-        self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_green.get()))
-        self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_green.get()), phase_map,
+            self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_green.get()))
+            self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_green.get()), phase_map,
                                    slm_size[1], slm_size[0])
 
     def eval_spec(self):
@@ -3243,7 +3339,7 @@ class Feedbacker(object):
 
         self.axHarmonics_calibrate.clear()
         self.axHarmonics_calibrate.plot(np.arange(512), np.sum(image, 1))
-        self.axHarmonics_calibrate.axhline(0, color='k', alpha = 0.5)
+        self.axHarmonics_calibrate.axhline(0, color='k', alpha=0.5)
         self.axHarmonics_calibrate.set_xlabel("Energy equivalent")
         self.axHarmonics_calibrate.set_ylabel("Counts (arb.u.)")
 

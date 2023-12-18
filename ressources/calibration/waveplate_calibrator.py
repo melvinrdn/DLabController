@@ -180,7 +180,7 @@ class Calibrator(object):
         initial_guess = (np.max(y)/2, 0)
         popt, pcov = curve_fit(self.cos_func, x, y, p0=initial_guess)
         amplitude, phase = popt
-        print(amplitude, phase)
+        print(f'Amplitude :{amplitude}, Phase {phase}')
         return amplitude, phase
 
     def update_max_val(self):
@@ -218,7 +218,5 @@ class Calibrator(object):
 
     def on_close(self):
         self.win.destroy()
-        print('Calibrator closed')
-
 
 #cal = Calibrator()

@@ -11,8 +11,7 @@ from matplotlib.figure import Figure
 import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from views import daheng_camera, andor_xuv_camera, pike_camera
-from stages_and_sensors import thorlabs_stages
+from diagnostic_board import diagnostic_board
 print('Done')
 
 
@@ -40,11 +39,7 @@ class DLabController(object):
         self.publish_window_red = None
 
         self.feedback_win = None
-        #self.andor_camera_win = None
-        #self.daheng_camera_win = None
-        #self.pike_camera_win = None
-
-        #self.thorlabs_stages_win = None
+        self.diagnostic_board_win = None
 
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
@@ -59,7 +54,7 @@ class DLabController(object):
         self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
         self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
 
-        #self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
+        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
         self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
         but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
@@ -97,7 +92,7 @@ class DLabController(object):
         self.frm_mid_red.grid(row=2, column=1, sticky='nsew')
         self.frm_bottom_red.grid(row=3, column=1, sticky='nsew')
 
-        #self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
+        self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
         self.frm_bottom_side_panel.grid(row=3, column=2, sticky='nsew')
 
         lbl_screen_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -117,17 +112,8 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        #but_andor_camera = ttk.Button(self.frm_side_panel, text='ANDOR Camera', command=self.open_andor_camera)
-        #but_pike_camera = ttk.Button(self.frm_side_panel, text='PIKE Camera', command=self.open_pike_camera)
-        #but_daheng_camera = ttk.Button(self.frm_side_panel, text='DAHENG Camera', command=self.open_daheng_camera)
-        #but_thorlabs_stages = ttk.Button(self.frm_side_panel, text='Thorlabs stages', command=self.open_thorlabs_stages)
-        #but_parameters_scan = ttk.Button(self.frm_side_panel, text='Parameters scan', command=self.open_parameters_scan)
-
-        #but_andor_camera.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        #but_pike_camera.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-        #but_daheng_camera.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
-        #but_thorlabs_stages.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
-        #but_parameters_scan.grid(row=4, column=0, sticky='nsew', padx=5, pady=5)
+        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Diagnostic board', command=self.open_diagnostic_board)
+        but_diagnostic_board.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
         but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -156,45 +142,16 @@ class DLabController(object):
         self.feedback_win = feedbacker.Feedbacker(self)
 
 
-    def open_daheng_camera(self):
+    def open_diagnostic_board(self):
         """
-        Opens the camera window to look at the beam profile.
+        Opens the diagnostic board.
 
         Returns
         -------
         None
         """
-        self.daheng_camera_win = daheng_camera.CameraControl()
+        self.diagnostic_board_win = diagnostic_board.DiagnosticBoard()
 
-    def open_andor_camera(self):
-        """
-        Opens the XUV camera.
-
-        Returns
-        -------
-        None
-        """
-        self.andor_camera_win = andor_xuv_camera.AndorCameraViewer(self)
-
-    def open_pike_camera(self):
-        """
-        Open the pike camera window.
-
-        Returns
-        -------
-        None
-        """
-        self.pike_camera_win = pike_camera.PikeCameraViewer(self)
-
-    def open_thorlabs_stages(self):
-        """
-        Open the thorlabs stages control window.
-
-        Returns
-        -------
-        None
-        """
-        self.thorlabs_stages_win = thorlabs_stages.ThorlabsStages()
 
     def open_pub_green(self):
         """
