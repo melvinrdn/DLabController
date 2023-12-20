@@ -1,35 +1,34 @@
+import datetime
 import threading
 import time
 import tkinter as tk
-from tkinter.filedialog import asksaveasfile, askopenfilename
-from tkinter import ttk
 from collections import deque
 from datetime import date
-import datetime
-import h5py
+from tkinter import ttk
+from tkinter.filedialog import asksaveasfile, askopenfilename
 
 import cv2
+import h5py
 import matplotlib
 import numpy as np
+import pylablib as pll
 from PIL import Image, ImageTk
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+from pylablib.devices import Andor
 from simple_pid import PID
 
+import diagnostic_board.focus_diagnostic as dh
 import drivers.avaspec_driver._avs_py as avs
+import drivers.jena_piezo.jena_piezo as jena
+import drivers.santec_driver._slm_py as slm
+import model.helpers as help
 from drivers import gxipy_driver as gx
 from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
-import drivers.santec_driver._slm_py as slm
-import drivers.jena_piezo.jena_piezo as jena
 from ressources.calibration import waveplate_calibrator as cal
-from pylablib.devices import Andor
-import pylablib as pll
-
-import diagnostic_board.focus_diagnostic as dh
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
-import model.helpers as help
 
 
 class Feedbacker(object):

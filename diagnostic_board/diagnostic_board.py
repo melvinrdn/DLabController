@@ -1,17 +1,19 @@
+import datetime
+import threading
 import tkinter as tk
 from tkinter import ttk
-from drivers import gxipy_driver as gx
-import diagnostic_board.focus_diagnostic as dh
-from drivers.thorlabs_apt_driver import core as apt
-import threading
-from PIL import Image, ImageTk
-import numpy as np
+
 import h5py
-import datetime
-from matplotlib.figure import Figure
+import numpy as np
+from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 from scipy.optimize import curve_fit
+
+import diagnostic_board.focus_diagnostic as dh
 from diagnostic_board.beam_treatment_functions import process_image
+from drivers import gxipy_driver as gx
+from drivers.thorlabs_apt_driver import core as apt
 
 
 class DiagnosticBoard(object):
@@ -40,10 +42,18 @@ class DiagnosticBoard(object):
         frm_wavelength = ttk.LabelFrame(self.frm_main_settings, text="Wavelength presets")
         frm_controls = ttk.LabelFrame(self.frm_main_settings, text="Camera settings")
         frm_stage = ttk.LabelFrame(self.frm_main_settings, text="Stage settings")
-        self.frm_m2_diagnostics = ttk.LabelFrame(self.win, text="M2 Diagnostics")
+
+        self.frm_notebook_diagnostics = ttk.Notebook(self.win)
+        self.frm_m2_diagnostics = ttk.Frame(self.frm_notebook_diagnostics)
+        self.frm_phase_retrieval = ttk.Frame(self.frm_notebook_diagnostics)
+        self.frm_notebook_diagnostics.add(self.frm_m2_diagnostics, text='M2 Diagnostics')
+        self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
+        self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
+
         self.frm_scan_settings = ttk.LabelFrame(self.frm_m2_diagnostics, text="Scan settings")
         self.frm_m2_plot = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Plot")
-        self.frm_transverse_plot = ttk.LabelFrame(self.frm_m2_diagnostics, text="Transverses Plot")
+
+        self.frm_pr_settings = ttk.LabelFrame(self.frm_phase_retrieval, text="PR settings")
 
         self.frm_cam.grid(row=0, column=0, sticky='nsew')
         self.frm_main_settings.grid(row=0, column=1, sticky='nsew')
@@ -51,10 +61,18 @@ class DiagnosticBoard(object):
         frm_controls.grid(row=1, column=0, sticky='nsew')
         frm_stage.grid(row=2, column=0, sticky='nsew')
 
-        self.frm_m2_diagnostics.grid(row=0, column=2, sticky='nsew')
         self.frm_scan_settings.grid(row=0, column=0, sticky='nsew')
         self.frm_m2_plot.grid(row=1, column=0, sticky='nsew')
-        self.frm_transverse_plot.grid(row=2, column=0, sticky='nsew')
+
+        self.frm_pr_settings.grid(row=0, column=0, sticky='nsew')
+
+        lbl_method_choice = tk.Label(self.frm_pr_settings, text='Method chosen :')
+        self.strvar_method_choice = tk.StringVar(self.frm_phase_retrieval, 'Vortex')
+        self.cbox_method_choice = ttk.Combobox(self.frm_pr_settings, textvariable=self.strvar_method_choice)
+        self.cbox_method_choice.bind("<<ComboboxSelected>>", self.change_method)
+        self.cbox_method_choice['values'] = ('Vortex', 'Gerchberg-Saxton')
+        lbl_method_choice.grid(row=0, column=0, sticky='nsew')
+        self.cbox_method_choice.grid(row=0, column=1, sticky='nsew')
 
         sizefactor = 1
         self.figr = Figure(figsize=(6 * sizefactor, 4 * sizefactor), dpi=100)
@@ -67,7 +85,6 @@ class DiagnosticBoard(object):
         self.tk_widget_figr.grid(row=0, column=0, sticky='nsew')
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
-
 
         lbl_daheng_stage_from = tk.Label(self.frm_scan_settings, text="From")
         lbl_daheng_stage_to = tk.Label(self.frm_scan_settings, text="To")
@@ -95,7 +112,7 @@ class DiagnosticBoard(object):
                                          command=self.scan_daheng_thread)
         self.but_scan_daheng.grid(row=1, column=3)
 
-        self.open_h5_file = tk.Button(self.frm_scan_settings, text='Open h5 file',command=self.open_h5_file)
+        self.open_h5_file = tk.Button(self.frm_scan_settings, text='Open h5 file', command=self.open_h5_file)
         self.open_h5_file.grid(row=1, column=4)
 
         frm_cam_but = ttk.Frame(frm_controls)
@@ -230,8 +247,6 @@ class DiagnosticBoard(object):
         self.img_canvas.configure(bg='grey')
         self.image = self.img_canvas.create_image(0, 0, anchor="nw")
 
-
-
         frm_bottom = ttk.Frame(self.win)
         frm_bottom.grid(row=3, column=0, columnspan=2)
         but_exit = ttk.Button(frm_bottom, text='Exit', command=self.on_close)
@@ -252,7 +267,6 @@ class DiagnosticBoard(object):
 
     def foo(self):
         print('oui')
-
 
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
         def beam_quality_factor_fit(z, w0, M2, z0):
@@ -292,6 +306,15 @@ class DiagnosticBoard(object):
 
         return params_x, params_y
 
+    def change_method(self, event):
+        selected_method = self.strvar_method_choice.get()
+
+        if selected_method == 'Vortex':
+            print(f'Method selected: {selected_method}')
+
+        elif selected_method == 'Gerchberg-Saxton':
+            print(f'Method selected: {selected_method}')
+
     def open_h5_file(self):
         filepath = tk.filedialog.askopenfilename()
         try:
@@ -314,6 +337,7 @@ class DiagnosticBoard(object):
 
         except:
             print('Impossible to open the file')
+
 
     def process_images_dict(self):
         processed_images = {}
@@ -557,6 +581,7 @@ class DiagnosticBoard(object):
         if self.WPcam is not None:
             self.WPcam.disable()
             print('WPcam disconnected')
+
 
     def on_close(self):
         self.close_daheng()
