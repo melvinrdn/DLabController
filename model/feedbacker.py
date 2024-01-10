@@ -73,6 +73,9 @@ class Feedbacker(object):
         self.WPR = None
         self.WPDummy = None
         self.Delay = None
+        self.MPC_lens = None
+        self.MPC_wp = None
+        self.abort = 0
 
         self.pid_stage = None
         self.pid_stage_initialized = False
@@ -327,9 +330,10 @@ class Feedbacker(object):
                                         offvalue=0,
                                         command=None)
         self.var_pid_stage_enable = tk.IntVar()
-        self.cb_pid_stage_enable = tk.Checkbutton(frm_spc_pid, text='PID with Piezo', variable=self.var_pid_stage_enable, onvalue=1,
-                                        offvalue=0,
-                                        command=None)
+        self.cb_pid_stage_enable = tk.Checkbutton(frm_spc_pid, text='PID with Piezo',
+                                                  variable=self.var_pid_stage_enable, onvalue=1,
+                                                  offvalue=0,
+                                                  command=None)
         self.but_pid_stage_init = tk.Button(frm_spc_pid, text='Init', command=self.init_pid_piezo)
         but_pid_stage_read = tk.Button(frm_spc_pid, text='Read', command=self.read_pid_piezo)
         but_pid_stage_move = tk.Button(frm_spc_pid, text='Move', command=self.move_pid_piezo)
@@ -580,6 +584,180 @@ class Feedbacker(object):
         self.but_Delay_Home = tk.Button(frm_stage, text='Home', command=self.home_Delay)
         self.but_Delay_Read = tk.Button(frm_stage, text='Read', command=self.read_Delay)
         self.but_Delay_Move = tk.Button(frm_stage, text='Move', command=self.move_Delay)
+
+        lbl_Stage_MPC = tk.Label(frm_mpc_campaign, text='Stage')
+        lbl_Nr_MPC = tk.Label(frm_mpc_campaign, text='#')
+        lbl_is_MPC = tk.Label(frm_mpc_campaign, text='is')
+        lbl_should_MPC = tk.Label(frm_mpc_campaign, text='should')
+
+        lbl_mpc_to = tk.Label(frm_mpc_campaign, text='to')
+        lbl_mpc_from = tk.Label(frm_mpc_campaign, text='from')
+        lbl_mpc_steps = tk.Label(frm_mpc_campaign, text='steps')
+
+        lbl_MPC_lens = tk.Label(frm_mpc_campaign, text='Lens')
+        lbl_MPC_wp = tk.Label(frm_mpc_campaign, text='WP')
+
+        lbl_MPC_maxpower = tk.Label(frm_mpc_campaign, text='Max Power (W)')
+        lbl_MPC_maxangle = tk.Label(frm_mpc_campaign, text='Max Angle (deg)')
+        lbl_MPC_currentpower = tk.Label(frm_mpc_campaign, text='Current Power (W)')
+        lbl_MPC_pulseduration = tk.Label(frm_mpc_campaign, text='Pulse duration (fs)')
+        lbl_MPC_reprate = tk.Label(frm_mpc_campaign, text='Rep Rate (kHz)')
+
+        self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83837725')
+        self.ent_mpc_lens_nr = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_nr)
+        self.strvar_mpc_lens_is = tk.StringVar(self.win, '')
+        self.ent_mpc_lens_is = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_is)
+        self.strvar_mpc_lens_should = tk.StringVar(self.win, '')
+        self.ent_mpc_lens_should = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_should)
+
+        self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83837724')
+        self.ent_mpc_wp_nr = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_nr)
+        self.strvar_mpc_wp_is = tk.StringVar(self.win, '')
+        self.ent_mpc_wp_is = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_is)
+        self.strvar_mpc_wp_should = tk.StringVar(self.win, '')
+        self.ent_mpc_wp_should = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_should)
+
+        self.strvar_mpc_lens_from = tk.StringVar(self.win, '5')
+        self.ent_mpc_lens_from = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_from)
+        self.strvar_mpc_lens_to = tk.StringVar(self.win, '10')
+        self.ent_mpc_lens_to = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_to)
+        self.strvar_mpc_lens_steps = tk.StringVar(self.win, '5')
+        self.ent_mpc_lens_steps = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_steps)
+
+        self.strvar_mpc_wp_from = tk.StringVar(self.win, '1')
+        self.ent_mpc_wp_from = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_from)
+        self.strvar_mpc_wp_to = tk.StringVar(self.win, '2')
+        self.ent_mpc_wp_to = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_to)
+        self.strvar_mpc_wp_steps = tk.StringVar(self.win, '5')
+        self.ent_mpc_wp_steps = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_wp_steps)
+
+        self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
+        self.ent_mpc_maxpower = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_maxpower)
+        self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
+        self.ent_mpc_maxangle = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_maxangle)
+        self.strvar_mpc_currentpower = tk.StringVar(self.win, '')
+        self.ent_mpc_currentpower = tk.Entry(
+            frm_mpc_campaign, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_currentpower)
+
+        self.but_MPC_measure = tk.Button(frm_mpc_campaign, text='Measure The MPC', command=self.enabl_mpc_meas)
+        self.but_MPC_abort = tk.Button(frm_mpc_campaign, text='ABORT!!!', command=self.abort_mpc_measurement)
+
+        self.but_MPC_lens_Ini = tk.Button(frm_mpc_campaign, text='Init', command=self.init_MPC_lens)
+        self.but_MPC_lens_Home = tk.Button(frm_mpc_campaign, text='Home', command=self.home_MPC_lens)
+        self.but_MPC_lens_Read = tk.Button(frm_mpc_campaign, text='Read', command=self.read_MPC_lens)
+        self.but_MPC_lens_Move = tk.Button(frm_mpc_campaign, text='Move', command=self.move_MPC_lens)
+
+        self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign, text='Init', command=self.init_MPC_wp)
+        self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign, text='Home', command=self.home_MPC_wp)
+        self.but_MPC_wp_Read = tk.Button(frm_mpc_campaign, text='Read', command=self.read_MPC_wp)
+        self.but_MPC_wp_Move = tk.Button(frm_mpc_campaign, text='Move', command=self.move_MPC_wp)
+
+        self.var_mpc_wp_power = tk.IntVar()
+        self.cb_mpc_wp_power = tk.Checkbutton(frm_mpc_campaign, text='Power', variable=self.var_mpc_wp_power, onvalue=1,
+                                              offvalue=0,
+                                              command=None)
+        self.var_mpc_scan_lens = tk.IntVar()
+        self.cb_mpc_scan_lens = tk.Checkbutton(frm_mpc_campaign, text='Scan Lens', variable=self.var_mpc_scan_lens,
+                                               onvalue=1,
+                                               offvalue=0,
+                                               command=None)
+        self.var_mpc_scan_wp = tk.IntVar()
+        self.cb_mpc_scan_wp = tk.Checkbutton(frm_mpc_campaign, text='Scan Power', variable=self.var_mpc_scan_wp,
+                                             onvalue=1,
+                                             offvalue=0,
+                                             command=None)
+
+        lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_lens.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_Nr_MPC.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_is_MPC.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_should_MPC.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_from.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_to.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_steps.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_MPC_maxpower.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_maxangle.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_currentpower.grid(row=8, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_lens_nr.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_lens_from.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_to.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_steps.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_from.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_to.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_steps.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_MPC_measure.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_abort.grid(row=5, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.but_MPC_lens_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_lens_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_lens_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_lens_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_wp_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.cb_mpc_scan_lens.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_scan_wp.grid(row=5, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_maxpower.grid(row=6, column=1, padx=2, pady=10, sticky='nsew')
+        self.ent_mpc_maxangle.grid(row=7, column=1, padx=2, pady=1, sticky='nsew')
+        self.ent_mpc_currentpower.grid(row=8, column=1, padx=2, pady=1, sticky='nsew')
 
         # power wp calibration
         lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
@@ -2193,6 +2371,90 @@ class Feedbacker(object):
 
     # def scan(self):
 
+    def init_MPC_lens(self):
+        try:
+            self.MPC_lens = apt.Motor(int(self.ent_mpc_lens_nr.get()))
+            print("Lens Stage connected")
+            self.but_MPC_lens_Ini.config(fg='green')
+        except:
+            self.but_MPC_lens_Ini.config(fg='red')
+            print("Not able to initalize Lens Stage")
+
+    def read_MPC_lens(self):
+        try:
+            pos = self.MPC_lens.position
+            self.strvar_mpc_lens_is.set(pos)
+        except:
+            print("Impossible to read Lens Stage position")
+
+    def move_MPC_lens(self):
+        try:
+            pos = float(self.strvar_mpc_lens_should.get())
+            print("Lens is moving..")
+            self.MPC_lens.move_to(pos, True)
+            print(f"Lens moved to {str(self.MPC_lens.position)}")
+            self.read_MPC_lens()
+        except:
+            print("Impossible to move MPC lens :(")
+
+    def home_MPC_lens(self):
+        try:
+            self.MPC_lens.move_home(blocking=True)
+            self.but_MPC_lens_Home.config(fg='green')
+            print("MPC Lens stage homed!")
+            self.read_MPC_lens()
+        except:
+            self.but_MPC_lens_Home.config(fg='red')
+            print("Not able to home MPC Lens")
+
+    def init_MPC_wp(self):
+        try:
+            self.MPC_wp = apt.Motor(int(self.ent_mpc_wp_nr.get()))
+            print("MPC Waveplate connected")
+            self.but_MPC_wp_Ini.config(fg='green')
+        except:
+            self.but_MPC_wp_Ini.config(fg='red')
+            print("Not able to initalize MPC Waveplate")
+
+    def read_MPC_wp(self):
+        try:
+            pos = self.MPC_wp.position
+            self.strvar_mpc_wp_is.set(pos)
+            self.strvar_mpc_currentpower.set(
+                np.round(
+                    self.angle_to_power(pos, float(self.ent_mpc_maxpower.get()), float(self.ent_mpc_maxangle.get())),
+                    3))
+        except:
+            print("Impossible to read WP Stage position")
+
+    def move_MPC_wp(self):
+        try:
+            if self.var_mpc_wp_power.get() == 1:
+                power = float(self.strvar_mpc_wp_should.get())
+                if power > float(self.ent_mpc_maxpower.get()):
+                    power = float(self.ent_mpc_maxpower.get())
+                    print("Value above maximum! Desired power set to maximum instead")
+                pos = self.power_to_angle(power, float(self.ent_mpc_maxpower.get()),
+                                          float(self.ent_mpc_maxangle.get())) + 90
+            else:
+                pos = float(self.strvar_mpc_wp_should.get())
+            print("WP is moving..")
+            self.MPC_wp.move_to(pos, True)
+            print(f"WP moved to {str(self.MPC_wp.position)}")
+            self.read_MPC_wp()
+        except:
+            print("Impossible to move MPC WP :(")
+
+    def home_MPC_wp(self):
+        try:
+            self.MPC_wp.move_home(blocking=True)
+            self.but_MPC_wp_Home.config(fg='green')
+            print("MPC WP stage homed!")
+            self.read_MPC_wp()
+        except:
+            self.but_MPC_wp_Home.config(fg='red')
+            print("Not able to home MPC WP")
+
     def disable_motors(self):
         """
         Disconnect all the motors.
@@ -2209,6 +2471,12 @@ class Feedbacker(object):
             print('WPR disconnected')
         if self.Delay is not None:
             self.Delay.disable()
+            print('Delay disconnected')
+        if self.MPC_lens is not None:
+            self.MPC_lens.disable()
+            print('Delay disconnected')
+        if self.MPC_wp is not None:
+            self.MPC_wp.disable()
             print('Delay disconnected')
 
     def enable_calibrator(self):
@@ -2333,7 +2601,8 @@ class Feedbacker(object):
     def save_daheng_scans(self, res, pos):
         nr = self.get_start_image_images()
 
-        data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(datetime.date.today()) +'-focus-images-' + str(
+        data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(
+            datetime.date.today()) + '-focus-images-' + str(
             int(nr)) + '.h5'
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
@@ -2575,6 +2844,19 @@ class Feedbacker(object):
         """
         self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure_simple)
+        self.mcp_thread.daemon = True
+        self.mcp_thread.start()
+
+    def enabl_mpc_meas(self):
+        """
+        Enables the simple MCP measurement.
+
+        Returns
+        -------
+        None
+        """
+        self.stop_mcp = False
+        self.mcp_thread = threading.Thread(target=self.measure_mpc)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
@@ -2983,6 +3265,62 @@ class Feedbacker(object):
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
 
+
+    def abort_mpc_measurement(self):
+        self.abort = 1
+    def measure_mpc(self):
+        lens_pos_array = np.linspace(float(self.ent_mpc_lens_from.get()), float(self.ent_mpc_lens_to.get()),
+                                     int(self.ent_mpc_lens_steps.get()))
+        power_array = np.linspace(float(self.ent_mpc_wp_from.get()), float(self.ent_mpc_wp_to.get()),
+                                  int(self.ent_mpc_wp_steps.get()))
+
+        self.but_MPC_measure.config(fg='red')
+        if self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 1:
+            self.var_mpc_wp_power.set(1)
+            print("Now we are scanning lens AND power")
+            for ind_pos, pos in enumerate(lens_pos_array):
+                if self.abort == 1:
+                    break
+                self.strvar_mpc_lens_should.set(str(pos))
+                self.move_MPC_lens()
+                for ind_power, power in enumerate(power_array):
+                    if self.abort == 1:
+                        break
+                    self.strvar_mpc_wp_should.set(str(power))
+                    self.move_MPC_wp()
+                    im = self.take_image(int(self.ent_avgs.get()))
+                    self.plot_MCP(im)
+
+
+        elif self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 0:
+            self.var_mpc_wp_power.set(1)
+            print("Now we are scanning ONLY power")
+
+            for ind_power, power in enumerate(power_array):
+                if self.abort == 1:
+                    break
+                self.strvar_mpc_wp_should.set(str(power))
+                self.move_MPC_wp()
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.plot_MCP(im)
+
+        elif self.var_mpc_scan_wp.get() == 0 and self.var_mpc_scan_lens.get() == 1:
+            print("Now we are scanning ONLY lens position")
+            for ind_pos, pos in enumerate(lens_pos_array):
+                if self.abort == 1:
+                    break
+                self.strvar_mpc_lens_should.set(str(pos))
+                self.move_MPC_lens()
+                im = self.take_image(int(self.ent_avgs.get()))
+                self.plot_MCP(im)
+        else:
+            print("We are doing nothing.")
+        if self.abort == 1:
+            self.but_MPC_measure.config(fg='magenta')
+            self.abort = 0
+        else:
+            self.but_MPC_measure.config(fg='green')
+
     def measure_all(self):
         print("yay i made it into the measure all function")
         self.but_meas_all.config(fg='red')
@@ -3194,7 +3532,7 @@ class Feedbacker(object):
 
             self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_green.get()))
             self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_green.get()), phase_map,
-                                   slm_size[1], slm_size[0])
+                                       slm_size[1], slm_size[0])
 
     def eval_spec(self):
         """
