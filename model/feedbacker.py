@@ -21,7 +21,7 @@ from simple_pid import PID
 
 import diagnostic_board.focus_diagnostic as dh
 import drivers.avaspec_driver._avs_py as avs
-import drivers.jena_piezo.jena_piezo as jena
+import drivers.jena_piezo.jena_piezo_V3 as jena
 import drivers.santec_driver._slm_py as slm
 import model.helpers as help
 from drivers import gxipy_driver as gx
@@ -178,9 +178,11 @@ class Feedbacker(object):
         frm_wp_scans = ttk.Frame(frm_scans)
         frm_phase_scan = ttk.Frame(frm_scans)
         frm_slm_param_scan = ttk.Frame(frm_scans)
+        frm_mpc_campaign = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         self.frm_notebook_scans.add(frm_slm_param_scan, text="SLM parameters scan")
+        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC Campaign")
 
         self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
         frm_stage = ttk.Frame(frm_scans)

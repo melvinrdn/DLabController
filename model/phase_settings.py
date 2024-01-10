@@ -7,7 +7,7 @@ from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
 gs=None
 aberration=None
 
-types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian'] #defines the settings that we want to have!
+types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian', 'HGB'] #defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):
@@ -51,6 +51,8 @@ def new_type(frm_mid, typ):
         return TypeAberration(frm_mid)
     elif typ == 'Supergaussian':
         return TypeSupergaussian(frm_mid)
+    elif typ == 'HGB':
+        return TypeHGB(frm_mid)
 
 
 class BaseType(object):
@@ -1236,7 +1238,7 @@ class TypeSupergaussian(BaseType):
         lbl_frm = ttk.LabelFrame(self.frm_, text='Supergaussian beam')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
-        lbl_texts = ['radius of phase jump:']
+        lbl_texts = ['radius of phase jump (wL):']
         labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
         vcmd = (parent.register(self.callback))
         self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
@@ -1259,9 +1261,10 @@ class TypeSupergaussian(BaseType):
         [X, Y] = np.meshgrid(x, y)
         rho = np.sqrt(X ** 2 + Y ** 2)
         rho /= 2
+        w_L = 4e-3
 
         desired_radius = coeffs
-        indices = np.where(rho <= desired_radius)
+        indices = np.where(rho <= desired_radius*w_L)
 
         p1 = np.zeros_like(X)
         p1[indices] = np.pi
@@ -1292,6 +1295,88 @@ class TypeSupergaussian(BaseType):
         """
         self.strvars[0].set(dict['phase_radius'])
 
+class TypeHGB(BaseType):
+    """shows vortex settings for phase"""
+
+    def __init__(self, parent):
+        """
+        Initialize the TypeVortex class.
+
+        Parameters
+        ----------
+        parent : Tk object
+            The parent window for the frame.
+
+        """
+        self.name = 'HGB'
+        self.frm_ = ttk.Frame(parent)
+        self.frm_.grid(row=6, column=0, sticky='nsew')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='HG beam')
+        lbl_frm.grid(row=0, column=0, sticky='ew')
+
+        lbl_texts = ['radius of phase jump (wL):']
+        labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
+        vcmd = (parent.register(self.callback))
+        self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
+        self.entries = [ttk.Entry(lbl_frm, width=11, validate='all',
+                                  validatecommand=(vcmd, '%d', '%P', '%S'),
+                                  textvariable=strvar)
+                        for strvar in self.strvars]
+        for ind, label in enumerate(labels):
+            label.grid(row=ind, column=0, sticky='e', padx=(10, 0), pady=5)
+        for ind, entry in enumerate(self.entries):
+            entry.grid(row=ind, column=1, sticky='w', padx=(0, 10))
+
+    def phase(self):
+        coeffs = np.zeros(len(self.entries), dtype=float)
+        for i, entry in enumerate(self.entries):
+            if entry.get() != '':
+                coeffs[i] = float(entry.get())
+        x = np.linspace(-chip_width, chip_width, slm_size[1])
+        y = np.linspace(-chip_height, chip_height, slm_size[0])
+        [X, Y] = np.meshgrid(x, y)
+        rho = np.sqrt(X ** 2 + Y ** 2)
+        rho /= 2
+        w_L = 4e-3
+
+        desired_radius = coeffs
+        indices_p1 = np.where(rho <= 2*desired_radius*w_L)
+
+        p1 = np.zeros_like(X)
+        p1[indices_p1] = np.pi
+
+
+        indices_p2 = np.where(rho <= desired_radius*w_L)
+
+        p2 = np.zeros_like(X)
+        p2[indices_p2] = np.pi
+
+
+        phase = (p1-p2) / (2 * np.pi) * bit_depth
+        return phase
+
+    def save_(self):
+        """
+        Save the current state of the TypeVortex object.
+
+        Returns
+        -------
+        dict : dict
+            A dictionary of the current state.
+        """
+        dict = {'phase_radius_hgb': self.entries[0].get()}
+        return dict
+
+    def load_(self, dict):
+        """
+        Load a saved state for the TypeVortex object.
+
+        Parameters
+        ----------
+        dict : dict
+            A dictionary of the saved state.
+        """
+        self.strvars[0].set(dict['phase_radius_hgb'])
 
 class TypeVortex(BaseType):
     """shows vortex settings for phase"""

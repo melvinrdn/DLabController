@@ -5,6 +5,7 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
@@ -12,6 +13,7 @@ import drivers.santec_driver._slm_py as slm
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
 from diagnostic_board import diagnostic_board
+
 print('Done')
 
 
@@ -112,7 +114,8 @@ class DLabController(object):
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Diagnostic board', command=self.open_diagnostic_board)
+        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Diagnostic board',
+                                          command=self.open_diagnostic_board)
         but_diagnostic_board.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
 
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
@@ -141,7 +144,6 @@ class DLabController(object):
         """
         self.feedback_win = feedbacker.Feedbacker(self)
 
-
     def open_diagnostic_board(self):
         """
         Opens the diagnostic board.
@@ -151,7 +153,6 @@ class DLabController(object):
         None
         """
         self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
-
 
     def open_pub_green(self):
         """
@@ -295,9 +296,14 @@ class DLabController(object):
         None
         """
         self.ax_green.clear()
-        self.ax_green.imshow(phase, cmap='twilight',
-                             interpolation='None')
+        self.ax_green.imshow(phase, cmap='bwr',
+                             interpolation='None', extent=(
+                -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
+                slm_size[0] * 8e-3 / 4 / 2))
 
+        self.ax_green.set_xlabel('y (wL)')
+        self.ax_green.set_ylabel('x (wL)')
+        self.ax_green.figure.tight_layout()
         self.img_green.draw()
 
     def update_phase_plot_red(self, phase):
@@ -317,8 +323,13 @@ class DLabController(object):
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase, cmap='twilight',
-                           interpolation='None')
+        self.ax_red.imshow(phase, cmap='bwr',
+                           interpolation='None', extent=(
+                -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
+                slm_size[0] * 8e-3 / 4 / 2))
+        self.ax_red.set_xlabel('y (wL)')
+        self.ax_red.set_ylabel('x (wL)')
+        self.ax_red.figure.tight_layout()
         self.img_red.draw()
 
     def callback(self, action, P, text):
