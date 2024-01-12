@@ -190,8 +190,10 @@ class Feedbacker(object):
         self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
         frm_stage = ttk.Frame(frm_scans)
         frm_wp_power_cal = ttk.Frame(frm_scans)
+        frm_calculator = ttk.Frame(frm_scans)
         self.frm_notebook_waveplate.add(frm_stage, text="Waveplate control")
         self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
+        self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
 
         frm_daheng_camera = ttk.LabelFrame(self.win, text='Daheng Camera')
         self.frm_daheng_camera_settings = ttk.LabelFrame(frm_daheng_camera, text='Settings')
@@ -603,7 +605,7 @@ class Feedbacker(object):
         lbl_MPC_pulseduration = tk.Label(frm_mpc_campaign, text='Pulse duration (fs)')
         lbl_MPC_reprate = tk.Label(frm_mpc_campaign, text='Rep Rate (kHz)')
 
-        self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83837725')
+        self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
         self.ent_mpc_lens_nr = tk.Entry(
             frm_mpc_campaign, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -819,6 +821,54 @@ class Feedbacker(object):
         self.ent_green_current_power = tk.Entry(
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
+
+        # calcualtor
+        lbl_pulse_length = tk.Label(frm_calculator, text='Pulse length (fs):')
+        self.strvar_pulse_length = tk.StringVar(self.win, '180')
+        self.ent_pulse_length = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_pulse_length)
+
+        lbl_rep_rate = tk.Label(frm_calculator, text='Repetition rate (kHz):')
+        self.strvar_rep_rate = tk.StringVar(self.win, '10')
+        self.ent_rep_rate = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_rep_rate)
+
+        lbl_power = tk.Label(frm_calculator, text='Power (W):')
+        self.strvar_power = tk.StringVar(self.win, '1')
+        self.ent_power = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_power)
+
+        lbl_beam_radius = tk.Label(frm_calculator, text='Beam radius (µm):')
+        self.strvar_beam_radius = tk.StringVar(self.win, '30')
+        self.ent_beam_radius = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_beam_radius)
+
+        lbl_pulse_energy = tk.Label(frm_calculator, text='Pulse energy (µJ):')
+        self.strvar_pulse_energy = tk.StringVar(self.win, '')
+        self.ent_pulse_energy = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_pulse_energy)
+
+        lbl_peak_intensity = tk.Label(frm_calculator, text='Peak intensity (1e14 W/cm2):')
+        self.strvar_peak_intensity = tk.StringVar(self.win, '')
+        self.ent_peak_intensity = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_peak_intensity)
+
+        lbl_hhg_cutoff = tk.Label(frm_calculator, text='HHG cutoff (eV, q):')
+        self.strvar_hhg_cutoff = tk.StringVar(self.win, '')
+        self.ent_hhg_cutoff = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_hhg_cutoff)
+
+        self.strvar_hhg_cutoff_q = tk.StringVar(self.win, '')
+        self.ent_hhg_cutoff_q = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_hhg_cutoff_q)
 
         # frm_wp_scans
         lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
@@ -1163,6 +1213,29 @@ class Feedbacker(object):
         self.ent_green_phase.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
         lbl_green_current_power.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
         self.ent_green_current_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_calculator
+
+        lbl_pulse_length.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_pulse_length.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_rep_rate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_rep_rate.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_power.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_power.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_beam_radius.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_radius.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.but_calculate = tk.Button(frm_calculator, text='Calculate',
+                                       command=self.calculate_energy_and_peak_intensity)
+        self.but_calculate.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_pulse_energy.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_pulse_energy.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_peak_intensity.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_peak_intensity.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_hhg_cutoff.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_hhg_cutoff.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_hhg_cutoff_q.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_scans
         lbl_wp_scan_info.grid(row=0, column=0, padx=2, pady=2)
@@ -1963,6 +2036,21 @@ class Feedbacker(object):
         A = maxA / 2
         angle = -(45 * np.arccos(power / A - 1)) / np.pi + phase
         return angle
+
+    def calculate_energy_and_peak_intensity(self):
+
+        E_pulse = round(float(self.ent_power.get()) / (float(self.ent_rep_rate.get()) * 1e3) * 1e6, 3)  # in µJ
+        I_peak = round(0.94 * 2 * E_pulse * 1e-6 / ((float(self.ent_pulse_length.get()) * 1e-15 * np.pi) * (
+                float(self.ent_beam_radius.get()) * 1e-6) ** 2) * 1e-4 * 1e-14, 3)
+
+        U_p = 9.337 * 1.03 ** 2 * I_peak  # in eV
+        I_p_Argon = 15.7596  # in eV
+        E_cut = round(U_p * 3.2 + I_p_Argon, 3)  # in eV
+
+        self.strvar_pulse_energy.set(E_pulse)
+        self.strvar_peak_intensity.set(I_peak)
+        self.strvar_hhg_cutoff.set(E_cut)
+        self.strvar_hhg_cutoff_q.set(int(E_cut / 1.2))
 
     def init_WPR(self):
         """
@@ -3265,9 +3353,9 @@ class Feedbacker(object):
             elapsed_time = end_time - start_time
             print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
 
-
     def abort_mpc_measurement(self):
         self.abort = 1
+
     def measure_mpc(self):
         lens_pos_array = np.linspace(float(self.ent_mpc_lens_from.get()), float(self.ent_mpc_lens_to.get()),
                                      int(self.ent_mpc_lens_steps.get()))
@@ -3278,6 +3366,7 @@ class Feedbacker(object):
         if self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 1:
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning lens AND power")
+            res = np.zeros([512,512,lens_pos_array.size, power_array.size])
             for ind_pos, pos in enumerate(lens_pos_array):
                 if self.abort == 1:
                     break
@@ -3290,11 +3379,14 @@ class Feedbacker(object):
                     self.move_MPC_wp()
                     im = self.take_image(int(self.ent_avgs.get()))
                     self.plot_MCP(im)
+                    res[:,:,ind_pos,ind_power] = im
 
 
         elif self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 0:
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning ONLY power")
+            lens_pos_array = 0
+            res = np.zeros([512,512, power_array.size])
 
             for ind_power, power in enumerate(power_array):
                 if self.abort == 1:
@@ -3303,9 +3395,13 @@ class Feedbacker(object):
                 self.move_MPC_wp()
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.plot_MCP(im)
+                res[:, :, ind_power] = im
 
         elif self.var_mpc_scan_wp.get() == 0 and self.var_mpc_scan_lens.get() == 1:
             print("Now we are scanning ONLY lens position")
+            power_array = 0
+            res = np.zeros([512,512,lens_pos_array.size])
+
             for ind_pos, pos in enumerate(lens_pos_array):
                 if self.abort == 1:
                     break
@@ -3313,12 +3409,32 @@ class Feedbacker(object):
                 self.move_MPC_lens()
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.plot_MCP(im)
+                res[:, :, ind_pos] = im
         else:
             print("We are doing nothing.")
+            self.abort = 1
+
         if self.abort == 1:
             self.but_MPC_measure.config(fg='magenta')
             self.abort = 0
         else:
+            nr = self.get_start_image()
+            filename = 'C:/data/' + str(date.today()) + '/' + str(date.today()) + '-' + str(int(nr)) + '.h5'
+
+            with h5py.File(filename, 'w') as hf:
+                hf.create_dataset('raw_images', data=res)
+                hf.create_dataset('lens_position', data=lens_pos_array)
+                hf.create_dataset('power', data=power_array)
+                #f.create_dataset('treated_images', data=self.measurement_treated_array)
+                #hf.create_dataset('e_axis', data=self.eaxis_correct)
+                hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
+                hf.create_dataset('averages', data=int(self.ent_avgs.get()))
+                hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
+                #time_stamps_array_converted = np.array(self.time_stamps_array, dtype='S')
+                #hf.create_dataset('timestamps', data=time_stamps_array_converted)
+
+            log_entry = str(int(nr)) + '\n'
+            self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
 
     def measure_all(self):
