@@ -6,6 +6,8 @@ from collections import deque
 from datetime import date
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename
+import pygame
+from scipy.optimize import curve_fit
 
 import cv2
 import h5py
@@ -20,6 +22,7 @@ from pylablib.devices import Andor
 from simple_pid import PID
 
 import diagnostic_board.focus_diagnostic as dh
+from diagnostic_board.beam_treatment_functions import process_image
 import drivers.avaspec_driver._avs_py as avs
 import drivers.jena_piezo.jena_piezo_V3 as jena
 import drivers.santec_driver._slm_py as slm
@@ -181,10 +184,12 @@ class Feedbacker(object):
         frm_wp_scans = ttk.Frame(frm_scans)
         frm_phase_scan = ttk.Frame(frm_scans)
         frm_slm_param_scan = ttk.Frame(frm_scans)
+        frm_const_intensity_scan = ttk.Frame(frm_scans)
         frm_mpc_campaign = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         self.frm_notebook_scans.add(frm_slm_param_scan, text="SLM parameters scan")
+        self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC Campaign")
 
         self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
@@ -204,10 +209,12 @@ class Feedbacker(object):
         frm_mcp_calibrate = ttk.Frame(frm_mcp_all)
         frm_mcp_calibrate_energy = ttk.Frame(frm_mcp_all)
         frm_mcp_treated = ttk.Frame(frm_mcp_all)
+        frm_mcp_analysis = ttk.Frame(frm_mcp_all)
         self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
         self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
         self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
         self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
+        self.frm_notebook_mcp.add(frm_mcp_analysis, text='Analysis')
 
         frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
         frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
@@ -215,6 +222,8 @@ class Feedbacker(object):
         frm_mcp_calibrate_image_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Image')
         frm_mcp_treated_options = ttk.LabelFrame(frm_mcp_treated, text='Options')
         frm_mcp_treated_image = ttk.LabelFrame(frm_mcp_treated, text='Images')
+        frm_mcp_analysis_options = ttk.LabelFrame(frm_mcp_analysis, text='Options')
+        frm_mcp_analysis_results = ttk.LabelFrame(frm_mcp_analysis, text='Results')
 
         # frm_mcp_image = ttk.LabelFrame(self.win, text='MCP')
         frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
@@ -401,6 +410,78 @@ class Feedbacker(object):
                                           offvalue=0,
                                           command=None)
 
+        #I = cst frame
+
+        self.frm_m2_plot = ttk.LabelFrame(frm_const_intensity_scan, text="M2 Plot")
+        self.frm_m2_plot.grid(row=0, column=0, sticky='nsew')
+        self.frm_m2_param = ttk.LabelFrame(frm_const_intensity_scan, text="Parameters")
+        self.frm_m2_param.grid(row=0, column=1, sticky='nsew')
+        self.open_h5_file = tk.Button(self.frm_m2_param, text='Open h5 file', command=self.open_h5_file)
+        self.open_h5_file.grid(row=0, column=0)
+
+        lbl_pulse_length_m2 = tk.Label(self.frm_m2_param, text='Pulse length (fs):')
+        self.strvar_pulse_length_m2 = tk.StringVar(self.win, '180')
+        self.ent_pulse_length_m2 = tk.Entry(
+            self.frm_m2_param, width=8, validate='all',
+            textvariable=self.strvar_pulse_length_m2)
+
+        lbl_rep_rate_m2 = tk.Label(self.frm_m2_param, text='Repetition rate (kHz):')
+        self.strvar_rep_rate_m2 = tk.StringVar(self.win, '10')
+        self.ent_rep_rate_m2 = tk.Entry(
+            self.frm_m2_param, width=8, validate='all',
+            textvariable=self.strvar_rep_rate_m2)
+
+        lbl_beam_radius_m2 = tk.Label(self.frm_m2_param, text='Beam radius (µm):')
+        self.strvar_beam_radius_m2 = tk.StringVar(self.win, '30')
+        self.ent_beam_radius_m2 = tk.Entry(
+            self.frm_m2_param, width=8, validate='all',
+            textvariable=self.strvar_beam_radius_m2)
+
+        lbl_pulse_length_m2.grid(row=1, column=0,sticky='nsew')
+        self.ent_pulse_length_m2.grid(row=1, column=1, sticky='nsew')
+        lbl_rep_rate_m2.grid(row=2, column=0,  sticky='nsew')
+        self.ent_rep_rate_m2.grid(row=2, column=1,  sticky='nsew')
+        lbl_beam_radius_m2.grid(row=3, column=0,  sticky='nsew')
+        self.ent_beam_radius_m2.grid(row=3, column=1, sticky='nsew')
+
+        lbl_target_intensity= tk.Label(self.frm_m2_param, text='Target intensity (1e14 W/cm2):')
+        lbl_target_intensity.grid(row=4, column=0)
+        self.strvar_target_intensity = tk.StringVar(self.win, '1')
+        self.ent_target_intensity = tk.Entry(
+            self.frm_m2_param,
+            textvariable=self.strvar_target_intensity)
+        self.ent_target_intensity.grid(row=4, column=1)
+
+        lbl_p_steps= tk.Label(self.frm_m2_param, text='Number of P steps:')
+        lbl_p_steps.grid(row=5, column=0)
+        self.strvar_p_steps = tk.StringVar(self.win, '10')
+        self.ent_p_steps = tk.Entry(
+            self.frm_m2_param,
+            textvariable=self.strvar_p_steps)
+        self.ent_p_steps.grid(row=5, column=1)
+
+
+
+        self.but_set_target_intensity = tk.Button(self.frm_m2_param, text='Set parameters', command=self.set_target_intensity)
+        self.but_set_target_intensity.grid(row=6, column=0)
+
+        sizefactor_m2 = 0.8
+        self.figr_m2 = Figure(figsize=(6 * sizefactor_m2, 4 * sizefactor_m2), dpi=100)
+        self.ax1r_m2 = self.figr_m2.add_subplot(211)
+        self.ax2r_m2 = self.figr_m2.add_subplot(212)
+        self.ax1r_m2.grid()
+        self.ax2r_m2.grid()
+        self.figr_m2.tight_layout()
+        self.figr_m2.canvas.draw()
+        self.img1r_m2 = FigureCanvasTkAgg(self.figr_m2, self.frm_m2_plot)
+        self.tk_widget_figr_m2 = self.img1r_m2.get_tk_widget()
+        self.tk_widget_figr_m2.grid(row=0, column=0, sticky='nsew')
+        self.img1r_m2.draw()
+        self.ax1r_m2_blit = self.figr_m2.canvas.copy_from_bbox(self.ax1r_m2.bbox)
+        self.ax2r_m2_blit = self.figr_m2.canvas.copy_from_bbox(self.ax2r_m2.bbox)
+
+
+
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
@@ -525,7 +606,7 @@ class Feedbacker(object):
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
 
-        lbl_WPDummy = tk.Label(frm_stage, text='Focus Stage:')
+        lbl_WPDummy = tk.Label(frm_stage, text='Camera in focus:')
         self.strvar_WPDummy_is = tk.StringVar(self.win, '')
         self.ent_WPDummy_is = tk.Entry(
             frm_stage, width=10, validate='all',
@@ -1029,6 +1110,8 @@ class Feedbacker(object):
         frm_mcp_calibrate_image_energy.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_treated_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_treated_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_analysis_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_analysis_results.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
@@ -1588,6 +1671,25 @@ class Feedbacker(object):
                                                 command=self.treat_image_test)
         self.but_show_treated_image.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
 
+        #analysis frame
+        self.figrAnalysis = Figure(figsize=(5, 4), dpi=100)
+        self.axAnalysis_1 = self.figrAnalysis.add_subplot(221)
+        self.axAnalysis_2 = self.figrAnalysis.add_subplot(222)
+        self.axAnalysis_3 = self.figrAnalysis.add_subplot(223)
+        self.axAnalysis_4 = self.figrAnalysis.add_subplot(224)
+        self.figrAnalysis.tight_layout()
+        self.figrAnalysis.canvas.draw()
+        self.canvas_results = FigureCanvasTkAgg(self.figrAnalysis, frm_mcp_analysis_results)
+        self.canvas_widget = self.canvas_results.get_tk_widget()
+        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Draw canvas
+        self.canvas_results.draw()
+
+
+
+
+
         sizefactor = 1
 
         self.figr = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
@@ -1666,6 +1768,104 @@ class Feedbacker(object):
 
         self.open_calibrator_on_start()
         self.hide_frm_daheng()
+
+
+    def open_h5_file(self):
+        filepath = tk.filedialog.askopenfilename()
+        print(f'Opening {filepath}')
+        hfr = h5py.File(filepath, 'r')
+        self.images = np.asarray(hfr.get('images'))
+        self.positions = np.asarray(hfr.get('positions'))
+        self.green_lens = np.asarray(hfr.get('green_lens'))
+        self.red_lens = np.asarray(hfr.get('red_lens'))
+        print('Successfully loaded')
+        processed_images, som_x, som_y = self.process_images_dict()
+        zero_position = 8
+        zmin = (self.positions[0] - zero_position) *1e-3
+        zmax = (self.positions[-1] - zero_position)*1e-3
+        self.z_range = np.linspace(zmin, zmax, len(self.positions))
+        self.params_m2_x, self.params_m2_y = self.get_M_sq(som_x, som_y, self.z_range, 1030e-9, 3.45e-6)
+
+    def set_target_intensity(self):
+
+        def beam_quality_factor_fit(z, w0, M2, z0):
+            return w0 * np.sqrt(1 + (z - z0) ** 2 * (M2 * 1030e-9 / (np.pi * w0 ** 2)) ** 2)
+
+        z_fit = np.linspace(self.z_range[0], self.z_range[-1], int(self.ent_p_steps.get()))
+
+        C = 2 * 0.94 / ((float(self.ent_pulse_length_m2.get()) * 1e-15 * np.pi) * (float(self.ent_rep_rate_m2.get()) * 1e3))
+        self.power_x_list = float(self.ent_target_intensity.get()) * 1e18 / C * beam_quality_factor_fit(z_fit, self.params_m2_x[0], self.params_m2_x[1], self.params_m2_x[2]) ** 2 #W/m2
+        self.power_y_list = float(self.ent_target_intensity.get()) * 1e18 / C * beam_quality_factor_fit(z_fit, self.params_m2_y[0], self.params_m2_y[1], self.params_m2_y[2]) ** 2
+
+        #I_test_x = C * Px / beam_quality_factor_fit(z_fit, self.params_m2_x[0], self.params_m2_x[1], self.params_m2_x[2]) ** 2
+        #I_test_y = C * Py / beam_quality_factor_fit(z_fit, self.params_m2_y[0], self.params_m2_y[1], self.params_m2_y[2]) ** 2
+
+        self.ax2r_m2.clear()
+        self.ax2r_m2.grid(True)
+
+        self.ax2r_m2.plot(z_fit, self.power_x_list, linestyle='None', marker='o', color='blue')
+        self.ax2r_m2.plot(z_fit, self.power_y_list, linestyle='None', marker='x', color='red')
+
+        self.ax2r_m2.set_ylabel('P (W)')
+        self.ax2r_m2.set_xlabel('x [mm]')
+        self.ax2r_m2.legend()
+        self.figr_m2.tight_layout()
+        self.img1r_m2.draw()
+
+
+
+    def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
+        def beam_quality_factor_fit(z, w0, M2, z0):
+            return w0 * np.sqrt(1 + (z - z0) ** 2 * (M2 * lambda_0 / (np.pi * w0 ** 2)) ** 2)
+
+        p0 = [dx, 1, 0]
+
+        params_x, _ = curve_fit(beam_quality_factor_fit, z, som_x, p0=p0)
+        w0_x_fit, M_sq_x_fit, z0_x_fit = params_x
+        print(f'M_sq_x: {abs(M_sq_x_fit):.4f},w0_x: {w0_x_fit * 1e6:.4f} µm, z0_x: {z0_x_fit * 1e3:.4f} mm')
+
+        params_y, _ = curve_fit(beam_quality_factor_fit, z, som_y, p0=p0)
+        w0_y_fit, M_sq_y_fit, z0_y_fit = params_y
+        print(f'M_sq_y: {abs(M_sq_y_fit):.4f},w0_y: {w0_y_fit * 1e6:.4f} µm, z0_y: {z0_y_fit * 1e3:.4f} mm')
+
+        z_fit = np.linspace(z[0], z[-1], 100)
+
+        self.ax1r_m2.clear()
+        self.ax1r_m2.grid(True)
+
+        self.ax1r_m2.plot(z, som_x, linestyle='None', marker='x', color='blue')
+        self.ax1r_m2.plot(z, som_y, linestyle='None', marker='x', color='red')
+        self.ax1r_m2.plot(z_fit, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit),
+                       label=f'M_sq_y: {abs(params_y[1]):.2f}, '
+                             f'w0_y: {params_y[0] * 1e6:.2f} µm, '
+                             f'z0_y: {params_y[2] * 1e3:.2f} mm', color='red')
+        self.ax1r_m2.plot(z_fit, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit),
+                       label=f'M_sq_x: {abs(params_x[1]):.2f}, '
+                             f'w0_x: {params_x[0] * 1e6:.2f} µm, '
+                             f'z0_x: {params_x[2] * 1e3:.2f} mm', color='blue')
+
+        self.ax1r_m2.set_ylabel('z [m]')
+        self.ax1r_m2.set_xlabel('x [mm]')
+        self.ax1r_m2.legend()
+        self.figr_m2.tight_layout()
+        self.img1r_m2.draw()
+
+        return params_x, params_y
+
+    def process_images_dict(self):
+        processed_images = {}
+        dz = self.images.shape[2]
+        print(f'Number of steps: {dz}')
+        som_x = np.zeros(dz, dtype=float)
+        som_y = np.zeros(dz, dtype=float)
+
+        for i in range(dz):
+            processed_image, som_x[i], som_y[i] = process_image(self.images[:, :, i])
+            processed_images[f'processed_image_{i}'] = processed_image
+
+        som_y *= 3.45e-6
+        som_x *= 3.45e-6
+        return processed_images, som_x, som_y
 
     def init_pid_piezo(self):
         try:
@@ -2051,6 +2251,7 @@ class Feedbacker(object):
         self.strvar_peak_intensity.set(I_peak)
         self.strvar_hhg_cutoff.set(E_cut)
         self.strvar_hhg_cutoff_q.set(int(E_cut / 1.2))
+
 
     def init_WPR(self):
         """
@@ -3363,10 +3564,17 @@ class Feedbacker(object):
                                   int(self.ent_mpc_wp_steps.get()))
 
         self.but_MPC_measure.config(fg='red')
+        pygame.mixer.init()
+        pygame.mixer.music.load("ressources/ok_lets_go.mp3")
+        print("Okkkk let's go!")
+        pygame.mixer.music.play()
         if self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 1:
+            self.scan_type = 0
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning lens AND power")
-            res = np.zeros([512,512,lens_pos_array.size, power_array.size])
+            res = np.zeros([512,512,lens_pos_array.size, power_array.size]) * np.nan
+            res_treated = np.zeros([512,512,lens_pos_array.size, power_array.size])* np.nan
+
             for ind_pos, pos in enumerate(lens_pos_array):
                 if self.abort == 1:
                     break
@@ -3380,13 +3588,30 @@ class Feedbacker(object):
                     im = self.take_image(int(self.ent_avgs.get()))
                     self.plot_MCP(im)
                     res[:,:,ind_pos,ind_power] = im
+                    if self.eaxis is not None:
+                        E_new, im_new = self.final_image_treatment(im)
+                        res_treated[:,:,ind_pos,ind_power] = im_new
+                        self.axAnalysis_1.clear()
+                        imm = self.axAnalysis_1.imshow(np.flipud(np.nansum(res_treated, axis=(0, 1)).T),
+                                                 extent=[lens_pos_array[0], lens_pos_array[-1], power_array[0], power_array[-1]], aspect='auto')
+                        cbar = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_1)
+
+                        self.axAnalysis_1.set_xlabel("Lens position (mm)")
+                        self.axAnalysis_1.set_ylabel("Power (W)")
+                        self.axAnalysis_1.set_title("Total signal")
+
+                        self.figrAnalysis.tight_layout()
+                        self.canvas_results.draw()
+                        cbar.remove()
 
 
         elif self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 0:
+            self.scan_type = 1
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning ONLY power")
             lens_pos_array = 0
-            res = np.zeros([512,512, power_array.size])
+            res = np.zeros([512,512, power_array.size])* np.nan
+            res_treated = np.zeros([512,512, power_array.size])* np.nan
 
             for ind_power, power in enumerate(power_array):
                 if self.abort == 1:
@@ -3396,11 +3621,22 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.plot_MCP(im)
                 res[:, :, ind_power] = im
+                if self.eaxis is not None:
+                    E_new, im_new = self.final_image_treatment(im)
+                    res_treated[:, :, ind_power] = im_new
+                    self.axAnalysis_1.clear()
+                    self.axAnalysis_1.plot(power_array, np.nansum(res_treated, axis=(0, 1)).ravel())
+                    self.axAnalysis_1.set_xlabel("Power (W)")
+                    self.axAnalysis_1.set_ylabel("Total signal")
+                    self.figrAnalysis.tight_layout()
+                    self.canvas_results.draw()
 
         elif self.var_mpc_scan_wp.get() == 0 and self.var_mpc_scan_lens.get() == 1:
+            self.scan_type = 2
             print("Now we are scanning ONLY lens position")
             power_array = 0
-            res = np.zeros([512,512,lens_pos_array.size])
+            res = np.zeros([512,512,lens_pos_array.size])* np.nan
+            res_treated = np.zeros([512,512,lens_pos_array.size])* np.nan
 
             for ind_pos, pos in enumerate(lens_pos_array):
                 if self.abort == 1:
@@ -3410,6 +3646,15 @@ class Feedbacker(object):
                 im = self.take_image(int(self.ent_avgs.get()))
                 self.plot_MCP(im)
                 res[:, :, ind_pos] = im
+                if self.eaxis is not None:
+                    E_new, im_new = self.final_image_treatment(im)
+                    res_treated[:, :, ind_pos] = im_new
+                    self.axAnalysis_1.clear()
+                    self.axAnalysis_1.plot(lens_pos_array, np.nansum(res_treated, axis=(0, 1)).ravel())
+                    self.axAnalysis_1.set_xlabel("Lens position (mm)")
+                    self.axAnalysis_1.set_ylabel("Total signal")
+                    self.figrAnalysis.tight_layout()
+                    self.canvas_results.draw()
         else:
             print("We are doing nothing.")
             self.abort = 1
@@ -3425,15 +3670,17 @@ class Feedbacker(object):
                 hf.create_dataset('raw_images', data=res)
                 hf.create_dataset('lens_position', data=lens_pos_array)
                 hf.create_dataset('power', data=power_array)
-                #f.create_dataset('treated_images', data=self.measurement_treated_array)
-                #hf.create_dataset('e_axis', data=self.eaxis_correct)
+                hf.create_dataset('scan_type', data=self.scan_type)
+                if self.eaxis is not None:
+                   hf.create_dataset('treated_images', data=res_treated)
+                   hf.create_dataset('e_axis', data=E_new)
+
                 hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
                 hf.create_dataset('averages', data=int(self.ent_avgs.get()))
                 hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
-                #time_stamps_array_converted = np.array(self.time_stamps_array, dtype='S')
-                #hf.create_dataset('timestamps', data=time_stamps_array_converted)
 
-            log_entry = str(int(nr)) + '\n'
+
+            log_entry = str(int(nr)) + '\t'+str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
 
