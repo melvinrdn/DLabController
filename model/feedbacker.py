@@ -1671,6 +1671,21 @@ class Feedbacker(object):
                                                 command=self.treat_image_test)
         self.but_show_treated_image.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
 
+
+        #analysis frame options
+        self.open_h5_file_analysis = tk.Button(frm_mcp_analysis_options, text='Open h5 file', command=self.open_h5_file_analysis)
+        lbl_mcp_analysis_harmonic_order = tk.Label(frm_mcp_analysis_options, text="Look at Harmonic Order: ")
+        self.var_mcp_analysis_harmonic_order = tk.StringVar(self.win, "21")
+        self.var_mcp_analysis_harmonic_order.trace_add("write", self.update_mcp_analysis)
+        self.ent_mcp_analysis_harmonic_order = tk.Entry(frm_mcp_analysis_options,
+                                                         textvariable=self.var_mcp_analysis_harmonic_order,
+                                                         width=4, validate='all',
+                                                         validatecommand=(vcmd, '%d', '%P', '%S'))
+
+        self.open_h5_file_analysis.grid(row=0, column=0)
+        lbl_mcp_analysis_harmonic_order.grid(row=0,column=1)
+        self.ent_mcp_analysis_harmonic_order.grid(row = 0, column = 2)
+
         #analysis frame
         self.figrAnalysis = Figure(figsize=(5, 4), dpi=100)
         self.axAnalysis_1 = self.figrAnalysis.add_subplot(221)
@@ -1769,6 +1784,20 @@ class Feedbacker(object):
         self.open_calibrator_on_start()
         self.hide_frm_daheng()
 
+
+    def open_h5_file_analysis(self):
+        filepath = tk.filedialog.askopenfilename()
+        print(f'Opening {filepath}')
+        hfr = h5py.File(filepath, 'r')
+        self.current_scan_type = np.asarray(hfr.get('scan_type'))
+        self.current_treated_images = np.asarray(hfr.get('treated_images'))
+        self.current_lens_position_array = np.asarray(hfr.get('lens_position'))
+        self.current_power_array = np.asarray(hfr.get('power'))
+        self.current_E = np.asarray(hfr.get('e_axis'))
+        self.plot_analysis(self.current_scan_type, self.current_treated_images,
+                            parameter1=self.current_lens_position_array,
+                            parameter2=self.current_power_array,
+                            energy_axis=self.current_E)
 
     def open_h5_file(self):
         filepath = tk.filedialog.askopenfilename()
@@ -1984,6 +2013,16 @@ class Feedbacker(object):
 
         self.calibration_image_update = im
         self.plot_calibration_image(self.calibration_image_update)
+
+    def update_mcp_analysis(self,var, index, mode):
+        try:
+            self.plot_analysis(self.current_scan_type, self.current_treated_images,
+                               parameter1=self.current_lens_position_array,
+                               parameter2=self.current_power_array,
+                               energy_axis=self.current_E)
+        except:
+            "Something is Nan in the plot :("
+
 
     def load_test_calibration_image_take_thread(self):
         self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image_take)
@@ -3557,11 +3596,14 @@ class Feedbacker(object):
     def abort_mpc_measurement(self):
         self.abort = 1
 
+
     def measure_mpc(self):
         lens_pos_array = np.linspace(float(self.ent_mpc_lens_from.get()), float(self.ent_mpc_lens_to.get()),
                                      int(self.ent_mpc_lens_steps.get()))
+        self.current_lens_position_array = lens_pos_array
         power_array = np.linspace(float(self.ent_mpc_wp_from.get()), float(self.ent_mpc_wp_to.get()),
                                   int(self.ent_mpc_wp_steps.get()))
+        self.current_power_array = power_array
 
         self.but_MPC_measure.config(fg='red')
         pygame.mixer.init()
@@ -3570,6 +3612,7 @@ class Feedbacker(object):
         pygame.mixer.music.play()
         if self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 1:
             self.scan_type = 0
+            self.current_scan_type = 0
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning lens AND power")
             res = np.zeros([512,512,lens_pos_array.size, power_array.size]) * np.nan
@@ -3591,22 +3634,14 @@ class Feedbacker(object):
                     if self.eaxis is not None:
                         E_new, im_new = self.final_image_treatment(im)
                         res_treated[:,:,ind_pos,ind_power] = im_new
-                        self.axAnalysis_1.clear()
-                        imm = self.axAnalysis_1.imshow(np.flipud(np.nansum(res_treated, axis=(0, 1)).T),
-                                                 extent=[lens_pos_array[0], lens_pos_array[-1], power_array[0], power_array[-1]], aspect='auto')
-                        cbar = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_1)
-
-                        self.axAnalysis_1.set_xlabel("Lens position (mm)")
-                        self.axAnalysis_1.set_ylabel("Power (W)")
-                        self.axAnalysis_1.set_title("Total signal")
-
-                        self.figrAnalysis.tight_layout()
-                        self.canvas_results.draw()
-                        cbar.remove()
+                        self.current_E = self.eaxis_correct
+                        self.current_treated_images = res_treated
+                        self.plot_analysis(0, res_treated, parameter1 = lens_pos_array, parameter2 = power_array, energy_axis=self.current_E)
 
 
         elif self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 0:
             self.scan_type = 1
+            self.current_scan_type = 1
             self.var_mpc_wp_power.set(1)
             print("Now we are scanning ONLY power")
             lens_pos_array = 0
@@ -3624,15 +3659,14 @@ class Feedbacker(object):
                 if self.eaxis is not None:
                     E_new, im_new = self.final_image_treatment(im)
                     res_treated[:, :, ind_power] = im_new
-                    self.axAnalysis_1.clear()
-                    self.axAnalysis_1.plot(power_array, np.nansum(res_treated, axis=(0, 1)).ravel())
-                    self.axAnalysis_1.set_xlabel("Power (W)")
-                    self.axAnalysis_1.set_ylabel("Total signal")
-                    self.figrAnalysis.tight_layout()
-                    self.canvas_results.draw()
+                    self.current_E =  self.eaxis_correct
+                    self.current_treated_images = res_treated
+                    self.plot_analysis(1,res_treated, parameter1 = lens_pos_array, parameter2 = power_array, energy_axis=self.current_E)
 
         elif self.var_mpc_scan_wp.get() == 0 and self.var_mpc_scan_lens.get() == 1:
             self.scan_type = 2
+            self.current_scan_type = 2
+
             print("Now we are scanning ONLY lens position")
             power_array = 0
             res = np.zeros([512,512,lens_pos_array.size])* np.nan
@@ -3649,12 +3683,10 @@ class Feedbacker(object):
                 if self.eaxis is not None:
                     E_new, im_new = self.final_image_treatment(im)
                     res_treated[:, :, ind_pos] = im_new
-                    self.axAnalysis_1.clear()
-                    self.axAnalysis_1.plot(lens_pos_array, np.nansum(res_treated, axis=(0, 1)).ravel())
-                    self.axAnalysis_1.set_xlabel("Lens position (mm)")
-                    self.axAnalysis_1.set_ylabel("Total signal")
-                    self.figrAnalysis.tight_layout()
-                    self.canvas_results.draw()
+                    self.current_E = self.eaxis_correct
+                    self.current_treated_images = res_treated
+                    self.plot_analysis(2,res_treated, parameter1 = lens_pos_array, parameter2 = power_array, energy_axis=self.current_E)
+
         else:
             print("We are doing nothing.")
             self.abort = 1
@@ -3673,7 +3705,7 @@ class Feedbacker(object):
                 hf.create_dataset('scan_type', data=self.scan_type)
                 if self.eaxis is not None:
                    hf.create_dataset('treated_images', data=res_treated)
-                   hf.create_dataset('e_axis', data=E_new)
+                   hf.create_dataset('e_axis', data= self.eaxis_correct)
 
                 hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
                 hf.create_dataset('averages', data=int(self.ent_avgs.get()))
@@ -3683,6 +3715,92 @@ class Feedbacker(object):
             log_entry = str(int(nr)) + '\t'+str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
+
+    def plot_analysis(self,scan_type, treated_images, parameter1 = None, parameter2 = None, energy_axis = None):
+        har = int(self.var_mcp_analysis_harmonic_order.get())
+        ind = int(np.argmin(abs(energy_axis - har * 1.2037300291262136)))
+        #print(ind,energy_axis[ind])
+        if ind < 9:
+            #print("Choose a larger harmonic!")
+            ind = 200
+        elif ind > 500:
+            #print("Choose a smaller harmonic!")
+            ind = 200
+
+        if scan_type == 0:
+            self.axAnalysis_1.clear()
+            imm = self.axAnalysis_1.imshow(np.flipud(np.nansum(treated_images, axis=(0, 1)).T),
+                                           extent=[parameter1[0], parameter1[-1], parameter2[0],
+                                                   parameter2[-1]], aspect='auto')
+            cbar1 = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_1)
+
+            self.axAnalysis_1.set_xlabel("Lens position (mm)")
+            self.axAnalysis_1.set_ylabel("Power (W)")
+            self.axAnalysis_1.set_title("Yield: whole image")
+
+            self.axAnalysis_2.clear()
+            imm2 = self.axAnalysis_2.imshow(np.flipud(np.nansum(treated_images[:,ind - 8:ind + 8,:], axis=(0, 1)).T),
+                                           extent=[parameter1[0], parameter1[-1], parameter2[0],
+                                                   parameter2[-1]], aspect='auto')
+            cbar2 = self.figrAnalysis.colorbar(imm2, ax=self.axAnalysis_2)
+            self.axAnalysis_2.set_xlabel("Lens position (mm)")
+            self.axAnalysis_2.set_ylabel("Power (W)")
+            self.axAnalysis_2.set_title("Yield: H {}".format(har))
+
+            self.figrAnalysis.tight_layout()
+            self.canvas_results.draw()
+            cbar1.remove()
+            cbar2.remove()
+
+        elif scan_type == 1:
+            self.axAnalysis_1.clear()
+            self.axAnalysis_1.plot(parameter2, np.nansum(treated_images, axis=(0, 1)).ravel())
+            self.axAnalysis_1.set_xlabel("Power (W)")
+            self.axAnalysis_1.set_ylabel("Total signal")
+            self.axAnalysis_1.set_title("Yield: whole image")
+
+            self.axAnalysis_2.clear()
+            self.axAnalysis_2.plot(parameter2, np.nansum(treated_images[:,ind-8:ind+8,:], axis=(0, 1)).ravel())
+            self.axAnalysis_2.set_xlabel("Power (W)")
+            self.axAnalysis_2.set_ylabel("Total signal")
+            self.axAnalysis_2.set_title("Yield: H {}".format(har))
+
+            self.figrAnalysis.tight_layout()
+            self.canvas_results.draw()
+        elif scan_type == 2:
+            self.axAnalysis_1.clear()
+            self.axAnalysis_1.plot(parameter1, np.nansum(treated_images, axis=(0, 1)).ravel())
+            self.axAnalysis_1.set_xlabel("Lens position (mm)")
+            self.axAnalysis_1.set_ylabel("Total signal")
+            self.axAnalysis_1.set_title("Yield: whole image")
+
+            self.axAnalysis_2.clear()
+            self.axAnalysis_2.plot(parameter1, np.nansum(treated_images[:, ind - 8:ind + 8, :], axis=(0, 1)).ravel())
+            self.axAnalysis_2.set_xlabel("Lens position (mm)")
+            self.axAnalysis_2.set_ylabel("Total signal")
+            self.axAnalysis_2.set_title("Yield: H {}".format(har))
+
+            divs = np.zeros_like(parameter1)
+            for ind_pos, pos in enumerate(parameter1):
+                x_data = np.arange(0, 512)
+                y_data = np.nansum(treated_images[:, ind-8:ind+8,ind_pos], axis = 1)
+                try:
+                    A_fit, mu_fit, sigma_fit, B_fit = help.fit_gaussian(x_data,y_data)
+                    divs[ind_pos] = sigma_fit
+                except:
+                    divs[ind_pos] = np.nan
+
+            self.axAnalysis_3.clear()
+            self.axAnalysis_3.plot(parameter1, divs)
+            self.axAnalysis_3.set_xlabel("Lens position (mm)")
+            self.axAnalysis_3.set_xlim(parameter1[0],parameter1[-1])
+            self.axAnalysis_3.set_ylim(0,200)
+
+            self.axAnalysis_3.set_ylabel("Divergence (px)")
+            self.axAnalysis_3.set_title("Div: H {}".format(har))
+
+            self.figrAnalysis.tight_layout()
+            self.canvas_results.draw()
 
     def measure_all(self):
         print("yay i made it into the measure all function")

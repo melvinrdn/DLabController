@@ -8,6 +8,8 @@ from scipy.interpolate import interp1d
 import cv2
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
+from scipy.optimize import curve_fit
+
 
 me = 9.1e-31
 h = 6.62607015e-34
@@ -150,3 +152,16 @@ def treat_image_new(image_old, energy_axis, x1, x2, y1, y2, bg, shear_parameter=
     image_new = interp_func(correct_E_axis)
     #image_new = cutted_image
     return correct_E_axis, image_new
+
+
+# Define the Gaussian function
+def gaussian(x, A, mu, sigma, B):
+    return A * np.exp(-(x - mu)**2 / (2 * sigma**2)) + B
+
+
+def fit_gaussian(x_data,y_data):
+    initial_guess = [np.max(y_data), np.argmax(y_data), 20, 0]  # Initial guess for parameters [A, mu, sigma]
+    params, covariance = curve_fit(gaussian, x_data, y_data, p0=initial_guess)
+    # Extract the fitted parameters
+    A_fit, mu_fit, sigma_fit, B_fit = params
+    return A_fit, mu_fit, sigma_fit, B_fit
