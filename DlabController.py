@@ -5,14 +5,13 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 
 import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
+from diagnostic_board import diagnostic_board
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from diagnostic_board import diagnostic_board
 
 print('Done')
 
@@ -30,12 +29,12 @@ class DLabController(object):
 
         self.main_win = parent
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
-
         self.main_win.title('D-Lab Controller - Main Interface')
+        self.main_win.geometry("1210x880")
+        self.main_win.resizable(False, False)
+
         self.style = ttk.Style()
-        self.style.configure('lefttab.TNotebook',
-                             tabposition=tk.W + tk.N,
-                             tabplacement=tk.N + tk.EW)
+        self.style.configure('lefttab.TNotebook', tabposition=tk.W + tk.N, tabplacement=tk.N + tk.EW)
 
         self.publish_window_green = None
         self.publish_window_red = None
@@ -59,8 +58,7 @@ class DLabController(object):
         self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
         self.frm_bottom_side_panel = ttk.Frame(self.main_win)
 
-        but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings',
-                                    command=self.save_green)
+        but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings', command=self.save_green)
         but_load_green = ttk.Button(self.frm_top_b_green, text='Load green settings', command=self.load_green)
         but_save_green.grid(row=0, sticky='ew')
         but_load_green.grid(row=1, sticky='ew')
@@ -83,7 +81,6 @@ class DLabController(object):
         self.setup_box_green(self.frm_top_green)
         self.setup_box_red(self.frm_top_red)
 
-        # Set up general structure
         self.frm_top_green.grid(row=0, column=0, sticky='nsew')
         self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
         self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
@@ -296,10 +293,9 @@ class DLabController(object):
         None
         """
         self.ax_green.clear()
-        self.ax_green.imshow(phase, cmap='bwr',
-                             interpolation='None', extent=(
-                -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
-                slm_size[0] * 8e-3 / 4 / 2))
+        self.ax_green.imshow(phase, cmap='bwr', interpolation='None', extent=(
+            -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
+            slm_size[0] * 8e-3 / 4 / 2))
 
         self.ax_green.set_xlabel('y (wL)')
         self.ax_green.set_ylabel('x (wL)')
@@ -323,10 +319,9 @@ class DLabController(object):
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase, cmap='bwr',
-                           interpolation='None', extent=(
-                -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
-                slm_size[0] * 8e-3 / 4 / 2))
+        self.ax_red.imshow(phase, cmap='bwr', interpolation='None', extent=(
+            -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
+            slm_size[0] * 8e-3 / 4 / 2))
         self.ax_red.set_xlabel('y (wL)')
         self.ax_red.set_ylabel('x (wL)')
         self.ax_red.figure.tight_layout()
@@ -513,18 +508,13 @@ class DLabController(object):
         """
         Exit the program.
 
-        This function saves the last settings, closes the publication window,
-        and destroys the main window.
-
         Returns
         -------
         None
         """
         self.publish_window_closed()
         self.feedback_win = None
-        self.andor_camera = None
-        self.camera_win = None
-        self.pike_camera_win = None
+        self.diagnostic_board_win = None
         self.main_win.destroy()
 
 
