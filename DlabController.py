@@ -16,7 +16,7 @@ from ressources.slm_infos import slm_size, bit_depth
 print('Done')
 
 
-class DLabController(object):
+class DLabController:
     """
     A class for controlling the Dlab hardware
     """

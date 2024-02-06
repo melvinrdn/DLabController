@@ -1,5 +1,7 @@
 import datetime
 import threading
+import time
+import csv
 import tkinter as tk
 from tkinter import ttk
 
@@ -12,23 +14,27 @@ from scipy.optimize import curve_fit
 
 import diagnostic_board.focus_diagnostic as dh
 from diagnostic_board.beam_treatment_functions import process_image
-from drivers import gxipy_driver as gx
+import diagnostic_board.phase_retrieval as pr
 from drivers.thorlabs_apt_driver import core as apt
+from drivers import gxipy_driver as gx
 
-
-class DiagnosticBoard(object):
+class DiagnosticBoard:
     def __init__(self, parent):
         self.cam = None
         self.roi = None
-        self.wavelength = None
+        self.wavelength = 1030e-9
 
-        self.initial_roi = (0, 1080, 0, 1440)
-        self.default_zoom_green = (0, 1080, 0, 1440)
-        self.default_zoom_red = (0, 1080, 0, 1440)
+        self.initial_roi = (0, 600, 0, 400)
+        self.current_roi = self.initial_roi
+        self.roi_rectangle = None
+        self.default_zoom_green = (0, 600, 0, 400)
+        self.default_zoom_red = (0, 600, 0, 400)
 
         self.parent = parent
         self.lens_green = self.parent.phase_refs_green[1]
         self.lens_red = self.parent.phase_refs_red[1]
+
+        self.C = None
 
         self.win = tk.Toplevel()
 
@@ -42,6 +48,7 @@ class DiagnosticBoard(object):
         frm_wavelength = ttk.LabelFrame(self.frm_main_settings, text="Wavelength presets")
         frm_controls = ttk.LabelFrame(self.frm_main_settings, text="Camera settings")
         frm_stage = ttk.LabelFrame(self.frm_main_settings, text="Stage settings")
+        self.frm_scan_settings = ttk.LabelFrame(self.frm_main_settings, text="Scan settings")
 
         self.frm_notebook_diagnostics = ttk.Notebook(self.win)
         self.frm_m2_diagnostics = ttk.Frame(self.frm_notebook_diagnostics)
@@ -50,32 +57,66 @@ class DiagnosticBoard(object):
         self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
         self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
 
-        self.frm_scan_settings = ttk.LabelFrame(self.frm_m2_diagnostics, text="Scan settings")
+        self.frm_m2_parameters = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Parameters")
         self.frm_m2_plot = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Plot")
 
-        self.frm_pr_settings = ttk.LabelFrame(self.frm_phase_retrieval, text="PR settings")
+        self.frm_notebook_phase_retrieval = ttk.Notebook(self.frm_phase_retrieval)
+        self.frm_pr_settings = ttk.Frame(self.frm_notebook_phase_retrieval)
+        self.frm_beam_profile_settings = ttk.Frame(self.frm_notebook_phase_retrieval)
+        self.frm_notebook_phase_retrieval.add(self.frm_pr_settings, text='PR settings')
+        self.frm_notebook_phase_retrieval.add(self.frm_beam_profile_settings, text="Beam profile settings")
+        self.frm_notebook_phase_retrieval.grid(row=0, column=0, sticky='nsew')
+
+        self.frm_notebook_phase_retrieval_plots = ttk.Notebook(self.frm_phase_retrieval)
+        self.frm_pr_plot_reconstruction = ttk.Frame(self.frm_notebook_phase_retrieval_plots)
+        self.frm_pr_plot_correction = ttk.Frame(self.frm_notebook_phase_retrieval_plots)
+        self.frm_notebook_phase_retrieval_plots.add(self.frm_pr_plot_reconstruction, text="PR - Reconstruction")
+        self.frm_notebook_phase_retrieval_plots.add(self.frm_pr_plot_correction, text='PR - Correction')
+        self.frm_notebook_phase_retrieval_plots.grid(row=1, column=0, sticky='nsew')
 
         self.frm_cam.grid(row=0, column=0, sticky='nsew')
         self.frm_main_settings.grid(row=0, column=1, sticky='nsew')
         frm_wavelength.grid(row=0, column=0, sticky='nsew')
         frm_controls.grid(row=1, column=0, sticky='nsew')
         frm_stage.grid(row=2, column=0, sticky='nsew')
+        self.frm_scan_settings.grid(row=3, column=0, sticky='nsew')
 
-        self.frm_scan_settings.grid(row=0, column=0, sticky='nsew')
+        self.frm_m2_parameters.grid(row=0, column=0, sticky='nsew')
         self.frm_m2_plot.grid(row=1, column=0, sticky='nsew')
 
-        self.frm_pr_settings.grid(row=0, column=0, sticky='nsew')
-
         lbl_method_choice = tk.Label(self.frm_pr_settings, text='Method chosen :')
-        self.strvar_method_choice = tk.StringVar(self.frm_phase_retrieval, 'Vortex')
+        self.strvar_method_choice = tk.StringVar(self.frm_phase_retrieval, 'Gerchberg-Saxton')
         self.cbox_method_choice = ttk.Combobox(self.frm_pr_settings, textvariable=self.strvar_method_choice)
         self.cbox_method_choice.bind("<<ComboboxSelected>>", self.change_method)
         self.cbox_method_choice['values'] = ('Vortex', 'Gerchberg-Saxton')
         lbl_method_choice.grid(row=0, column=0, sticky='nsew')
         self.cbox_method_choice.grid(row=0, column=1, sticky='nsew')
+        self.run_pr = tk.Button(self.frm_pr_settings, text='Run PR', command=self.run_phase_retrieval)
+        self.run_pr.grid(row=0, column=2)
 
-        sizefactor = 1
-        self.figr = Figure(figsize=(6 * sizefactor, 4 * sizefactor), dpi=100)
+        self.send_to_slm = tk.Button(self.frm_pr_settings, text='Send correction to SLM ', command=self.send_correction_to_SLM)
+        self.send_to_slm.grid(row=0, column=3)
+
+        self.open_beam_profile = tk.Button(self.frm_beam_profile_settings, text='Open beam profile ', command=self.open_beam_profile)
+        self.open_beam_profile.grid(row=0, column=0)
+
+        self.figr_pr = Figure(figsize=(6, 4), dpi=100)
+        self.axs_pr = self.figr_pr.subplots(2, 2)
+        self.img_pr = FigureCanvasTkAgg(self.figr_pr, self.frm_pr_plot_reconstruction)
+        self.tk_widget_pr = self.img_pr.get_tk_widget()
+        self.tk_widget_pr.grid(row=0, column=0, sticky='nsew')
+        self.img_pr.draw()
+        self.axs_blit_pr = self.figr_pr.canvas.copy_from_bbox(self.axs_pr[0, 0].bbox)
+
+        self.figr_pr_corr = Figure(figsize=(6, 4), dpi=100)
+        self.axs_pr_corr = self.figr_pr_corr.subplots(1, 2)
+        self.img_pr_corr = FigureCanvasTkAgg(self.figr_pr_corr, self.frm_pr_plot_correction)
+        self.tk_widget_pr_corr = self.img_pr_corr.get_tk_widget()
+        self.tk_widget_pr_corr.grid(row=0, column=0, sticky='nsew')
+        self.img_pr_corr.draw()
+        self.axs_blit_pr_corr = self.figr_pr_corr.canvas.copy_from_bbox(self.axs_pr_corr[0].bbox)
+
+        self.figr = Figure(figsize=(6, 4), dpi=100)
         self.ax1r = self.figr.add_subplot(111)
         self.ax1r.grid()
         self.figr.tight_layout()
@@ -86,6 +127,18 @@ class DiagnosticBoard(object):
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
 
+        lbl_max_iter = tk.Label(self.frm_pr_settings, text="Max iteration")
+        self.var_max_iter = tk.StringVar(self.win, value="200")
+        self.ent_max_iter = tk.Entry(self.frm_pr_settings, textvariable=self.var_max_iter)
+        lbl_max_iter.grid(row=1, column=0)
+        self.ent_max_iter.grid(row=1, column=1)
+
+        lbl_tolerance = tk.Label(self.frm_pr_settings, text="Tolerance")
+        self.var_tolerance = tk.StringVar(self.win, value="1e-7")
+        self.ent_tolerance = tk.Entry(self.frm_pr_settings, textvariable=self.var_tolerance)
+        lbl_tolerance.grid(row=2, column=0)
+        self.ent_tolerance.grid(row=2, column=1)
+
         lbl_daheng_stage_from = tk.Label(self.frm_scan_settings, text="From")
         lbl_daheng_stage_to = tk.Label(self.frm_scan_settings, text="To")
         lbl_daheng_stage_steps = tk.Label(self.frm_scan_settings, text="Steps")
@@ -93,46 +146,53 @@ class DiagnosticBoard(object):
         lbl_daheng_stage_to.grid(row=0, column=1)
         lbl_daheng_stage_steps.grid(row=0, column=2)
 
-        self.var_daheng_stage_from = tk.StringVar(self.win, value="6")
-        self.ent_daheng_stage_from = tk.Entry(self.frm_scan_settings, textvariable=self.var_daheng_stage_from, width=5)
-        self.ent_daheng_stage_from.grid(row=1, column=0)
+        lbl_comment = tk.Label(self.frm_scan_settings, text="Comment:")
+        self.strvar_comment = tk.StringVar(self.win, '')
+        self.ent_comment = tk.Entry(self.frm_scan_settings, validate='none',textvariable=self.strvar_comment,
+                                            width=5)
 
-        self.var_daheng_stage_to = tk.StringVar(self.win, value="12")
+        lbl_comment.grid(row=0, column=3, sticky='nsew')
+        self.ent_comment.grid(row=1, column=3, sticky='nsew')
+
+        self.var_daheng_stage_from = tk.StringVar(self.win, value="0")
+        self.ent_daheng_stage_from = tk.Entry(self.frm_scan_settings, textvariable=self.var_daheng_stage_from, width=5)
+        self.ent_daheng_stage_from.grid(row=1, column=0, sticky='nsew')
+
+        self.var_daheng_stage_to = tk.StringVar(self.win, value="14")
         self.ent_daheng_stage_to = tk.Entry(self.frm_scan_settings, textvariable=self.var_daheng_stage_to,
                                             width=5)
-        self.ent_daheng_stage_to.grid(row=1, column=1)
+        self.ent_daheng_stage_to.grid(row=1, column=1, sticky='nsew')
 
-        self.var_daheng_stage_steps = tk.StringVar(self.win, value="10")
+        self.var_daheng_stage_steps = tk.StringVar(self.win, value="15")
         self.ent_daheng_stage_steps = tk.Entry(self.frm_scan_settings,
                                                textvariable=self.var_daheng_stage_steps,
                                                width=5)
-        self.ent_daheng_stage_steps.grid(row=1, column=2)
+        self.ent_daheng_stage_steps.grid(row=1, column=2, sticky='nsew')
 
         self.but_scan_daheng = tk.Button(self.frm_scan_settings, text="Stage scan",
                                          command=self.scan_daheng_thread)
-        self.but_scan_daheng.grid(row=1, column=3)
+        self.but_scan_daheng.grid(row=1, column=4, sticky='nsew')
 
-        self.open_h5_file = tk.Button(self.frm_scan_settings, text='Open h5 file', command=self.open_h5_file)
-        self.open_h5_file.grid(row=1, column=4)
+        self.open_h5_file = tk.Button(self.frm_m2_parameters, text='Open h5 file', command=self.open_h5_file)
+        self.open_h5_file.grid(row=0, column=0, sticky='nsew')
 
         frm_cam_but = ttk.Frame(frm_controls)
         frm_cam_but_set = ttk.Frame(frm_cam_but)
 
-        self.str_wavelength = tk.StringVar(self.win, "Nothing")
+        self.str_wavelength = tk.StringVar(self.win, "Red")
         self.rb_red = tk.Radiobutton(frm_wavelength, variable=self.str_wavelength, value="Red", text="Red",
                                      command=self.wavelength_presets)
+        self.rb_red.select()
         self.rb_green = tk.Radiobutton(frm_wavelength, variable=self.str_wavelength, value="Green", text="Green",
                                        command=self.wavelength_presets)
 
-        self.rb_red.grid(row=0, column=0)
-        self.rb_green.grid(row=0, column=1)
+        self.rb_red.grid(row=0, column=0, sticky='nsew')
+        self.rb_green.grid(row=0, column=1, sticky='nsew')
 
         self.but_cam_init = tk.Button(frm_cam_but, text='Initialize', command=self.initialize_daheng)
         self.but_cam_disconnect = tk.Button(frm_cam_but, text='Disconnect', command=self.close_daheng)
         self.but_cam_live = tk.Button(frm_cam_but, text='Live', command=self.live_daheng_thread)
         self.but_cam_single = tk.Button(frm_cam_but, text='Single', command=self.single_daheng_thread)
-        but_roi_select = ttk.Button(frm_cam_but_set, text='Select ROI', command=self.select_roi)
-        but_roi_reset = ttk.Button(frm_cam_but_set, text='Reset ROI', command=self.reset_roi)
 
         lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
         self.strvar_cam_ind = tk.StringVar(self.win, '2')
@@ -183,9 +243,6 @@ class DiagnosticBoard(object):
         self.ent_roi_y1.grid(row=3, column=1, padx=(0, 10))
         lbl_roi_y2.grid(row=3, column=2, sticky='nsew')
         self.ent_roi_y2.grid(row=3, column=3, padx=(0, 10))
-
-        but_roi_select.grid(row=7, column=2, sticky='nsew')
-        but_roi_reset.grid(row=7, column=3, sticky='nsew')
 
         lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
         self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
@@ -247,26 +304,252 @@ class DiagnosticBoard(object):
         self.img_canvas.configure(bg='grey')
         self.image = self.img_canvas.create_image(0, 0, anchor="nw")
 
+        self.img_canvas_param = tk.Frame(self.frm_cam)
+        self.img_canvas_param.grid(row=1, sticky='nsew')
+        self.pos_label = tk.Label(self.img_canvas_param, text="Crosshair position: x=0, y=0")
+        self.pos_label.grid(row=0,column=0, sticky='nsew')
+        self.crosshair_status_label = tk.Label(self.img_canvas_param, text="Crosshair: Shown")
+        self.crosshair_status_label.grid(row=0,column=1, sticky='nsew')
+
+        self.horizontal_line = self.img_canvas.create_line(0, 0, 600, 0, fill='red', dash=(4, 2))
+        self.vertical_line = self.img_canvas.create_line(0, 0, 0, 400, fill='red', dash=(4, 2))
+
+        self.img_canvas.bind('<Motion>', self.update_crosshair)
+        self.img_canvas.bind('<Button-1>', self.start_roi_selection)
+        self.img_canvas.bind('<B1-Motion>', self.update_roi_selection)
+        self.img_canvas.bind('<ButtonRelease-1>', self.end_roi_selection)
+        self.img_canvas.bind('<Button-3>', self.toggle_crosshair_lock)
+        self.win.bind('<r>', self.reset_roi)
+        self.win.bind('<c>', self.toggle_crosshair_visibility)
+
+        self.crosshair_visible = True
+        self.crosshair_locked = False
+
         frm_bottom = ttk.Frame(self.win)
         frm_bottom.grid(row=3, column=0, columnspan=2)
         but_exit = ttk.Button(frm_bottom, text='Exit', command=self.on_close)
         but_exit.grid(row=3, column=0, padx=5, pady=5, ipadx=5, ipady=5)
 
-        self.reset_roi()
-
-        self.daheng_active = False
         self.daheng_camera = None
         self.daheng_is_live = False
         self.current_daheng_image = None
         self.daheng_zoom = None
         self.WPcam = None
 
-        self.autolog_images = 'C:/data/' + str(datetime.date.today()) + '/' + str(
-            datetime.date.today()) + '-' + 'auto-log-images.txt'
-        self.g = open(self.autolog_images, "a+")
+        self.autolog_camera_focus = 'C:/data/' + str(datetime.date.today()) + '/' + str(
+            datetime.date.today()) + '-' + 'auto-log-camera_focus.txt'
+        self.autolog_cam = open(self.autolog_camera_focus, "a+")
 
-    def foo(self):
-        print('oui')
+    def toggle_crosshair_lock(self, event):
+        self.crosshair_locked = not self.crosshair_locked
+        if not self.crosshair_locked:
+            self.update_crosshair_position(event.x, event.y)
+
+    def update_crosshair(self, event):
+        if not self.crosshair_locked:
+            self.update_crosshair_position(event.x, event.y)
+
+    def update_crosshair_position(self, x, y):
+        self.img_canvas.coords(self.horizontal_line, 0, y, self.img_canvas.winfo_width(), y)
+        self.img_canvas.coords(self.vertical_line, x, 0, x, self.img_canvas.winfo_height())
+        self.pos_label.config(text=f"Position: x={x:.2f}, y={y:.2f}")
+
+    def toggle_crosshair_visibility(self, event):
+        self.crosshair_visible = not self.crosshair_visible
+        if self.crosshair_visible:
+            self.img_canvas.itemconfig(self.horizontal_line, state='normal')
+            self.img_canvas.itemconfig(self.vertical_line, state='normal')
+            self.crosshair_status_label.config(text="Crosshair: Shown")
+        else:
+            self.img_canvas.itemconfig(self.horizontal_line, state='hidden')
+            self.img_canvas.itemconfig(self.vertical_line, state='hidden')
+            self.crosshair_status_label.config(text="Crosshair: Hidden")
+
+    def send_correction_to_SLM(self):
+        #TODO Recuperer C, interpoler, envoyer sur SLM. Actualiser sur l'interface principale
+        # Essayer de save C as csv et interpoler apres
+        filename='output_test.csv'
+        with open(filename, 'w',newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerows(self.C)
+
+        return 0
+
+    def run_phase_retrieval(self):
+
+        max_iter = int(self.ent_max_iter.get())
+        tolerance = float(self.ent_tolerance.get())
+
+        factor_plot = 2
+        factor_slm = 1.6
+        with_vortex = 1
+
+        f = 25e-2
+        w_L = 4.0e-3
+        x_slm_max = 5 * w_L
+
+        method = self.strvar_method_choice.get()
+        if method == 'Gerchberg-Saxton':
+            on = 0
+        elif method == 'Vortex':
+            on = 1
+        else:
+            print('Please select a PR method')
+
+        if self.wavelength is None:
+            print('Please select a wavelength')
+        else:
+            lambda_0 = self.wavelength
+
+        beam_param = [lambda_0, f, w_L]
+
+        y_slm_max = x_slm_max
+        N_x = 2 ** 7
+        N_y = N_x
+        slm_param = [x_slm_max, y_slm_max, N_x, N_y]
+
+        x_slm, y_slm, extent_slm = pr.define_slm_plan(slm_param, print_option=False)
+        intensity_slm = pr.gaussian_2D(x_slm, y_slm, w_L)
+        phase_vortex = pr.create_phase_vortex(x_slm, y_slm, w_L, vortex_order=1) * on
+        E_slm = np.sqrt(intensity_slm) * np.exp(1j * phase_vortex)
+
+        if on == 1:
+            path = "./diagnostic_board/red_vortex_for_vgs_demo.bmp"
+        else:
+            path = "./diagnostic_board/red_focus_for_gs_demo.bmp"
+
+        #image_array = np.array(Image.open(path))
+        image_focus, som_x, som_y = process_image(self.image_array)
+        image_focus = pr.zero_padding_to_second(image_focus, E_slm)
+
+        dx = 3.45e-6
+        x_focus = np.arange(-N_x // 2, N_x // 2) * dx
+        y_focus = x_focus
+        extent_focus = [x_focus[0], x_focus[-1], y_focus[0], y_focus[-1]]
+
+        intensity_slm_zp = pr.zero_padding_2N(abs(E_slm) ** 2)
+
+        E_focus = np.sqrt(image_focus)
+        som_x_focus, som_y_focus = pr.get_som(abs(E_focus) ** 2, dx)
+        som_max = np.max([som_x_focus, som_y_focus])
+        E_focus_cut = pr.cut_focus(E_focus, x_focus, y_focus, som_max, factor=2)
+
+        # Create vortex
+        phase_vortex_pr = pr.create_phase_vortex(x_slm, y_slm, w_L, 1) * on
+        # Zero padding
+        phase_vortex_pr_zp = pr.zero_padding_2N(phase_vortex_pr)
+        E_focus_cut_zp = pr.zero_padding_2N(E_focus_cut)
+        # Initial guess for phase retrieval
+        E_slm_pr_zp = np.sqrt(intensity_slm_zp) * np.exp(1j * phase_vortex_pr_zp)
+
+        corr_list = []
+
+        t_start = time.time()
+        for i in np.linspace(0, max_iter - 1, max_iter):
+            print(f'{((i + 1) / max_iter) * 100:.1f} %')
+            # Propagation to the focus
+            E_focus_pr_zp = pr.fft2c(E_slm_pr_zp)
+            corr_temp = abs(np.corrcoef(E_focus_pr_zp.flatten(), E_focus_cut_zp.flatten())[0, 1])
+            corr_list.append(corr_temp)
+            print(f"Pearson coeff: {corr_temp}")
+            # Impose amplitude of the target (ugly vortex)
+            A = abs(E_focus_cut_zp) * np.exp(1j * np.angle(E_focus_pr_zp))
+            # Back propagation to the slm
+            B = pr.ifft2c(A)
+            # Impose amplitude of the gaussian on the SLM + the phase retrieved
+            E_slm_pr_zp = np.sqrt(intensity_slm_zp) * np.exp(1j * np.angle(B))
+
+            if i > 0 and abs((corr_list[-1] - corr_list[-2]) / corr_list[-2]) < tolerance:
+                print('-----')
+                print(f"Converged with {int(i + 1)} iterations")
+                break
+
+        t_end = time.time()
+        print(f"Loop time: {t_end - t_start:.5f} s")
+        print('-----')
+
+        # Clip the array into original form
+        E_slm_pr = pr.clip_to_original_size(E_slm_pr_zp, E_focus_cut)
+        E_focus_pr = pr.clip_to_original_size(E_focus_pr_zp, E_focus_cut)
+
+        # Calculate the correction pattern
+        H = np.angle(E_slm_pr)  # Distorted phase pattern on the slm
+        C = H - phase_vortex_pr * with_vortex  # Correction to apply on the slm for the gaussian beam if we come with a vortex
+        self.C = (C + np.pi) % (2 * np.pi) - np.pi  # Correction pattern wrapped
+
+        E_slm_fourier_zp = pr.ifft2c(E_focus_cut_zp * np.exp(1j * np.angle(E_focus_pr_zp)))
+        # Padding of the E_slm_corrected before propagation
+        E_slm_corrected_zp = E_slm_fourier_zp * np.exp(-1j * pr.zero_padding_2N(C)) * np.exp(-1j * phase_vortex_pr_zp)
+        # Propagation
+        E_focus_corrected_zp = pr.fft2c(E_slm_corrected_zp)
+        # Clip to original size
+        E_focus_corrected = pr.clip_to_original_size(E_focus_corrected_zp, E_focus_cut)
+
+        # Cutting the arrays
+        C = pr.cut_slm(C, x_slm, y_slm, beam_param, factor=factor_slm)
+        E_focus_cut = pr.cut_focus(E_focus, x_focus, y_focus, som_max, factor=factor_plot)
+        E_focus_pr_cut = pr.cut_focus(E_focus_pr, x_focus, y_focus, som_max, factor=factor_plot)
+        E_focus_corrected_cut = pr.cut_focus(E_focus_corrected, x_focus, y_focus, som_max, factor=factor_plot)
+
+        def add_colorbar(ax, im, cmap='turbo'):
+            cbar = ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04, cmap=cmap)
+
+        # TODO fix plot (figures must be cleared before plotting another one)
+
+        im1 = self.axs_pr[0, 0].imshow(abs(E_focus_cut) ** 2, extent=extent_focus, cmap='turbo')
+        self.axs_pr[0, 0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[0, 0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[0, 0].set_ylabel('y [m]')
+        self.axs_pr[0, 0].set_xlabel('x [m]')
+        self.axs_pr[0, 0].set_title('$|E(x,y)|^2$ Measured')
+        add_colorbar(self.axs_pr[0, 0], im1, cmap='turbo')
+
+        im2 = self.axs_pr[0, 1].imshow(abs(E_focus_pr_cut) ** 2, extent=extent_focus, cmap='turbo')
+        self.axs_pr[0, 1].set_xlim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[0, 1].set_ylim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[0, 1].set_ylabel('y [m]')
+        self.axs_pr[0, 1].set_xlabel('x [m]')
+        self.axs_pr[0, 1].set_title('$|E(x,y)|^2$ Retrieved')
+        add_colorbar(self.axs_pr[0, 1], im2, cmap='turbo')
+
+        im3 = self.axs_pr[1, 0].imshow(np.angle(E_focus_pr_cut), extent=extent_focus, cmap='hsv')
+        self.axs_pr[1, 0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[1, 0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[1, 0].set_ylabel('y [m]')
+        self.axs_pr[1, 0].set_xlabel('x [m]')
+        self.axs_pr[1, 0].set_title('$W(x,y)$ Retrieved')
+        add_colorbar(self.axs_pr[1, 0], im3, cmap='bwr')
+
+        self.axs_pr[1, 1].imshow(pr.complex2rgb(E_focus_pr_cut), extent=extent_focus, cmap='hsv')
+        self.axs_pr[1, 1].set_xlim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[1, 1].set_ylim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr[1, 1].set_ylabel('y [m]')
+        self.axs_pr[1, 1].set_xlabel('x [m]')
+        self.axs_pr[1, 1].set_title('$|E(x,y)|e^{iW(x,y)} $ Retrieved')
+        add_colorbar(self.axs_pr[1, 1], im3, cmap='hsv')
+
+        self.figr_pr.tight_layout()
+        self.img_pr.draw()
+
+        im4 = self.axs_pr_corr[1].imshow(C, extent=extent_slm, cmap='bwr')
+        print(extent_slm)
+        self.axs_pr_corr[1].set_ylim((-4.8e-3, 4.8e-3))
+        self.axs_pr_corr[1].set_xlim((-7.68e-3, 7.68e-3))
+        self.axs_pr_corr[1].set_ylabel('y [m]')
+        self.axs_pr_corr[1].set_xlabel('x [m]')
+        self.axs_pr_corr[1].set_title('Phase on SLM')
+        add_colorbar(self.axs_pr_corr[1], im4, cmap='bwr')
+
+        self.axs_pr_corr[0].imshow(pr.complex2rgb(E_focus_corrected_cut), extent=extent_focus)
+        self.axs_pr_corr[0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr_corr[0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
+        self.axs_pr_corr[0].set_ylabel('y [m]')
+        self.axs_pr_corr[0].set_xlabel('x [m]')
+        self.axs_pr_corr[0].set_title('$|E(x,y)|e^{iW(x,y)} $ Corrected')
+        add_colorbar(self.axs_pr_corr[0], im3, cmap='hsv')
+
+        self.figr_pr_corr.tight_layout()
+        self.img_pr_corr.draw()
 
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
         def beam_quality_factor_fit(z, w0, M2, z0):
@@ -338,6 +621,16 @@ class DiagnosticBoard(object):
         except:
             print('Impossible to open the file')
 
+    def open_beam_profile(self):
+        filepath = tk.filedialog.askopenfilename()
+        try:
+            print(f'Opening {filepath}')
+            self.image_array = np.array(Image.open(filepath))
+            print('Successfully loaded')
+
+        except:
+            print('Impossible to open the file')
+
 
     def process_images_dict(self):
         processed_images = {}
@@ -371,31 +664,11 @@ class DiagnosticBoard(object):
 
     def initialize_daheng(self):
         device_manager = gx.DeviceManager()
-        index = int(self.strvar_cam_ind.get())
-        self.daheng_camera = dh.DahengCamera(index)
-        if self.daheng_camera is not None:
-            self.but_cam_init.config(fg="green")
-            self.daheng_active = True
-            self.daheng_camera.set_exposure_gain(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()))
-            print('oui')
-            return 1
-
-        else:
-            self.but_cam_init.config(fg="red")
-            print('non')
-            return 0
+        self.daheng_camera = dh.DahengCamera(int(self.strvar_cam_ind.get()))
 
     def close_daheng(self):
-        if self.daheng_camera is not None:
-            self.but_cam_disconnect.config(fg="green")
-            self.daheng_active = False
-            self.daheng_camera = None
-            print('Camera disconnected')
-            return 1
-        else:
-            self.but_cam_disconnect.config(fg="red")
-            print('Camera already disconnected')
-            return 0
+        self.daheng_camera.close_daheng()
+        self.daheng_camera = None
 
     def single_daheng_thread(self):
         self.daheng_thread = threading.Thread(target=self.take_single_image_daheng)
@@ -436,53 +709,28 @@ class DiagnosticBoard(object):
     def save_daheng_scans(self, res, pos):
         nr = self.get_start_image_images()
 
+        self.autolog_cam.write("#" + self.ent_comment.get() + "\n")
+
         data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(
-            datetime.date.today()) + '-focus-images-' + str(
+            datetime.date.today()) + '-camera_focus-' + str(
             int(nr)) + '.h5'
 
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        try:
-            if self.parent.vars_red[1].get() == 1:
-                rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
-            else:
-                rl = 0
-        except:
-            rl = np.nan
-
-        try:
-            if self.parent.vars_green[1].get() == 1:
-                gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
-            else:
-                gl = 0
-        except:
-            gl = np.nan
 
         log_entry = str(int(nr)) + '\t' + str(pos[0]) + '\t' + str(pos[-1]) + '\t' + str(
-            int(np.size(pos))) + '\t' + str(gl) + '\t' + str(rl) + '\t' + timestamp + '\n'
-        self.g.write(log_entry)
+            int(np.size(pos))) + '\t' + str(int(self.strvar_cam_exp.get())) + '\t' + str(int(self.strvar_cam_gain.get())) + '\t' + str(int(self.strvar_cam_avg.get())) + '\t' + timestamp + '\n'
+        self.autolog_cam.write(log_entry)
         hf = h5py.File(data_filename, 'w')
         hf.create_dataset('images', data=res)
         hf.create_dataset('positions', data=pos)
-        hf.create_dataset('green_lens', data=gl)
-        hf.create_dataset('red_lens', data=rl)
+        hf.create_dataset('exposure', data=int(self.strvar_cam_exp.get()))
+        hf.create_dataset('gain', data=int(self.strvar_cam_gain.get()))
+        hf.create_dataset('average', data=int(self.strvar_cam_avg.get()))
         hf.close()
 
     def get_start_image_images(self):
-        """
-        Gets the index of the starting image.
-
-        Returns
-        -------
-        int
-            The index of the starting image.
-
-        Raises
-        ------
-        Exception
-            If there is an error in retrieving the starting image index.
-        """
-        self.g.seek(0)
-        lines = np.loadtxt(self.autolog_images, comments="#", delimiter="\t", unpack=False, usecols=(0,))
+        self.autolog_cam.seek(0)
+        lines = np.loadtxt(self.autolog_camera_focus, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
             try:
                 start_image = lines[-1] + 1
@@ -491,30 +739,36 @@ class DiagnosticBoard(object):
             print("The last image had index " + str(int(start_image - 1)))
         else:
             start_image = 0
-        # self.f.close()
         return start_image
 
     def update_daheng_live_button(self):
         if self.daheng_is_live == True:
-            self.but_cam_live.config(fg="green", relief='sunken')
+            self.but_cam_live.config(relief='sunken')
+            print('Live view on')
         else:
-            self.but_cam_live.config(fg="red", relief='raised')
+            self.but_cam_live.config(relief='raised')
+            print('Live view off')
 
     def live_daheng(self):
-        while self.daheng_is_live:
-            im = self.daheng_camera.take_image(int(self.strvar_cam_avg.get()))
-            self.current_daheng_image = im
-            self.plot_daheng(im)
+        if self.daheng_camera is not None:
+            while self.daheng_is_live:
+                im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()), int(self.strvar_cam_avg.get()))
+                self.current_daheng_image = im
+                self.plot_daheng(im)
+        else:
+            self.daheng_is_live == False
+            print('self.daheng_camera is None')
 
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
-            im = self.daheng_camera.take_image(int(self.strvar_cam_avg.get()))
+            im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()), int(self.strvar_cam_avg.get()))
+            print("Single image taken")
             self.current_daheng_image = im
             self.plot_daheng(im)
-            print("Single image taken")
+        else:
+            print('self.daheng_camera is None')
 
     def plot_daheng(self, im):
-
         if self.daheng_zoom is not None:
             im = im[int(self.daheng_zoom[0]):int(self.daheng_zoom[1]),
                  int(self.daheng_zoom[2]):int(self.daheng_zoom[3])]
@@ -525,19 +779,37 @@ class DiagnosticBoard(object):
         self.img_canvas.itemconfig(self.image, image=photo)
         self.img_canvas.image = photo
 
-    def select_roi(self):
+    def start_roi_selection(self, event):
+        if self.roi_rectangle:
+            self.img_canvas.delete(self.roi_rectangle)
+        self.roi_start = (event.x, event.y)
+        self.roi_rectangle = self.img_canvas.create_rectangle(self.roi_start[0], self.roi_start[1],
+                                                              self.roi_start[0], self.roi_start[1],
+                                                              outline='blue', dash=(4, 2))
+    def update_roi_selection(self, event):
+        self.img_canvas.coords(self.roi_rectangle, self.roi_start[0], self.roi_start[1], event.x, event.y)
 
-        x1 = int(self.ent_roi_x1.get())
-        x2 = int(self.ent_roi_x2.get())
-        y1 = int(self.ent_roi_y1.get())
-        y2 = int(self.ent_roi_y2.get())
+    def end_roi_selection(self, event):
+        self.roi_end = (event.x, event.y)
+        self.img_canvas.coords(self.roi_rectangle, self.roi_start[0], self.roi_start[1], self.roi_end[0], self.roi_end[1])
+        self.current_roi = (self.roi_start[1], self.roi_end[1], self.roi_start[0], self.roi_end[0])
 
-        self.daheng_zoom = (y1, y2, x1, x2)
-        print(f'ROI selected :{self.daheng_zoom}')
+        self.strvar_roi_x1.set(str(self.current_roi[2]))
+        self.strvar_roi_x2.set(str(self.current_roi[3]))
+        self.strvar_roi_y1.set(str(self.current_roi[0]))
+        self.strvar_roi_y2.set(str(self.current_roi[1]))
 
-    def reset_roi(self):
-        self.daheng_zoom = self.initial_roi
-        print(f'ROI selected :{self.daheng_zoom}')
+    def reset_roi(self, event):
+        if self.roi_rectangle:
+            self.img_canvas.delete(self.roi_rectangle)
+            self.roi_rectangle = None
+        self.current_roi = self.initial_roi
+
+        self.strvar_roi_x1.set(str(self.current_roi[2]))
+        self.strvar_roi_x2.set(str(self.current_roi[3]))
+        self.strvar_roi_y1.set(str(self.current_roi[0]))
+        self.strvar_roi_y2.set(str(self.current_roi[1]))
+
 
     def init_WPcam(self):
         try:
@@ -569,9 +841,9 @@ class DiagnosticBoard(object):
     def move_WPcam(self):
         try:
             pos = float(self.strvar_WPcam_should.get())
-            print("WPcam is moving to {}".format(np.round(pos, 2)))
+            print("WPcam is moving to {}".format(np.round(pos, 4)))
             self.WPcam.move_to(pos, True)
-            print(f"WPG moved to {str(self.WPcam.position)}")
+            print("WPcam moved to {}".format(np.round(self.WPcam.position, 4)))
             self.read_WPcam()
         except Exception as e:
             print(e)
@@ -582,8 +854,8 @@ class DiagnosticBoard(object):
             self.WPcam.disable()
             print('WPcam disconnected')
 
-
     def on_close(self):
+        self.autolog_cam.close()
         self.close_daheng()
         self.disable_motors()
         self.win.destroy()
