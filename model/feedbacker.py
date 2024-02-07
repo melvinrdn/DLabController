@@ -23,7 +23,7 @@ from pylablib.devices import Andor
 from simple_pid import PID
 import drivers.zaber_binary.zaber_binary as zb
 
-import diagnostic_board.focus_diagnostic as dh
+import diagnostic_board.daheng_camera as dh
 from diagnostic_board.beam_treatment_functions import process_image
 import drivers.avaspec_driver._avs_py as avs
 import drivers.jena_piezo.jena_piezo_V3 as jena
@@ -150,20 +150,14 @@ class Feedbacker(object):
 
         self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
 
-        # This opens the autologfile from the start! closes it on close command
         self.autolog = self.saving_folder + '-' + 'auto-log.txt'
         #self.autolog = 'C:/data/' + '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + 'auto-log.txt'
-
         self.f = open(self.autolog, "a+")
 
-        self.autolog_images = self.saving_folder + '-' + 'auto-log-images.txt'
-        #self.autolog_images = 'C:/data/' + '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + 'auto-log-images.txt'
-
-        self.g = open(self.autolog_images, "a+")
+        #self.autolog_images = self.saving_folder + '-' + 'auto-log-images.txt'
+        #self.g = open(self.autolog_images, "a+")
 
         self.autolog_slm_param_scan = self.saving_folder + '-' + 'auto-log-slm_param_scan.txt'
-        #self.autolog_slm_param_scan = 'C:/data/' + '2024-01-25-TEMP' + '/' + str(
-        #    date.today()) + '-' + 'auto-log-slm_param_scan.txt'
         self.slmps = open(self.autolog_slm_param_scan, "a+")
 
         # creating frames
@@ -723,7 +717,7 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_should)
 
-        self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83820307')
+        self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83837724')
         self.ent_mpc_wp_nr = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -5066,7 +5060,7 @@ class Feedbacker(object):
         None
         """
         self.f.close()
-        self.g.close()
+        #self.g.close()
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()

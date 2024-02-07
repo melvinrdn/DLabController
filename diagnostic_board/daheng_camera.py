@@ -31,7 +31,6 @@ class DahengCamera(object):
         if self.cam is not None:
             self.cam.ExposureTime.set(exposure)
             self.cam.Gain.set(gain)
-            #print(f'Gain: {gain}, ExposureTime: {exposure}')
 
     def take_image(self, exposure, gain, avgs):
         if self.cam is not None:

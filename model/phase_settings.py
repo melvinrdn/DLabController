@@ -4,10 +4,12 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
-gs=None
-aberration=None
 
-types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian', 'HGB'] #defines the settings that we want to have!
+gs = None
+aberration = None
+
+types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian',
+         'HGB']  # defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):
@@ -47,8 +49,6 @@ def new_type(frm_mid, typ):
         return TypeImage(frm_mid)
     elif typ == 'Holo':
         return TypeHologram(frm_mid)
-    elif typ == 'Aberr':
-        return TypeAberration(frm_mid)
     elif typ == 'Supergaussian':
         return TypeSupergaussian(frm_mid)
     elif typ == 'HGB':
@@ -551,8 +551,8 @@ class TypeBinary(BaseType):
                                  textvariable=self.strvar_phi)
         self.strvar_stripes = tk.StringVar()
         self.ent_stripes = ttk.Entry(lbl_frm, width=12, validate='all',
-                                 validatecommand=(vcmd, '%d', '%P', '%S'),
-                                 textvariable=self.strvar_stripes)
+                                     validatecommand=(vcmd, '%d', '%P', '%S'),
+                                     textvariable=self.strvar_stripes)
 
         # Setting up
         lbl_dir.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
@@ -607,16 +607,16 @@ class TypeBinary(BaseType):
             if nr > 0:
                 if direc == 'Horizontal':
                     length = slm_size[0]
-                    sublength = int(np.floor(length/nr))
-                    for i in range(0,nr):
-                        if np.mod(i,2) == 0:
-                            phase_mat[i*sublength:(i+1)*sublength,:] = phi
+                    sublength = int(np.floor(length / nr))
+                    for i in range(0, nr):
+                        if np.mod(i, 2) == 0:
+                            phase_mat[i * sublength:(i + 1) * sublength, :] = phi
                 else:
                     length = slm_size[1]
                     sublength = int(np.floor(length / nr))
                     for i in range(0, nr):
                         if np.mod(i, 2) == 0:
-                            phase_mat[:,i * sublength:(i + 1) * sublength] = phi
+                            phase_mat[:, i * sublength:(i + 1) * sublength] = phi
 
         return phase_mat
 
@@ -699,19 +699,19 @@ class TypeLens(BaseType):
 
         self.strvar_wavelength = tk.StringVar()
         self.ent_wavelength = ttk.Entry(lbl_frm, width=10, validate='all',
-                                 textvariable=self.strvar_wavelength)
+                                        textvariable=self.strvar_wavelength)
 
         self.strvar_slope = tk.StringVar()
         self.ent_slope = ttk.Entry(lbl_frm, width=10, validate='all',
-                                        textvariable=self.strvar_slope)
+                                   textvariable=self.strvar_slope)
 
         self.strvar_zero = tk.StringVar()
         self.ent_zero = ttk.Entry(lbl_frm, width=10, validate='all',
-                                   textvariable=self.strvar_zero)
+                                  textvariable=self.strvar_zero)
 
         self.strvar_focus_position = tk.StringVar()
         self.ent_focus_position = ttk.Entry(lbl_frm, width=10, validate='all',
-                                  textvariable=self.strvar_focus_position)
+                                            textvariable=self.strvar_focus_position)
 
         # setup
         lbl_ben.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
@@ -731,7 +731,7 @@ class TypeLens(BaseType):
         self.strvar_focus_position.trace_add("write", self.update_ben)
         self.strvar_ben.trace_add("write", self.update_position)
 
-    def update_ben(self,*args):
+    def update_ben(self, *args):
 
         if self.updating:
             return
@@ -741,12 +741,13 @@ class TypeLens(BaseType):
             sl = float(self.strvar_slope.get())
             zer = float(self.strvar_zero.get())
             shift = float(self.strvar_focus_position.get())
-            new_ben = zer + shift * 1/sl
-            self.strvar_ben.set(str(np.round(new_ben,3)))
+            new_ben = zer + shift * 1 / sl
+            self.strvar_ben.set(str(np.round(new_ben, 3)))
         except:
             pass
         self.updating = False
-    def update_position(self,*args):
+
+    def update_position(self, *args):
 
         if self.updating:
             return
@@ -756,8 +757,8 @@ class TypeLens(BaseType):
             sl = float(self.strvar_slope.get())
             zer = float(self.strvar_zero.get())
             bending = float(self.strvar_ben.get())
-            new_pos = sl*(bending-zer)
-            self.strvar_focus_position.set(str(np.round(new_pos,2)))
+            new_pos = sl * (bending - zer)
+            self.strvar_focus_position.set(str(np.round(new_pos, 2)))
         except:
             pass
         self.updating = False
@@ -781,7 +782,7 @@ class TypeLens(BaseType):
         else:
             print('set a wavelength')
 
-        #so it does not crash when dividing by 0 (no lens essentially)
+        # so it does not crash when dividing by 0 (no lens essentially)
         if ben != 0:
             rad_sign = np.sign(ben)
             rad = 2 / np.abs(ben)  # R=2*f
@@ -808,7 +809,8 @@ class TypeLens(BaseType):
         dict : dict
             A dictionary of the current state.
         """
-        dict = {'ben': self.ent_ben.get(), 'wavelength': self.ent_wavelength.get(), 'slope': self.ent_slope.get(), 'zeroref': self.ent_zero.get(), 'focuspos': self.ent_focus_position.get()}
+        dict = {'ben': self.ent_ben.get(), 'wavelength': self.ent_wavelength.get(), 'slope': self.ent_slope.get(),
+                'zeroref': self.ent_zero.get(), 'focuspos': self.ent_focus_position.get()}
         return dict
 
     def load_(self, dict):
@@ -828,6 +830,7 @@ class TypeLens(BaseType):
             self.strvar_focus_position.set(dict['focuspos'])
         except:
             print("You are using an old settings file")
+
 
 class TypeMultibeam(BaseType):
     """
@@ -1219,6 +1222,7 @@ class TypeMultibeam(BaseType):
         self.strvar_vis.set(dict['vis'])
         self.strvar_pxsiz.set(dict['pxsiz'])
 
+
 class TypeSupergaussian(BaseType):
     """shows vortex settings for phase"""
 
@@ -1264,7 +1268,7 @@ class TypeSupergaussian(BaseType):
         w_L = 4e-3
 
         desired_radius = coeffs
-        indices = np.where(rho <= desired_radius*w_L)
+        indices = np.where(rho <= desired_radius * w_L)
 
         p1 = np.zeros_like(X)
         p1[indices] = np.pi
@@ -1294,6 +1298,7 @@ class TypeSupergaussian(BaseType):
             A dictionary of the saved state.
         """
         self.strvars[0].set(dict['phase_radius'])
+
 
 class TypeHGB(BaseType):
     """shows vortex settings for phase"""
@@ -1340,19 +1345,17 @@ class TypeHGB(BaseType):
         w_L = 4e-3
 
         desired_radius = coeffs
-        indices_p1 = np.where(rho <= 2*desired_radius*w_L)
+        indices_p1 = np.where(rho <= 2 * desired_radius * w_L)
 
         p1 = np.zeros_like(X)
         p1[indices_p1] = np.pi
 
-
-        indices_p2 = np.where(rho <= desired_radius*w_L)
+        indices_p2 = np.where(rho <= desired_radius * w_L)
 
         p2 = np.zeros_like(X)
         p2[indices_p2] = np.pi
 
-
-        phase = (p1-p2) / (2 * np.pi) * bit_depth
+        phase = (p1 - p2) / (2 * np.pi) * bit_depth
         return phase
 
     def save_(self):
@@ -1377,6 +1380,7 @@ class TypeHGB(BaseType):
             A dictionary of the saved state.
         """
         self.strvars[0].set(dict['phase_radius_hgb'])
+
 
 class TypeVortex(BaseType):
     """shows vortex settings for phase"""
@@ -1481,7 +1485,7 @@ class TypeZernike(BaseType):
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
         self.varnames = ['z1coef', 'z2coef', 'z3coef', 'z4coef', 'z5coef',
-                         'z6coef', 'z7coef', 'z8coef', 'z9coef', 'z10coef' ]
+                         'z6coef', 'z7coef', 'z8coef', 'z9coef', 'z10coef']
         lbl_texts = ['Piston Z_00 :', 'Horizontal tilt Z_11 :', 'Vertical tilt Z_-11 :',
                      'Defocus Z_02 :', 'Vertical astigmatism Z_22 :', 'Oblique astigmatism Z_-22 :',
                      'Horizontal coma Z_13 :', 'Vertical coma Z_-13 :', 'Oblique trefoil Z_33 :',
@@ -1714,101 +1718,3 @@ class TypeHologram(BaseType):
         self.lbl_file['text'] = dict['filepath']
         self._read_file(dict['filepath'])
 
-
-class TypeAberration(BaseType):
-    """
-    A class managing the automatic correction of the wavefront aberration settings for a phase calculation.
-
-    Attributes
-    ----------
-    name : str
-        Name of the class.
-    parent : Tk object
-        The parent window for the frame.
-    frm_ : tkinter Frame object
-        A tkinter frame object representing the Aberration Correction.
-    gen_win : object or None
-        An object representing the generated Aberration Correction window.
-    img : numpy.ndarray or None
-        A numpy array representing the image of the aberration correction.
-    """
-
-    def __init__(self, parent):
-        """
-        Initialize the TypeAberration class.
-
-        Parameters
-        ----------
-        parent : Tk object
-            The parent window for the frame.
-
-        """
-        self.name = 'Aberr'
-        self.parent = parent
-        self.frm_ = ttk.Frame(self.parent)
-        self.frm_.grid(row=0, column=0, sticky='nsew')
-        lbl_frm = ttk.LabelFrame(self.frm_, text='Aberration')
-        lbl_frm.grid(row=0, column=0, sticky='ew')
-        self.gen_win = None
-        self.img = None
-
-        btn_open = ttk.Button(lbl_frm, text='Open generated aberration correction', command=self.open_file)
-        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=400, justify='left', foreground='gray')
-        lbl_act_file = ttk.Label(lbl_frm, text='Active aberration correction file:', justify='left')
-        btn_generate = ttk.Button(lbl_frm, text='Launch aberration correction generator', command=self.open_generator)
-
-        btn_open.grid(row=0)
-        lbl_act_file.grid(row=1)
-        self.lbl_file.grid(row=2)
-        btn_generate.grid(row=3)
-
-    def open_generator(self):
-        """
-        Open the aberration correction generator window if it doesn't already exist.
-
-        Returns
-        -------
-        None
-        """
-        if self.gen_win is None:
-            self.gen_win = aberration.AberrationWindow(self)
-
-    def phase(self):
-        """
-        Return the phase data based on the selected background file.
-
-        Returns
-        -------
-        phase : numpy array
-            The phase data.
-
-        """
-        if self.img is not None:
-            phase = self.img
-        else:
-            phase = np.zeros(slm_size)
-        return phase
-
-    def save_(self):
-        """
-        Save the current state of the TypeAberration object.
-
-        Returns
-        -------
-        dict : dict
-            A dictionary of the current state.
-        """
-        dict = {'filepath': self.lbl_file['text']}
-        return dict
-
-    def load_(self, dict):
-        """
-        Load a saved state for the TypeAberration object.
-
-        Parameters
-        ----------
-        dict : dict
-            A dictionary of the saved state.
-        """
-        self.lbl_file['text'] = dict['filepath']
-        self._read_file(dict['filepath'])
