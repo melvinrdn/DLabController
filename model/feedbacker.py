@@ -6,6 +6,7 @@ from collections import deque
 from datetime import date
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
+from tkinter.scrolledtext import ScrolledText
 import pygame
 from scipy.optimize import curve_fit
 
@@ -23,17 +24,15 @@ from pylablib.devices import Andor
 from simple_pid import PID
 import drivers.zaber_binary.zaber_binary as zb
 
-import diagnostic_board.daheng_camera as dh
 from diagnostic_board.beam_treatment_functions import process_image
 import drivers.avaspec_driver._avs_py as avs
 import drivers.jena_piezo.jena_piezo_V3 as jena
 import drivers.santec_driver._slm_py as slm
 import model.helpers as help
-from drivers import gxipy_driver as gx
 from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 from ressources.calibration import waveplate_calibrator as cal
-from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
+from ressources.slm_infos import slm_size, bit_depth
 
 
 class Feedbacker(object):
@@ -76,9 +75,9 @@ class Feedbacker(object):
 
         self.WPG = None
         self.WPR = None
-        self.WPDummy = None
-        self.Delay = None
-        self.MPC_lens = None
+        self.cam_stage = None
+        self.delay_stage = None
+        self.lens_stage = None
         self.MPC_wp = None
         self.MPC_grating = None
         self.abort = 0
@@ -140,25 +139,13 @@ class Feedbacker(object):
         self.aquisition_time = None
         self.averages = None
 
-        self.daheng_active = False
-        self.daheng_camera = None
-        self.daheng_is_live = False
-        self.current_daheng_image = None
-        self.daheng_zoom = None
-
         self.calibrator = None
 
         self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
 
         self.autolog = self.saving_folder + '-' + 'auto-log.txt'
-        #self.autolog = 'C:/data/' + '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + 'auto-log.txt'
+        # self.autolog = 'C:/data/' + '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + 'auto-log.txt'
         self.f = open(self.autolog, "a+")
-
-        #self.autolog_images = self.saving_folder + '-' + 'auto-log-images.txt'
-        #self.g = open(self.autolog_images, "a+")
-
-        self.autolog_slm_param_scan = self.saving_folder + '-' + 'auto-log-slm_param_scan.txt'
-        self.slmps = open(self.autolog_slm_param_scan, "a+")
 
         # creating frames
 
@@ -187,13 +174,11 @@ class Feedbacker(object):
         self.frm_notebook_scans = ttk.Notebook(frm_scans)
         frm_wp_scans = ttk.Frame(frm_scans)
         frm_phase_scan = ttk.Frame(frm_scans)
-        frm_slm_param_scan = ttk.Frame(frm_scans)
         frm_const_intensity_scan = ttk.Frame(frm_scans)
         frm_mpc_campaign = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
-        self.frm_notebook_scans.add(frm_slm_param_scan, text="SLM parameters scan")
-        self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
+        # self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC Campaign")
 
         frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
@@ -211,9 +196,8 @@ class Feedbacker(object):
         self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
         self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
 
-        frm_daheng_camera = ttk.LabelFrame(self.win, text='Daheng Camera')
-        self.frm_daheng_camera_settings = ttk.LabelFrame(frm_daheng_camera, text='Settings')
-        self.frm_daheng_camera_image = ttk.Frame(frm_daheng_camera)
+        self.output_console = ScrolledText(self.win, height=10, state='disabled')
+        self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
 
         self.frm_notebook_mcp = ttk.Notebook(frm_mcp_all)
         frm_mcp_image = ttk.Frame(frm_mcp_all)
@@ -240,9 +224,6 @@ class Feedbacker(object):
         frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
 
         vcmd = (self.win.register(self.parent.callback))
-
-        self.but_hide_frm_daheng = ttk.Button(frm_daheng_camera, text="Hide/Show", command=self.hide_frm_daheng)
-        self.but_hide_frm_daheng.grid(row=0, column=0)
 
         # creating buttons n labels
         but_exit = tk.Button(frm_bot, text='EXIT', command=self.on_close)
@@ -286,8 +267,6 @@ class Feedbacker(object):
                                    command=self.auto_scale_spec_axis, width=13)
         but_bck = tk.Button(frm_spc_plt_set, text='Take background',
                             command=self.take_background, width=13)
-        lbl_std = tk.Label(frm_spc_plt_set, text='sigma:', width=6)
-        self.lbl_std_val = tk.Label(frm_spc_plt_set, text='None', width=6)
         lbl_phi = tk.Label(frm_spc_ratio, text='Phase shift:')
         lbl_phi_2 = tk.Label(frm_spc_ratio, text='pi')
         self.strvar_flat = tk.StringVar()
@@ -324,13 +303,13 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_setp)
         lbl_pidp = tk.Label(frm_spc_pid, text='P-value:')
-        self.strvar_pidp = tk.StringVar(self.win, '-0.17')
+        self.strvar_pidp = tk.StringVar(self.win, '0')
         self.ent_pidp = tk.Entry(
             frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidp)
         lbl_pidi = tk.Label(frm_spc_pid, text='I-value:')
-        self.strvar_pidi = tk.StringVar(self.win, '-1.5')
+        self.strvar_pidi = tk.StringVar(self.win, '0')  # -6 is nice
         self.ent_pidi = tk.Entry(
             frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -341,12 +320,15 @@ class Feedbacker(object):
             frm_spc_pid, width=11, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidd)
+        lbl_std = tk.Label(frm_spc_pid, text='std:', width=6)
+        self.lbl_std_val = tk.Label(frm_spc_pid, text='None', width=6)
+
         but_pid_setp = tk.Button(frm_spc_pid, text='Setpoint', command=self.set_setpoint)
         but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
         but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
         but_pid_setk = tk.Button(frm_spc_pid, text='Set PID values', command=self.set_pid_val)
 
-        lbl_pid_stage_com = tk.Label(frm_spc_pid, text='COM Port:')
+
         self.var_pid_cl = tk.IntVar()
         self.cb_pid_cl = tk.Checkbutton(frm_spc_pid, text='Closed Loop', variable=self.var_pid_cl, onvalue=1,
                                         offvalue=0,
@@ -357,8 +339,11 @@ class Feedbacker(object):
                                                   offvalue=0,
                                                   command=None)
         self.but_pid_stage_init = tk.Button(frm_spc_pid, text='Init', command=self.init_pid_piezo)
-        but_pid_stage_read = tk.Button(frm_spc_pid, text='Read', command=self.read_pid_piezo)
+
+        lbl_pid_stage_move = tk.Label(frm_spc_pid, text='Position (V):')
         but_pid_stage_move = tk.Button(frm_spc_pid, text='Move', command=self.move_pid_piezo)
+        but_pid_stage_home = tk.Button(frm_spc_pid, text='Set to 0V', command=self.home_pid_piezo)
+        lbl_pid_stage_com = tk.Label(frm_spc_pid, text='COM Port:')
         self.strvar_stage_pid_com = tk.StringVar(self.win, 'COM9')
         self.ent_pid_stage_com = tk.Entry(
             frm_spc_pid, width=8, validate='all',
@@ -369,7 +354,7 @@ class Feedbacker(object):
             frm_spc_pid, width=8, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pid_stage_actual_position)
-        self.strvar_pid_stage_set_position = tk.StringVar(self.win, '40.00')
+        self.strvar_pid_stage_set_position = tk.StringVar(self.win, '0.00')
         self.ent_pid_stage_set_position = tk.Entry(
             frm_spc_pid, width=8, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
@@ -396,30 +381,14 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_steps)
 
+
+
+
+
         self.var_phasescan = tk.IntVar()
         self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
                                            offvalue=0,
                                            command=None)
-
-        # Daheng camera
-
-        self.var_camera_1 = tk.IntVar()
-        self.cb_camera_1 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Nozzle 1', variable=self.var_camera_1,
-                                          onvalue=1,
-                                          offvalue=0,
-                                          command=None)
-
-        self.var_camera_3 = tk.IntVar()
-        self.cb_camera_3 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Nozzle 2', variable=self.var_camera_3,
-                                          onvalue=1,
-                                          offvalue=0,
-                                          command=None)
-
-        self.var_camera_2 = tk.IntVar()
-        self.cb_camera_2 = tk.Checkbutton(self.frm_daheng_camera_settings, text='Focus', variable=self.var_camera_2,
-                                          onvalue=1,
-                                          offvalue=0,
-                                          command=None)
 
         # I = cst frame
 
@@ -494,7 +463,6 @@ class Feedbacker(object):
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
-        self.but_meas_slm_param = tk.Button(frm_measure, text='SLM param Scan', command=self.enabl_scan_slm_param)
         self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
 
         self.var_split_scan = tk.IntVar()
@@ -615,67 +583,66 @@ class Feedbacker(object):
         self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
                                           command=None)
 
-        lbl_WPDummy = tk.Label(frm_stage, text='Camera in focus:')
-        self.strvar_WPDummy_is = tk.StringVar(self.win, '')
-        self.ent_WPDummy_is = tk.Entry(
+        lbl_cam_stage = tk.Label(frm_stage, text='Camera in focus:')
+        self.strvar_cam_stage_is = tk.StringVar(self.win, '')
+        self.ent_cam_stage_is = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPDummy_is)
-        self.strvar_WPDummy_should = tk.StringVar(self.win, '')
-        self.ent_WPDummy_should = tk.Entry(
+            textvariable=self.strvar_cam_stage_is)
+        self.strvar_cam_stage_should = tk.StringVar(self.win, '')
+        self.ent_cam_stage_should = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPDummy_should)
-        # self.strvar_WPDummy_Nr = tk.StringVar(self.win, '83837725')
-        self.strvar_WPDummy_Nr = tk.StringVar(self.win, '83837725')
-        self.ent_WPDummy_Nr = tk.Entry(
+            textvariable=self.strvar_cam_stage_should)
+        self.strvar_cam_stage_Nr = tk.StringVar(self.win, '83837725')
+        self.ent_cam_stage_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_WPDummy_Nr)
-        self.but_WPDummy_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPDummy)
-        self.but_WPDummy_Home = tk.Button(frm_stage, text='Home', command=self.home_WPDummy)
-        self.but_WPDummy_Read = tk.Button(frm_stage, text='Read', command=self.read_WPDummy)
-        self.but_WPDummy_Move = tk.Button(frm_stage, text='Move', command=self.move_WPDummy)
+            textvariable=self.strvar_cam_stage_Nr)
+        self.but_cam_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_cam_stage)
+        self.but_cam_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_cam_stage)
+        self.but_cam_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_cam_stage)
+        self.but_cam_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_cam_stage)
 
-        lbl_Delay = tk.Label(frm_stage, text='Delay:')
-        self.strvar_Delay_is = tk.StringVar(self.win, '')
-        self.ent_Delay_is = tk.Entry(
+        lbl_delay_stage = tk.Label(frm_stage, text='Delay stage:')
+        self.strvar_delay_stage_is = tk.StringVar(self.win, '')
+        self.ent_delay_stage_is = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_is)
-        self.strvar_Delay_should = tk.StringVar(self.win, '')
-        self.ent_Delay_should = tk.Entry(
+            textvariable=self.strvar_delay_stage_is)
+        self.strvar_delay_stage_should = tk.StringVar(self.win, '')
+        self.ent_delay_stage_should = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_should)
-        self.strvar_Delay_Nr = tk.StringVar(self.win, '83837719')
-        self.ent_Delay_Nr = tk.Entry(
+            textvariable=self.strvar_delay_stage_should)
+        self.strvar_delay_stage_Nr = tk.StringVar(self.win, '83837719')
+        self.ent_delay_stage_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_Nr)
+            textvariable=self.strvar_delay_stage_Nr)
         # scan parameters
-        self.strvar_Delay_from = tk.StringVar(self.win, '6.40')
-        self.ent_Delay_from = tk.Entry(
+        self.strvar_delay_stage_from = tk.StringVar(self.win, '6.40')
+        self.ent_delay_stage_from = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_from)
-        self.strvar_Delay_to = tk.StringVar(self.win, '6.45')
-        self.ent_Delay_to = tk.Entry(
+            textvariable=self.strvar_delay_stage_from)
+        self.strvar_delay_stage_to = tk.StringVar(self.win, '6.45')
+        self.ent_delay_stage_to = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_to)
-        self.strvar_Delay_steps = tk.StringVar(self.win, '10')
-        self.ent_Delay_steps = tk.Entry(
+            textvariable=self.strvar_delay_stage_to)
+        self.strvar_delay_stage_steps = tk.StringVar(self.win, '10')
+        self.ent_delay_stage_steps = tk.Entry(
             frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
-            textvariable=self.strvar_Delay_steps)
+            textvariable=self.strvar_delay_stage_steps)
         self.var_delayscan = tk.IntVar()
         self.cb_delayscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
                                            command=None)
-        self.but_Delay_Ini = tk.Button(frm_stage, text='Init', command=self.init_Delay)
-        self.but_Delay_Home = tk.Button(frm_stage, text='Home', command=self.home_Delay)
-        self.but_Delay_Read = tk.Button(frm_stage, text='Read', command=self.read_Delay)
-        self.but_Delay_Move = tk.Button(frm_stage, text='Move', command=self.move_Delay)
+        self.but_delay_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_delay_stage)
+        self.but_delay_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_delay_stage)
+        self.but_delay_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_delay_stage)
+        self.but_delay_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_delay_stage)
 
         lbl_Stage_MPC = tk.Label(frm_mpc_campaign_stages, text='Stage')
         lbl_Nr_MPC = tk.Label(frm_mpc_campaign_stages, text='#')
@@ -691,11 +658,13 @@ class Feedbacker(object):
         lbl_mpc_lens_label = tk.Label(frm_mpc_campaign_scans, text='Lens')
         lbl_mpc_grating_label = tk.Label(frm_mpc_campaign_scans, text='Grating')
 
-        lbl_MPC_lens = tk.Label(frm_mpc_campaign_stages, text='Lens')
+        lbl_lens_stage = tk.Label(frm_mpc_campaign_stages, text='Lens')
         lbl_MPC_wp = tk.Label(frm_mpc_campaign_stages, text='WP')
         lbl_zaber_grating = tk.Label(frm_mpc_campaign_stages, text='Grating')
 
         lbl_MPC_maxpower = tk.Label(frm_mpc_campaign_current, text='Max Power (W)')
+        lbl_MPC_minpower = tk.Label(frm_mpc_campaign_current, text='Min Power (W)')
+
         lbl_MPC_maxangle = tk.Label(frm_mpc_campaign_current, text='Max Angle (deg)')
         lbl_MPC_currentpower = tk.Label(frm_mpc_campaign_current, text='Current Power (W)')
         lbl_MPC_pulseduration = tk.Label(frm_mpc_campaign, text='Pulse duration (fs)')
@@ -802,6 +771,13 @@ class Feedbacker(object):
             frm_mpc_campaign_current, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_maxpower)
+
+        self.strvar_mpc_minpower = tk.StringVar(self.win, '5')
+        self.ent_mpc_minpower = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_minpower)
+
         self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
         self.ent_mpc_maxangle = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
@@ -817,10 +793,10 @@ class Feedbacker(object):
         self.but_MPC_abort = tk.Button(frm_mpc_campaign_scans, text='ABORT!!!', command=self.abort_mpc_measurement)
         self.but_MPC_test_scan = tk.Button(frm_mpc_campaign_scans, text='Test scan', command=self.enabl_mpc_test_scan)
 
-        self.but_MPC_lens_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_lens)
-        self.but_MPC_lens_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_lens)
-        self.but_MPC_lens_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_MPC_lens)
-        self.but_MPC_lens_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_MPC_lens)
+        self.but_lens_stage_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_lens_stage)
+        self.but_lens_stage_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_lens_stage)
+        self.but_lens_stage_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_lens_stage)
+        self.but_lens_stage_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_lens_stage)
 
         self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_wp)
         self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_wp)
@@ -857,7 +833,7 @@ class Feedbacker(object):
                                                   command=None)
 
         lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_lens.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_lens_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         lbl_zaber_grating.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
         lbl_Nr_MPC.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -898,10 +874,10 @@ class Feedbacker(object):
         self.but_MPC_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
         self.but_MPC_test_scan.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_MPC_lens_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_lens_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_lens_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_lens_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
@@ -914,12 +890,53 @@ class Feedbacker(object):
         self.but_zaber_grating_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
         lbl_MPC_maxpower.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_maxangle.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_currentpower.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_minpower.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_maxangle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_currentpower.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
         self.ent_mpc_maxpower.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_maxangle.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_currentpower.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_minpower.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_maxangle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_currentpower.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_MPC_fitA = tk.Label(frm_mpc_campaign_current, text='Amplitude')
+        lbl_MPC_fitf = tk.Label(frm_mpc_campaign_current, text='Frequency')
+        lbl_MPC_fitph = tk.Label(frm_mpc_campaign_current, text='Phase offset')
+        lbl_MPC_fito = tk.Label(frm_mpc_campaign_current, text='Amp offset')
+
+        lbl_MPC_fitA.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fitf.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fitph.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fito.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_MPC_fitA = tk.StringVar(self.win, '5')
+        self.ent_MPC_fitA = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_MPC_fitA)
+
+        self.strvar_MPC_fitf = tk.StringVar(self.win, '0.070')
+        self.ent_MPC_fitf = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_MPC_fitf)
+
+        self.strvar_MPC_fitph = tk.StringVar(self.win, '57.000')
+        self.ent_MPC_fitph = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_MPC_fitph)
+
+        self.strvar_MPC_fito = tk.StringVar(self.win, '1.000')
+        self.ent_MPC_fito = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_MPC_fito)
+
+        self.ent_MPC_fitA.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fitf.grid(row=7, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fitph.grid(row=7, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fito.grid(row=7, column=3, padx=2, pady=2, sticky='nsew')
 
         # power wp calibration
         lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
@@ -1199,10 +1216,6 @@ class Feedbacker(object):
         self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_daheng_camera.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.frm_daheng_camera_settings.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_daheng_camera_image.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
         frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
@@ -1226,8 +1239,6 @@ class Feedbacker(object):
         # setting up frm_spc_set
         but_auto_scale.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         but_bck.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_std.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.lbl_std_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up buttons frm_bot
         but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
@@ -1246,19 +1257,26 @@ class Feedbacker(object):
 
         but_pid_setp.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         but_pid_setk.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
-        but_pid_enbl.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        but_pid_stop.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        but_pid_enbl.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        but_pid_stop.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
-        # lbl_pid_stage_com.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        self.cb_pid_cl.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        self.cb_pid_stage_enable.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        lbl_pid_stage_com.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_pid_stage_move.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
-        self.but_pid_stage_init.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        but_pid_stage_move.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        but_pid_stage_read.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_pid_stage_actual_position.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_pid_stage_set_position.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_pid_stage_com.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_com.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_set_position.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        #self.ent_pid_stage_actual_position.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_pid_stage_init.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_move.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_home.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.cb_pid_stage_enable.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.cb_pid_cl.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+
+        lbl_std.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.lbl_std_val.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+
 
         # setting up frm_measure
         lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1287,7 +1305,6 @@ class Feedbacker(object):
         self.cb_export_treated_image.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
         self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_slm_param.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
         self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
@@ -1310,26 +1327,26 @@ class Feedbacker(object):
 
         lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
         lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
-        lbl_Delay.grid(row=3, column=1, pady=2, sticky='nsew')
-        lbl_WPDummy.grid(row=4, column=1, pady=2, sticky='nsew')
+        lbl_delay_stage.grid(row=3, column=1, pady=2, sticky='nsew')
+        lbl_cam_stage.grid(row=4, column=1, pady=2, sticky='nsew')
 
         self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
         self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
-        self.ent_Delay_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
 
-        self.ent_WPDummy_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
 
         self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_Delay_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPDummy_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
         self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_Delay_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPDummy_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
 
         self.but_WPR_Ini.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
         self.but_WPR_Home.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
@@ -1341,15 +1358,15 @@ class Feedbacker(object):
         self.but_WPG_Read.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
         self.but_WPG_Move.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPDummy_Ini.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPDummy_Home.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPDummy_Read.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_WPDummy_Move.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Ini.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Home.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Read.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Move.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_Delay_Ini.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_Delay_Home.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_Delay_Read.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_Delay_Move.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Ini.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Home.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Read.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Move.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
 
         self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
         self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
@@ -1443,128 +1460,6 @@ class Feedbacker(object):
         self.ent_RFP_from.grid(row=5, column=8, padx=2, pady=2, sticky='nsew')
         self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
         self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
-
-        # setting up Daheng stuff
-        self.but_initialize_daheng = tk.Button(self.frm_daheng_camera_settings, text="Initialize",
-                                               command=self.initialize_daheng)
-        self.but_initialize_daheng.grid(row=0, column=0)
-        self.but_close_daheng = tk.Button(self.frm_daheng_camera_settings, text="Disconnect", command=self.close_daheng)
-        self.but_close_daheng.grid(row=0, column=1)
-        self.var_index_camera = tk.StringVar(self.win, value="1")
-        self.ent_default_cam_index = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_index_camera,
-                                              width=3,
-                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_default_cam_index.grid(row=1, column=0)
-
-        lbl_daheng_exposure = tk.Label(self.frm_daheng_camera_settings, text="Exp:")
-        lbl_daheng_exposure.grid(row=2, column=0)
-        lbl_daheng_gain = tk.Label(self.frm_daheng_camera_settings, text="Gain:")
-        lbl_daheng_gain.grid(row=3, column=0)
-        lbl_daheng_avg = tk.Label(self.frm_daheng_camera_settings, text="Avg:")
-        lbl_daheng_avg.grid(row=4, column=0)
-
-        self.var_daheng_exposure = tk.StringVar(self.win, value="100000")
-        self.ent_daheng_exposure = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_exposure,
-                                            width=10,
-                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_exposure.grid(row=2, column=1)
-        self.ent_daheng_exposure.bind("<KeyRelease>", self.exp_gain_value_changed)
-
-        self.var_daheng_gain = tk.StringVar(self.win, value="0")
-        self.ent_daheng_gain = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_gain, width=10,
-                                        validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_gain.grid(row=3, column=1)
-        self.ent_daheng_gain.bind("<KeyRelease>", self.exp_gain_value_changed)
-
-        self.var_daheng_avg = tk.StringVar(self.win, value="1")
-        self.ent_daheng_avg = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_avg, width=10,
-                                       validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_avg.grid(row=4, column=1)
-
-        self.but_live_daheng = tk.Button(self.frm_daheng_camera_settings, text="Live",
-                                         command=self.live_daheng_thread)
-        self.but_live_daheng.grid(row=5, column=0)
-
-        self.but_single_daheng = tk.Button(self.frm_daheng_camera_settings, text="Single",
-                                           command=self.single_daheng_thread)
-        self.but_single_daheng.grid(row=5, column=1)
-
-        self.but_scan_daheng = tk.Button(self.frm_daheng_camera_settings, text="Stage Scan!",
-                                         command=self.scan_daheng_thread)
-        self.but_scan_daheng.grid(row=5, column=2)
-        self.but_com_daheng = tk.Button(self.frm_daheng_camera_settings, text="Zoom in COM",
-                                        command=self.zoom_around_com)
-        self.but_com_daheng.grid(row=6, column=0)
-
-        self.but_reset_daheng = tk.Button(self.frm_daheng_camera_settings, text="Reset Zoom",
-                                          command=self.reset_zoom)
-        self.but_reset_daheng.grid(row=6, column=1)
-
-        self.var_daheng_radius = tk.StringVar(self.win, value="200")
-        self.ent_daheng_radius = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_radius, width=8,
-                                          validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_radius.grid(row=7, column=0)
-
-        lbl_daheng_stage_from = tk.Label(self.frm_daheng_camera_settings, text="From")
-        lbl_daheng_stage_to = tk.Label(self.frm_daheng_camera_settings, text="To")
-        lbl_daheng_stage_steps = tk.Label(self.frm_daheng_camera_settings, text="Steps")
-        lbl_daheng_stage_from.grid(row=8, column=0)
-        lbl_daheng_stage_to.grid(row=8, column=1)
-        lbl_daheng_stage_steps.grid(row=8, column=2)
-
-        self.var_daheng_stage_from = tk.StringVar(self.win, value="6")
-        self.ent_daheng_stage_from = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_stage_from,
-                                              width=5,
-                                              validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_stage_from.grid(row=9, column=0)
-
-        self.var_daheng_stage_to = tk.StringVar(self.win, value="12")
-        self.ent_daheng_stage_to = tk.Entry(self.frm_daheng_camera_settings, textvariable=self.var_daheng_stage_to,
-                                            width=5,
-                                            validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_stage_to.grid(row=9, column=1)
-
-        self.var_daheng_stage_steps = tk.StringVar(self.win, value="10")
-        self.ent_daheng_stage_steps = tk.Entry(self.frm_daheng_camera_settings,
-                                               textvariable=self.var_daheng_stage_steps,
-                                               width=5,
-                                               validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_daheng_stage_steps.grid(row=9, column=2)
-
-        lbl_slm_param_scan_info = tk.Label(frm_slm_param_scan, text="Choose your fighter!")
-        lbl_slm_param_scan_info.grid(row=0, column=0)
-        lbl_slm_param_scan_from = tk.Label(frm_slm_param_scan, text='from:')
-        lbl_slm_param_scan_from.grid(row=0, column=2)
-        lbl_slm_param_scan_to = tk.Label(frm_slm_param_scan, text='to:')
-        lbl_slm_param_scan_to.grid(row=0, column=3)
-        lbl_slm_param_scan_steps = tk.Label(frm_slm_param_scan, text='steps:')
-        lbl_slm_param_scan_steps.grid(row=0, column=4)
-
-        self.var_scan_slm_param_option = tk.StringVar(self.win, "Nothing")
-        self.rb_supergaussian_scan = tk.Radiobutton(frm_slm_param_scan, variable=self.var_scan_slm_param_option,
-                                                    value="Supergaussian",
-                                                    text="Supergaussian")
-        self.rb_supergaussian_scan.grid(row=1, column=0)
-
-        self.var_supergaussian_from = tk.StringVar(self.win, value="0")
-        self.ent_supergaussian_from = tk.Entry(frm_slm_param_scan,
-                                               textvariable=self.var_supergaussian_from, width=5,
-                                               validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_supergaussian_from.grid(row=1, column=2)
-
-        self.var_supergaussian_to = tk.StringVar(self.win, value="0.008")
-        self.ent_supergaussian_to = tk.Entry(frm_slm_param_scan,
-                                             textvariable=self.var_supergaussian_to,
-                                             width=5,
-                                             validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_supergaussian_to.grid(row=1, column=3)
-
-        self.var_supergaussian_steps = tk.StringVar(self.win, value="10")
-        self.ent_supergaussian_steps = tk.Entry(frm_slm_param_scan,
-                                                textvariable=self.var_supergaussian_steps,
-                                                width=5,
-                                                validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
-        self.ent_supergaussian_steps.grid(row=1, column=4)
 
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -1749,8 +1644,9 @@ class Feedbacker(object):
         self.but_show_treated_image = tk.Button(frm_mcp_treated_options, text="Show Treated Image",
                                                 command=self.treat_image_test)
 
-        self.but_export_image_treatment_parameters = tk.Button(frm_mcp_treated_options, text="Export treatment parameters",
-                                                command=self.export_mcp_treatment_parameters)
+        self.but_export_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
+                                                               text="Export treatment parameters",
+                                                               command=self.export_mcp_treatment_parameters)
         self.but_import_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
                                                                text="Import treatment parameters",
                                                                command=self.import_mcp_treatment_parameters)
@@ -1764,8 +1660,8 @@ class Feedbacker(object):
         self.lbl_mcp_analysis_info = tk.Label(frm_mcp_analysis_options, text=" ")
         self.var_log_scale = tk.IntVar()
         self.cb_log_scale = tk.Checkbutton(frm_mcp_analysis_options, text='Log Scale',
-                                              variable=self.var_log_scale, onvalue=1,
-                                              offvalue=0)
+                                           variable=self.var_log_scale, onvalue=1,
+                                           offvalue=0)
         self.var_log_scale.trace_add("write", self.update_mcp_analysis)
 
         lbl_mcp_analysis_harmonic_order = tk.Label(frm_mcp_analysis_options, text="Look at Harmonic Order: ")
@@ -1783,9 +1679,9 @@ class Feedbacker(object):
         self.var_mcp_analysis_emax.trace_add("write", self.update_mcp_analysis)
 
         self.ent_mcp_analysis_emax = tk.Entry(frm_mcp_analysis_options,
-                                                        textvariable=self.var_mcp_analysis_emax,
-                                                        width=4, validate='all',
-                                                        validatecommand=(vcmd, '%d', '%P', '%S'))
+                                              textvariable=self.var_mcp_analysis_emax,
+                                              width=4, validate='all',
+                                              validatecommand=(vcmd, '%d', '%P', '%S'))
 
         self.ent_mcp_analysis_emin = tk.Entry(frm_mcp_analysis_options,
                                               textvariable=self.var_mcp_analysis_emin,
@@ -1794,13 +1690,12 @@ class Feedbacker(object):
 
         self.open_h5_file_analysis.grid(row=0, column=0)
         lbl_mcp_analysis_harmonic_order.grid(row=0, column=1)
-        self.lbl_mcp_analysis_info.grid(row = 1, column = 0)
+        self.lbl_mcp_analysis_info.grid(row=1, column=0)
         self.ent_mcp_analysis_harmonic_order.grid(row=0, column=2)
-        self.cb_log_scale.grid(row=1,column=2)
+        self.cb_log_scale.grid(row=1, column=2)
         lbl_mcp_analysis_energy_lim.grid(row=2, column=0)
         self.ent_mcp_analysis_emin.grid(row=2, column=1)
         self.ent_mcp_analysis_emax.grid(row=2, column=2)
-
 
         # analysis frame
         self.figrAnalysis = Figure(figsize=(5, 4), dpi=100)
@@ -1840,11 +1735,12 @@ class Feedbacker(object):
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
         self.ax2r_blit = self.figr.canvas.copy_from_bbox(self.ax2r.bbox)
 
-        self.figp = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
+        self.figp = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
         self.ax1p = self.figp.add_subplot(111)
         self.phase_line, = self.ax1p.plot([], '.', ms=1)
         self.ax1p.set_xlim(0, 1000)
         self.ax1p.set_ylim([-np.pi, np.pi])
+        self.ax1p.set_ylabel('Phase $\phi$')
         self.ax1p.grid()
         self.figp.tight_layout()
         self.figp.canvas.draw()
@@ -1853,6 +1749,20 @@ class Feedbacker(object):
         self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.img1p.draw()
         self.ax1p_blit = self.figp.canvas.copy_from_bbox(self.ax1p.bbox)
+
+        self.figV = Figure(figsize=(5, 2), dpi=100)
+        self.ax1V = self.figV.add_subplot(111)
+        self.V_line, = self.ax1V.plot([], '.', ms=1)
+        self.ax1V.set_xlim(0, 1000)
+        self.ax1V.set_ylabel('Voltage (V)')
+        self.ax1V.grid()
+        self.figV.tight_layout()
+        self.figV.canvas.draw()
+        self.img1V = FigureCanvasTkAgg(self.figV, frm_plt)
+        self.tk_widget_figV = self.img1V.get_tk_widget()
+        self.tk_widget_figV.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.img1V.draw()
+        self.ax1V_blit = self.figV.canvas.copy_from_bbox(self.ax1V.bbox)
 
         # setting up frm_mcp_options
         self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1875,7 +1785,8 @@ class Feedbacker(object):
         lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.im_phase = np.zeros(1000)
-        self.pid = PID(0.35, 0, 0, setpoint=0)
+        self.im_voltage = np.zeros(1000)
+        self.pid = PID(0, 0, 0, setpoint=0)
 
         self.stop_acquire = 0
         self.stop_pid = False
@@ -1886,19 +1797,24 @@ class Feedbacker(object):
         self.PIKE_cam = False
         self.ANDOR_cam = False
 
-        # if self.PIKE_cam is True:
-        # self.name_cam = 'PIKE_cam'
         if self.ANDOR_cam is True:
             self.name_cam = 'ANDOR_cam'
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
         self.open_calibrator_on_start()
-        self.hide_frm_daheng()
+
+    def insert_message(self, message):
+        self.output_console.configure(state='normal')
+        self.output_console.insert(tk.END, message + "\n")
+        self.output_console.configure(state='disabled')
+        self.output_console.see(tk.END)
 
     def open_h5_file_analysis(self):
         filepath = tk.filedialog.askopenfilename()
-        print(f'Opening {filepath}')
+        message = f'Opening {filepath}'
+        self.insert_message(message)
+
         hfr = h5py.File(filepath, 'r')
         self.current_scan_type = np.asarray(hfr.get('scan_type'))
         self.current_treated_images = np.asarray(hfr.get('treated_images'))
@@ -1906,22 +1822,26 @@ class Feedbacker(object):
         self.current_grating_array = np.asarray(hfr.get('grating_position'))
         self.current_power_array = np.asarray(hfr.get('power'))
         self.current_E = np.asarray(hfr.get('e_axis'))
-        self.lbl_mcp_analysis_info.config(text="ScanType: {}, Data analyzed: {} \n Filepath: {}".format(self.current_scan_type, self.current_E is not None, filepath))
+        self.lbl_mcp_analysis_info.config(
+            text="ScanType: {}, Data analyzed: {} \n Filepath: {}".format(self.current_scan_type,
+                                                                          self.current_E is not None, filepath))
         self.plot_analysis(self.current_scan_type, self.current_treated_images,
                            parameter1=self.current_lens_position_array,
                            parameter2=self.current_power_array,
-                           parameter3 = self.current_grating_array,
+                           parameter3=self.current_grating_array,
                            energy_axis=self.current_E)
 
     def open_h5_file(self):
         filepath = tk.filedialog.askopenfilename()
-        print(f'Opening {filepath}')
+        message = f'Opening {filepath}'
+        self.insert_message(message)
         hfr = h5py.File(filepath, 'r')
         self.images = np.asarray(hfr.get('images'))
         self.positions = np.asarray(hfr.get('positions'))
         self.green_lens = np.asarray(hfr.get('green_lens'))
         self.red_lens = np.asarray(hfr.get('red_lens'))
-        print('Successfully loaded')
+        message = 'Success'
+        self.insert_message(message)
         processed_images, som_x, som_y = self.process_images_dict()
         zero_position = 8
         zmin = (self.positions[0] - zero_position) * 1e-3
@@ -1937,7 +1857,7 @@ class Feedbacker(object):
         z_fit = np.linspace(self.z_range[0], self.z_range[-1], int(self.ent_p_steps.get()))
 
         C = 2 * 0.94 / (
-                    (float(self.ent_pulse_length_m2.get()) * 1e-15 * np.pi) * (float(self.ent_rep_rate_m2.get()) * 1e3))
+                (float(self.ent_pulse_length_m2.get()) * 1e-15 * np.pi) * (float(self.ent_rep_rate_m2.get()) * 1e3))
         self.power_x_list = float(self.ent_target_intensity.get()) * 1e18 / C * beam_quality_factor_fit(z_fit,
                                                                                                         self.params_m2_x[
                                                                                                             0],
@@ -2026,14 +1946,15 @@ class Feedbacker(object):
             if self.pid_stage_initialized == False:
                 self.pid_stage = jena.NV40(self.strvar_stage_pid_com.get(), closed_loop=self.var_pid_cl.get())
                 self.pid_stage_initialized = True
-                self.move_pid_piezo()
+                self.home_pid_piezo()
                 self.but_pid_stage_init.config(fg='green')
             else:
                 self.pid_stage = None
                 self.but_pid_stage_init.config(fg='black')
                 self.pid_stage_initialized = False
         except:
-            print("Init of JenaPiezo went wrong :((")
+            message = f'Initialization of Piezo went wrong'
+            self.insert_message(message)
             self.but_pid_stage_init.config(fg='red')
 
     def read_pid_piezo(self):
@@ -2042,19 +1963,38 @@ class Feedbacker(object):
                 pos = self.pid_stage.get_position()
                 self.strvar_pid_stage_actual_position.set(str(np.round(pos, 2)))
             except:
-                print("Jena Piezo readout went wrong:))")
+                message = f'Readout of Piezo went wrong'
+                self.insert_message(message)
         else:
-            print("Would you please initialize the stage first?!")
+            message = f'Initialize the Piezo stage first'
+            self.insert_message(message)
 
     def move_pid_piezo(self):
         if self.pid_stage_initialized == True:
             try:
                 self.pid_stage.set_position(float(self.strvar_pid_stage_set_position.get()))
-                self.read_pid_piezo()
+                # self.read_pid_piezo()
             except:
-                print("Moving jena piezo went wrong :((")
+                message = f'Moving of the Piezo went wrong'
+                self.insert_message(message)
         else:
-            print("Would you please initialize the stage first?!")
+            message = f'Initialize the Piezo stage first'
+            self.insert_message(message)
+
+    def home_pid_piezo(self):
+        if self.pid_stage_initialized == True:
+            try:
+                self.strvar_pid_stage_set_position.set(str(0))
+                self.move_pid_piezo()
+                message = f'Piezo homed'
+                self.insert_message(message)
+                # self.read_pid_piezo()
+            except:
+                message = f'Homing of the Piezo went wrong'
+                self.insert_message(message)
+        else:
+            message = f'Initialize the Piezo stage first'
+            self.insert_message(message)
 
     def final_image_treatment(self, im):
         bg = int(self.var_mcp_calibration_background_val.get())
@@ -2093,7 +2033,8 @@ class Feedbacker(object):
                 hf.create_dataset('energy_axis', data=energy_axis)
                 hf.create_dataset('energy_axis_temp', data=self.eaxis)
         except:
-            print("Exporting data failed")
+            message = f'Exporting data failed'
+            self.insert_message(message)
 
     def import_mcp_treatment_parameters(self):
         filepath = askopenfilename(
@@ -2122,11 +2063,9 @@ class Feedbacker(object):
             self.but_import_image_treatment_parameters.config(fg='green')
 
         except Exception as e:
-            print("Choose a proper filename!")
-            print(e)
+            message = f'Chose a proper filename'
+            self.insert_message(message)
             self.but_import_image_treatment_parameters.config(fg='red')
-
-
 
     def update_calibration_energy(self, var, index, mode):
         im = np.flipud(self.calibration_image_update)
@@ -2169,18 +2108,22 @@ class Feedbacker(object):
 
             self.plot_calibration_image_energy(profile, data, peaks, E_axis)
         except:
-            print("Enter odd number for smooth! and something reasonable for peak prominence!")
+            message = f'Enter odd number for smooth! and something reasonable for peak prominence!'
+            self.insert_message(message)
 
     def update_calibration(self, var, index, mode):
         im = self.calibration_image
         try:
             im = im - int(self.var_mcp_calibration_background_val.get())
         except:
-            print("Enter something reasonable for the background!!")
+            message = f'Enter something reasonable for the background!!'
+            self.insert_message(message)
+
         try:
             im = help.shear_image(im, float(self.var_mcp_calibration_shear_val.get()), axis=1)
         except:
-            print("Enter a reasonable value for the shear!")
+            message = f'Enter a reasonable value for the shear!'
+            self.insert_message(message)
         try:
             x_cut1 = int(self.var_mcp_calibration_ROIX1_val.get())
             x_cut2 = int(self.var_mcp_calibration_ROIX2_val.get())
@@ -2196,13 +2139,15 @@ class Feedbacker(object):
             mask[512 - x_cut2:512 - x_cut1, y_cut1:y_cut2] = 1
             im = im * mask
         except:
-            print("Enter a reasonable value for the ROI!")
+            message = f'Enter a reasonable value for the ROI!'
+            self.insert_message(message)
 
         self.calibration_image_update = im
         self.plot_calibration_image(self.calibration_image_update)
 
     def update_mcp_analysis(self, var, index, mode):
-        print("the update function has actually been called")
+        message = f'The update function has been called'
+        self.insert_message(message)
         try:
             self.plot_analysis(self.current_scan_type, self.current_treated_images,
                                parameter1=self.current_lens_position_array,
@@ -2232,117 +2177,6 @@ class Feedbacker(object):
         self.calibration_image = im_temp
         self.plot_calibration_image(self.calibration_image)
 
-    def hide_frm_daheng(self):
-        if self.frm_daheng_camera_settings.grid_info():
-            self.frm_daheng_camera_settings.grid_remove()
-            if self.frm_daheng_camera_image.grid_info():
-                self.frm_daheng_camera_image.grid_remove()
-        else:
-            self.frm_daheng_camera_settings.grid()
-            self.frm_daheng_camera_image.grid()
-
-    def single_daheng_thread(self):
-        self.daheng_thread = threading.Thread(target=self.take_single_image_daheng)
-        self.daheng_thread.daemon = True
-        self.daheng_thread.start()
-
-    def scan_daheng_thread(self):
-        self.daheng_thread = threading.Thread(target=self.scan_stage_daheng)
-        self.daheng_thread.daemon = True
-        self.daheng_thread.start()
-
-    def enabl_scan_slm_param(self):
-        self.scan_slm_param_thread = threading.Thread(target=self.measure_slm_scan)
-        self.scan_slm_param_thread.daemon = True
-        self.scan_slm_param_thread.start()
-
-    def live_daheng_thread(self):
-        self.daheng_is_live = not self.daheng_is_live
-        self.update_daheng_live_button()
-
-        self.daheng_thread = threading.Thread(target=self.live_daheng)
-        self.daheng_thread.daemon = True
-        self.daheng_thread.start()
-
-    def update_daheng_live_button(self):
-        if self.daheng_is_live == True:
-            self.but_live_daheng.config(fg="green", relief='sunken')
-        else:
-            self.but_live_daheng.config(fg="red", relief='raised')
-
-    def live_daheng(self):
-        while self.daheng_is_live:
-            # self.daheng_camera.set_exposure_gain(int(self.var_daheng_exposure.get()), int(self.var_daheng_gain.get()))
-            im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-            self.current_daheng_image = im
-            self.plot_daheng(im)
-            print("Focus picture taken !")
-
-    def scan_stage_daheng(self):
-        from_ = float(self.var_daheng_stage_from.get())
-        to_ = float(self.var_daheng_stage_to.get())
-        steps_ = int(self.var_daheng_stage_steps.get())
-        stage_steps = np.linspace(from_, to_, steps_)
-        if self.daheng_camera is not None:
-            res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
-            for ind, pos in enumerate(stage_steps):
-                self.strvar_WPDummy_should.set(pos)
-                self.move_WPDummy()
-                im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-                self.plot_daheng(im)
-                res[:, :, ind] = im
-        self.save_daheng_scans(res, stage_steps)
-
-    def take_single_image_daheng(self):
-        if self.daheng_camera is not None:
-            im = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-            self.current_daheng_image = im
-            self.plot_daheng(im)
-
-    def plot_daheng(self, im):
-
-        if self.daheng_zoom is not None:
-            im = im[int(self.daheng_zoom[0]):int(self.daheng_zoom[1]),
-                 int(self.daheng_zoom[2]):int(self.daheng_zoom[3])]
-
-        image = Image.fromarray(im)
-
-        # Resize the image to fit within the specified maximum height
-        max_height = 180
-        new_width = int(image.width * max_height / max(image.height, max_height))
-        image.thumbnail((new_width, max(max_height, image.height)))
-        photo = ImageTk.PhotoImage(image)
-        image_frame = self.frm_daheng_camera_image
-        if hasattr(image_frame, 'image_label'):
-            image_frame.image_label.config(image=photo)
-            image_frame.image_label.image = photo
-        else:
-            image_frame.image_label = tk.Label(image_frame, image=photo)
-            image_frame.image_label.pack(fill=tk.BOTH, expand=True)
-
-    def zoom_around_com(self):
-        radius = int(self.var_daheng_radius.get())
-        if self.daheng_camera is not None:
-            og_shape = self.daheng_camera.imshape
-            if self.current_daheng_image is not None:
-                x, y = self.calculate_com(self.current_daheng_image)
-                x1 = x - radius
-                x2 = x + radius
-                y1 = y - radius
-                y2 = y + radius
-                if x + radius > og_shape[1]:
-                    x2 = og_shape[1] - 1
-                if x - radius < 0:
-                    x1 = 0
-                if y + radius > og_shape[0]:
-                    y2 = og_shape[0] - 1
-                if y - radius < 0:
-                    y1 = 0
-                self.daheng_zoom = [y1, y2, x1, x2]
-
-    def reset_zoom(self):
-        self.daheng_zoom = None
-
     def calculate_com(self, im):
         # Convert the image data to a NumPy array
         image_array = np.array(im)
@@ -2361,38 +2195,6 @@ class Feedbacker(object):
         center_x = sum_x / total_sum
         center_y = sum_y / total_sum
         return center_x, center_y
-
-    def exp_gain_value_changed(self, event):
-        if self.daheng_camera is not None:
-            try:
-                exposure = int(self.var_daheng_exposure.get())
-                gain = int(self.var_daheng_gain.get())
-                self.daheng_camera.set_exposure_gain(exposure, gain)
-            except:
-                print("Enter something reasonable!!")
-
-    def initialize_daheng(self):
-        device_manager = gx.DeviceManager()
-        index = int(self.var_index_camera.get())
-        self.daheng_camera = dh.DahengCamera(index)
-        if self.daheng_camera is not None:
-            self.but_initialize_daheng.config(fg="green")
-            self.daheng_active = True
-            self.daheng_camera.set_exposure_gain(int(self.var_daheng_exposure.get()), int(self.var_daheng_gain.get()))
-            return 1
-        else:
-            self.but_initialize_daheng.config(fg="red")
-            return 0
-
-    def close_daheng(self):
-        if self.daheng_camera is not None:
-            self.but_close_daheng.config(fg="green")
-            self.daheng_active = False
-            self.daheng_camera = None
-            return 1
-        else:
-            self.but_close_daheng.config(fg="red")
-            return 0
 
     def get_background(self):
         im = self.take_image(int(self.ent_avgs.get()))
@@ -2452,11 +2254,18 @@ class Feedbacker(object):
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
             self.strvar_ratio_to.set(str(np.round(x * maxG / c, 3)))
         except:
-            print("pls enter a reasonable value")
+            message = f'Enter a reasonable value'
+            self.insert_message(message)
 
     def angle_to_power(self, angle, maxA, phase):
         power = maxA / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * phase) + maxA / 2
         return power
+
+    def power_to_angle_new(self, power, amplitude, frequency, phase,offset):
+        return (-np.arccos((power-offset)/amplitude) + frequency*phase)/frequency
+
+    def angle_to_power_new(self, angle, amplitude, frequency, phase,offset):
+        return amplitude*np.cos(frequency*(angle-phase))+ offset
 
     def power_to_angle(self, power, maxA, phase):
         A = maxA / 2
@@ -2483,41 +2292,42 @@ class Feedbacker(object):
         try:
             self.MPC_grating = zb.ZaberStage(port)
             self.but_zaber_grating_Ini.config(fg='green')
-            print("Zaber stage initialized")
+            message = f'Zaber stage initialized'
+            self.insert_message(message)
             current_position = self.MPC_grating.get_position()
             self.strvar_zaber_grating_is.set(str(current_position))
 
         except Exception as e:
             self.but_zaber_grating_Ini.config(fg='red')
-            print(f"Failed to initialize stage: {e}")
+            message = f'Failed to initialize Zaber stage'
+            self.insert_message(message)
 
     def move_zaber_stage(self):
 
         target_position = float(self.ent_zaber_grating_should.get())
         try:
             self.MPC_grating.set_position(target_position)
-            print("Zaber stage moved to position: {} mm".format(target_position))
+            message = f'Zaber stage moved to position: {target_position} mm'
+            self.insert_message(message)
             current_position = self.MPC_grating.get_position()
             self.strvar_zaber_grating_is.set(current_position)
         except Exception as e:
-            print(f"Failed to move Zaber stage to position: {e}")
+            message = f'Failed to move Zaber stage to position: {e}'
+            self.insert_message(message)
 
     def read_zaber_stage(self):
         try:
-                current_position = self.MPC_grating.get_position()
-                self.strvar_zaber_grating_is.set(current_position)
-                print("Current Zaber stage position: {} mm".format(current_position))
+            current_position = self.MPC_grating.get_position()
+            self.strvar_zaber_grating_is.set(current_position)
+            message = f'Current Zaber stage position: {current_position} mm'
+            self.insert_message(message)
         except Exception as e:
-            print(f"Failed to read Zaber stage position: {e}")
+            message = f'Failed to read Zaber stage to position: {e}'
+            self.insert_message(message)
 
     def home_zaber_stage(self):
-        try:
-            print("No homing needed, figure out the position by itself")
-
-        except Exception as e:
-            print(f"Failed to home Zaber stage: {e}")
-
-
+        message = f'This feature is desactivated'
+        self.insert_message(message)
 
     def init_WPR(self):
         """
@@ -2535,10 +2345,12 @@ class Feedbacker(object):
         try:
             self.WPR = apt.Motor(int(self.ent_WPR_Nr.get()))
             self.but_WPR_Ini.config(fg='green')
-            print("WPR connected")
+            message = f'WPR connected'
+            self.insert_message(message)
         except:
             self.but_WPR_Ini.config(fg='red')
-            print("Not able to initalize WPR")
+            message = f'Not able to initalize WPR'
+            self.insert_message(message)
 
     def home_WPR(self):
         """
@@ -2556,11 +2368,13 @@ class Feedbacker(object):
         try:
             self.WPR.move_home(blocking=True)
             self.but_WPR_Home.config(fg='green')
-            print("WPR homed!")
+            message = f'WPR homed'
+            self.insert_message(message)
             self.read_WPR()
         except:
             self.but_WPR_Home.config(fg='red')
-            print("Not able to home WPR")
+            message = f'Not able to home WPR'
+            self.insert_message(message)
 
     def read_WPR(self):
         """
@@ -2581,7 +2395,8 @@ class Feedbacker(object):
             self.strvar_red_current_power.set(
                 np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())), 3))
         except:
-            print("Impossible to read WPR position")
+            message = f'Impossible to read WPR position'
+            self.insert_message(message)
 
     def move_WPR(self):
         """
@@ -2601,18 +2416,21 @@ class Feedbacker(object):
                 power = float(self.strvar_WPR_should.get())
                 if power > float(self.ent_red_power.get()):
                     power = float(self.ent_red_power.get())
-                    print("Value above maximum! Desired power set to maximum instead")
+                    message = f'Value above maximum! Desired power set to maximum instead'
+                    self.insert_message(message)
                 pos = self.power_to_angle(power, float(self.ent_red_power.get()), float(self.ent_red_phase.get())) + 90
             else:
                 pos = float(self.strvar_WPR_should.get())
 
-            print("WPR is moving..")
+            message = f'WPR is moving...'
+            self.insert_message(message)
             self.WPR.move_to(pos, True)
-            print(f"WPR moved to {str(self.WPR.position)}")
+            message = f"WPR moved to {str(self.WPR.position)}"
+            self.insert_message(message)
             self.read_WPR()
         except Exception as e:
-            print(e)
-            print("Impossible to move WPR :(")
+            message = f'Impossible to move WPR'
+            self.insert_message(message)
 
     def init_WPG(self):
         """
@@ -2630,10 +2448,12 @@ class Feedbacker(object):
         try:
             self.WPG = apt.Motor(int(self.ent_WPG_Nr.get()))
             self.but_WPG_Ini.config(fg='green')
-            print("WPG connected")
+            message = f'WPG connected'
+            self.insert_message(message)
         except:
             self.but_WPG_Ini.config(fg='red')
-            print("Not able to initalize WPG")
+            message = f'Not able to initialize WPG'
+            self.insert_message(message)
 
     def home_WPG(self):
         """
@@ -2648,18 +2468,8 @@ class Feedbacker(object):
         None
         """
 
-        """
-        try:
-            self.WPG.move_home(blocking=True)
-            self.but_WPG_Home.config(fg='green')
-            print("WPG homed!")
-            self.read_WPG()
-        except:
-            self.but_WPG_Home.config(fg='red')
-            print("Not able to home WPG")
-        """
-
-        print("Non")
+        message = f'This feature is currently desactivated'
+        self.insert_message(message)
 
     def read_WPG(self):
         """
@@ -2682,7 +2492,8 @@ class Feedbacker(object):
                          3))
 
         except:
-            print("Impossible to read WPG position")
+            message = 'Impossible to read WPR position'
+            self.insert_message(message)
 
     def move_WPG(self):
         """
@@ -2702,43 +2513,25 @@ class Feedbacker(object):
                 power = float(self.strvar_WPG_should.get())
                 if power > float(self.ent_green_power.get()):
                     power = float(self.ent_green_power.get())
-                    print("Value above maximum! Desired power set to maximum instead")
+                    message = f'Value above maximum! Desired power set to maximum instead'
+                    self.insert_message(message)
                 pos = self.power_to_angle(power, float(self.ent_green_power.get()),
                                           float(self.ent_green_phase.get())) + 90
             else:
                 pos = float(self.strvar_WPG_should.get())
 
-            print("WPG is moving to {}".format(np.round(pos, 2)))
+            message = f'WPG is moving...'
+            self.insert_message(message)
             self.WPG.move_to(pos, True)
-            print(f"WPG moved to {str(self.WPG.position)}")
+            message = f"WPG moved to {str(self.WPG.position)}"
+            self.insert_message(message)
             self.read_WPG()
 
-            # try:
-            #    self.WPDummy.move_to(pos, True)
-            #    print(f"Dummy moved to {str(self.WPDummy.position)}")
-            #    self.read_WPDummy()
-            # except Exception as e:
-            #    print(e)
-            #    print("Impossible to move Dummy :(")
-
-
-
         except Exception as e:
-            print(e)
-            print("Impossible to move WPG :(")
-            print("Let us try to re-initialize the WPG :(")
-            try:
-                self.WPG.disable()
-                time.sleep(1)
-                self.init_WPG()
-                self.WPG.move_to(pos, True)
-                print(f"WPG moved to {str(self.WPG.position)}")
-                self.read_WPG()
-            except Exception as ee:
-                print(ee)
-                print("Still impossible to move WPG :(")
+            message = f'Impossible to move WPG'
+            self.insert_message(message)
 
-    def init_WPDummy(self):
+    def init_cam_stage(self):
         """
         Initializes the Dummy waveplate motor object.
 
@@ -2752,14 +2545,16 @@ class Feedbacker(object):
         None
         """
         try:
-            self.WPDummy = apt.Motor(int(self.ent_WPDummy_Nr.get()))
-            self.but_WPDummy_Ini.config(fg='green')
-            print("WPDummy connected")
+            self.cam_stage = apt.Motor(int(self.ent_cam_stage_Nr.get()))
+            self.but_cam_stage_Ini.config(fg='green')
+            message = f'cam_stage connected'
+            self.insert_message(message)
         except:
-            self.but_WPDummy_Ini.config(fg='red')
-            print("Not able to initalize Dummy Waveplate")
+            self.but_cam_stage_Ini.config(fg='red')
+            message = f'Not able to initialize cam_stage'
+            self.insert_message(message)
 
-    def home_WPDummy(self):
+    def home_cam_stage(self):
         """
         Homes the Dummy waveplate motor object.
         Raises
@@ -2773,17 +2568,17 @@ class Feedbacker(object):
         """
 
         try:
-            self.WPDummy.move_home(blocking=True)
-            self.but_WPDummy_Home.config(fg='green')
-            print("WPDummy homed!")
-            self.read_WPDummy()
+            self.cam_stage.move_home(blocking=True)
+            self.but_cam_stage_Home.config(fg='green')
+            message = f'cam_stage homed'
+            self.insert_message(message)
+            self.read_cam_stage()
         except:
-            self.but_WPDummy_Home.config(fg='red')
-            print("Not able to home Dummy waveplate")
+            self.but_cam_stage_Home.config(fg='red')
+            message = f'Not able to home cam_stage'
+            self.insert_message(message)
 
-        # print("Non")
-
-    def read_WPDummy(self):
+    def read_cam_stage(self):
         """
         Reads the current position of the green waveplate motor.
 
@@ -2797,16 +2592,14 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = self.WPDummy.position
-            self.strvar_WPDummy_is.set(pos)
-            # self.strvar_green_current_power.set(
-            #    np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
-            #             3))
+            pos = self.cam_stage.position
+            self.strvar_cam_stage_is.set(pos)
 
         except:
-            print("Impossible to read Dummy Waveplate position")
+            message = f'Impossible to read cam_stage position'
+            self.insert_message(message)
 
-    def move_WPDummy(self):
+    def move_cam_stage(self):
         """
         Moves the Dummy waveplate motor to the desired position.
 
@@ -2820,27 +2613,18 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = float(self.strvar_WPDummy_should.get())
-            print("WP Dummy is moving to {}".format(np.round(pos, 2)))
-            self.WPDummy.move_to(pos, True)
-            print(f"WPG moved to {str(self.WPDummy.position)}")
-            self.read_WPDummy()
+            pos = float(self.strvar_cam_stage_should.get())
+            message = "cam_stage is moving ..."
+            self.insert_message(message)
+            self.cam_stage.move_to(pos, True)
+            message = f"cam_stage moved to {str(self.cam_stage.position)}"
+            self.insert_message(message)
+            self.read_cam_stage()
         except Exception as e:
-            print(e)
-            print("Impossible to move WPDummy :(")
-            print("Let us try to re-initialize the WPDUMMY :(")
-            try:
-                self.WPDummy.disable()
-                time.sleep(1)
-                self.init_WPDummy()
-                self.WPDummy.move_to(pos, True)
-                print(f"WPG moved to {str(self.WPDummy.position)}")
-                self.read_WPDummy()
-            except Exception as ee:
-                print(ee)
-                print("Still impossible to move WPDummy :(")
+            message = f'Impossible to move cam_stage'
+            self.insert_message(message)
 
-    def init_Delay(self):
+    def init_delay_stage(self):
         """
         Initializes the Delay motor object.
 
@@ -2854,14 +2638,16 @@ class Feedbacker(object):
         None
         """
         try:
-            self.Delay = apt.Motor(int(self.ent_Delay_Nr.get()))
-            print("Delay connected")
-            self.but_Delay_Ini.config(fg='green')
+            self.delay_stage = apt.Motor(int(self.ent_delay_stage_Nr.get()))
+            message = "delay_stage connected"
+            self.insert_message(message)
+            self.but_delay_stage_Ini.config(fg='green')
         except:
-            self.but_Delay_Ini.config(fg='red')
-            print("Not able to initalize Delay")
+            self.but_delay_stage_Ini.config(fg='red')
+            message = "Not able to initialize the delay_stage"
+            self.insert_message(message)
 
-    def home_Delay(self):
+    def home_delay_stage(self):
         """
         Homes the delay waveplate motor object.
 
@@ -2875,15 +2661,17 @@ class Feedbacker(object):
         None
         """
         try:
-            self.Delay.move_home(blocking=True)
-            self.but_Delay_Home.config(fg='green')
-            print("Delay stage homed!")
-            self.read_Delay()
+            self.delay_stage.move_home(blocking=True)
+            self.but_delay_stage_Home.config(fg='green')
+            message = "delay_stage stage homed"
+            self.insert_message(message)
+            self.read_delay_stage()
         except:
-            self.but_Delay_Home.config(fg='red')
-            print("Not able to home Delay")
+            self.but_delay_stage_Home.config(fg='red')
+            message = "Not able to home the delay_stage"
+            self.insert_message(message)
 
-    def read_Delay(self):
+    def read_delay_stage(self):
         """
         Reads the current position of the Delay motor.
 
@@ -2897,12 +2685,13 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = self.Delay.position
-            self.strvar_Delay_is.set(pos)
+            pos = self.delay_stage.position
+            self.strvar_delay_stage_is.set(pos)
         except:
-            print("Impossible to read Delay position")
+            message = "Not able to red the Delay stage position"
+            self.insert_message(message)
 
-    def move_Delay(self):
+    def move_delay_stage(self):
         """
         Moves the Delay motor to the desired position.
 
@@ -2916,60 +2705,73 @@ class Feedbacker(object):
         None
         """
         try:
-            pos = float(self.strvar_Delay_should.get())
-            print("Delay is moving..")
-            self.Delay.move_to(pos, True)
-            print(f"Delay moved to {str(self.Delay.position)}")
-            self.read_Delay()
+            pos = float(self.strvar_delay_stage_should.get())
+            message = "delay_stage is moving.."
+            self.insert_message(message)
+            self.delay_stage.move_to(pos, True)
+            message = f"delay_stage moved to {str(self.delay_stage.position)}"
+            self.insert_message(message)
+            self.read_delay_stage()
         except:
-            print("Impossible to move Delay :(")
+            message = "Impossible to move delay_stage"
+            self.insert_message(message)
 
     # def scan(self):
 
-    def init_MPC_lens(self):
+    def init_lens_stage(self):
         try:
-            self.MPC_lens = apt.Motor(int(self.ent_mpc_lens_nr.get()))
-            print("Lens Stage connected")
-            self.but_MPC_lens_Ini.config(fg='green')
+            self.lens_stage = apt.Motor(int(self.ent_mpc_lens_nr.get()))
+            message = "lens_stage connected"
+            self.insert_message(message)
+            self.but_lens_stage_Ini.config(fg='green')
         except:
-            self.but_MPC_lens_Ini.config(fg='red')
-            print("Not able to initalize Lens Stage")
+            self.but_lens_stage_Ini.config(fg='red')
+            message = "Not able to initialize lens_stage"
+            self.insert_message(message)
 
-    def read_MPC_lens(self):
+    def read_lens_stage(self):
         try:
-            pos = self.MPC_lens.position
+            pos = self.lens_stage.position
             self.strvar_mpc_lens_is.set(pos)
         except:
-            print("Impossible to read Lens Stage position")
+            message = "Not able to read lens_stage position"
+            self.insert_message(message)
 
-    def move_MPC_lens(self):
+    def move_lens_stage(self):
         try:
             pos = float(self.strvar_mpc_lens_should.get())
-            print("Lens is moving..")
-            self.MPC_lens.move_to(pos, True)
-            print(f"Lens moved to {str(self.MPC_lens.position)}")
-            self.read_MPC_lens()
+            message = "lens_stage is moving"
+            self.insert_message(message)
+            self.lens_stage.move_to(pos, True)
+            message = f"lens_stage moved to {str(self.lens_stage.position)}"
+            self.insert_message(message)
+            self.read_lens_stage()
         except:
-            print("Impossible to move MPC lens :(")
+            message = f"Impossible to move lens_stage"
+            self.insert_message(message)
 
-    def home_MPC_lens(self):
+    def home_lens_stage(self):
         try:
-            self.MPC_lens.move_home(blocking=True)
-            self.but_MPC_lens_Home.config(fg='green')
-            print("MPC Lens stage homed!")
-            self.read_MPC_lens()
+            self.lens_stage.move_home(blocking=True)
+            self.but_lens_stage_Home.config(fg='green')
+            message = "lens_stage homed"
+            self.insert_message(message)
+            self.read_lens_stage()
         except:
-            self.but_MPC_lens_Home.config(fg='red')
-            print("Not able to home MPC Lens")
+            self.but_lens_stage_Home.config(fg='red')
+            message = "Not able to home lens_stage"
+            self.insert_message(message)
 
     def init_MPC_wp(self):
         try:
             self.MPC_wp = apt.Motor(int(self.ent_mpc_wp_nr.get()))
-            print("MPC Waveplate connected")
+            message = "MPC_WP connected"
+            self.insert_message(message)
             self.but_MPC_wp_Ini.config(fg='green')
         except:
             self.but_MPC_wp_Ini.config(fg='red')
-            print("Not able to initalize MPC Waveplate")
+            message = "Not able to initialize MPC_WP"
+            self.insert_message(message)
 
     def read_MPC_wp(self):
         try:
@@ -2977,38 +2779,45 @@ class Feedbacker(object):
             self.strvar_mpc_wp_is.set(pos)
             self.strvar_mpc_currentpower.set(
                 np.round(
-                    self.angle_to_power(pos, float(self.ent_mpc_maxpower.get()), float(self.ent_mpc_maxangle.get())),
+                    self.angle_to_power_new(pos, float(self.ent_MPC_fitA.get()), float(self.ent_MPC_fitf.get()),float(self.ent_MPC_fitph.get()), float(self.ent_MPC_fito.get())),
                     3))
         except:
-            print("Impossible to read WP Stage position")
+            message = "Not able to read MPC_WP position"
+            self.insert_message(message)
 
     def move_MPC_wp(self):
         try:
             if self.var_mpc_wp_power.get() == 1:
                 power = float(self.strvar_mpc_wp_should.get())
-                if power > float(self.ent_mpc_maxpower.get()):
-                    power = float(self.ent_mpc_maxpower.get())
-                    print("Value above maximum! Desired power set to maximum instead")
-                pos = self.power_to_angle(power, float(self.ent_mpc_maxpower.get()),
-                                          float(self.ent_mpc_maxangle.get())) + 90
+                maxp = float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get())
+                if power > maxp:
+                    power = maxp
+                    message = "Value above maximum! Desired power set to maximum instead"
+                    self.insert_message(message)
+                pos = self.power_to_angle_new(power, float(self.ent_MPC_fitA.get()), float(self.ent_MPC_fitf.get()),float(self.ent_MPC_fitph.get()), float(self.ent_MPC_fito.get()))
             else:
                 pos = float(self.strvar_mpc_wp_should.get())
-            print("WP is moving..")
+            message = "MPC_WP is moving..."
+            self.insert_message(message)
             self.MPC_wp.move_to(pos, True)
-            print(f"WP moved to {str(self.MPC_wp.position)}")
+            message = f"WP moved to {str(self.MPC_wp.position)}"
+            self.insert_message(message)
             self.read_MPC_wp()
         except:
-            print("Impossible to move MPC WP :(")
+            message = "Not able to move MPC_WP"
+            self.insert_message(message)
 
     def home_MPC_wp(self):
         try:
             self.MPC_wp.move_home(blocking=True)
             self.but_MPC_wp_Home.config(fg='green')
-            print("MPC WP stage homed!")
+            message = "MPC_WP homed"
+            self.insert_message(message)
             self.read_MPC_wp()
         except:
             self.but_MPC_wp_Home.config(fg='red')
-            print("Not able to home MPC WP")
+            message = "Not able to home MPC_WP"
+            self.insert_message(message)
 
     def disable_motors(self):
         """
@@ -3020,24 +2829,20 @@ class Feedbacker(object):
         """
         if self.WPG is not None:
             self.WPG.disable()
-            print('WPG disconnected')
         if self.WPR is not None:
             self.WPR.disable()
-            print('WPR disconnected')
-        if self.Delay is not None:
-            self.Delay.disable()
-            print('Delay disconnected')
-        if self.MPC_lens is not None:
-            self.MPC_lens.disable()
-            print('Delay disconnected')
+        if self.delay_stage is not None:
+            self.delay_stage.disable()
+        if self.lens_stage is not None:
+            self.lens_stage.disable()
         if self.MPC_wp is not None:
             self.MPC_wp.disable()
-            print('Delay disconnected')
         if self.MPC_grating is not None:
             self.MPC_grating.close()
             self.MPC_grating = None
-            print('Zaber disconnected')
 
+        message = 'Stages are disconnected'
+        self.insert_message(message)
 
     def enable_calibrator(self):
         self.stop_calib = False
@@ -3098,10 +2903,10 @@ class Feedbacker(object):
             given_pp = float(self.ent_pharos_pp.get())
             red_power_indice = np.where((self.pharos_att == given_att) & (self.pharos_pp == given_pp))
             red_power = self.red_p[red_power_indice]
-            print(red_power[0])
             self.strvar_red_power.set(str(red_power[0]))
         except:
-            print('Impossible to read red power')
+            message = 'Impossible to read red power'
+            self.insert_message(message)
 
     def take_image(self, avgs):
         """
@@ -3141,7 +2946,6 @@ class Feedbacker(object):
                     image = image / nr
                     self.meas_has_started = False
 
-        # To be tested
         elif self.ANDOR_cam is True:
             self.cam.set_exposure(float(self.ent_exposure_time.get()) * 1e-6)
             self.cam.setup_shutter('open')
@@ -3158,42 +2962,10 @@ class Feedbacker(object):
             self.meas_has_started = False
 
         else:
-            print('Damn no cam')
+            message = 'No cam'
+            self.insert_message(message)
 
         return image - self.background
-
-    def save_daheng_scans(self, res, pos):
-        nr = self.get_start_image_images()
-
-        data_filename = self.saving_folder + '-focus-images-' + str(
-            int(nr)) + '.h5'
-
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        try:
-            if self.parent.vars_red[1].get() == 1:
-                rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
-            else:
-                rl = 0
-        except:
-            rl = np.nan
-
-        try:
-            if self.parent.vars_green[1].get() == 1:
-                gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
-            else:
-                gl = 0
-        except:
-            gl = np.nan
-
-        log_entry = str(int(nr)) + '\t' + str(pos[0]) + '\t' + str(pos[-1]) + '\t' + str(
-            int(np.size(pos))) + '\t' + str(gl) + '\t' + str(rl) + '\t' + timestamp + '\n'
-        self.g.write(log_entry)
-        hf = h5py.File(data_filename, 'w')
-        hf.create_dataset('images', data=res)
-        hf.create_dataset('positions', data=pos)
-        hf.create_dataset('green_lens', data=gl)
-        hf.create_dataset('red_lens', data=rl)
-        hf.close()
 
     def save_h5(self):
         nr = self.get_start_image()
@@ -3218,24 +2990,6 @@ class Feedbacker(object):
         log_entry = str(int(nr)) + '\n'
         self.f.write(log_entry)
 
-    def save_h5_slm_scan(self):
-        nr = self.get_start_image_slm_param_scan()
-        filename = self.saving_folder + '_slm_param_scan_' + '-' + str(
-            int(nr)) + '.h5'
-
-
-        with h5py.File(filename, 'w') as hf:
-            hf.create_dataset('raw_images', data=self.measurement_array)
-            hf.create_dataset('treated_images', data=self.measurement_treated_array)
-            hf.create_dataset('focus_images', data=self.focus_image_array)
-            hf.create_dataset('radius', data=self.pi_radius_array)
-            hf.create_dataset('e_axis', data=self.eaxis_correct)
-            time_stamps_array_converted = np.array(self.time_stamps_array, dtype='S')
-            hf.create_dataset('timestamps', data=time_stamps_array_converted)
-
-        log_entry = str(int(nr)) + '\n'
-        self.slmps.write(log_entry)
-
     def save_im(self, image):
         """
         Saves the captured image to a file and writes in the log file
@@ -3252,8 +3006,7 @@ class Feedbacker(object):
         nr = self.get_start_image()
         # self.f = open(self.autolog, "a+")
         filename = self.saving_folder + '-' + str(int(nr)) + '.tif'
-        #filename = 'C:/data/' +  '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + str(int(nr)) + '.tif'
-
+        # filename = 'C:/data/' +  '2024-01-25-TEMP' + '/' + str(date.today()) + '-' + str(int(nr)) + '.tif'
 
         image_16bit = image.astype(np.uint16)
         cv2.imwrite(filename, image_16bit, [cv2.IMWRITE_PXM_BINARY, 1])
@@ -3293,7 +3046,6 @@ class Feedbacker(object):
             rl) + '\t' + str(
             rl_pos) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
-        # self.f.close()
 
     def split_threading(self):
         total_steps = int(self.ent_ratio_steps.get())
@@ -3343,13 +3095,6 @@ class Feedbacker(object):
         print("Measurement Done!!!")
 
     def enabl_mcp_live(self):
-        """
-        Enables the MCP measurement.
-
-        Returns
-        -------
-        None
-        """
         self.live_is_pressed = not self.live_is_pressed
         self.update_live_button()
 
@@ -3367,13 +3112,6 @@ class Feedbacker(object):
             self.but_view_live.config(fg='green')
 
     def enabl_mcp_all(self):
-        """
-        Enables the MCP measurement.
-
-        Returns
-        -------
-        None
-        """
 
         if self.var_split_scan.get() == 1:
             if self.var_scan_wp_option.get() == "Red/Green Ratio":
@@ -3389,124 +3127,34 @@ class Feedbacker(object):
             self.mcp_thread.start()
 
     def enabl_mcp(self):
-        """
-        Enables the MCP measurement.
 
-        Returns
-        -------
-        None
-        """
         self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
     def enabl_mcp_simple(self):
-        """
-        Enables the simple MCP measurement.
 
-        Returns
-        -------
-        None
-        """
         self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure_simple)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
     def enabl_mpc_meas(self):
-        """
-        Enables the simple MCP measurement.
 
-        Returns
-        -------
-        None
-        """
         self.stop_mcp = False
         self.mcp_thread = threading.Thread(target=self.measure_mpc)
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
     def enabl_mpc_test_scan(self):
-        """
-        Enables the simple MCP measurement.
 
-        Returns
-        -------
-        None
-        """
         self.stop_mcp_test = False
         self.mcp_thread_test = threading.Thread(target=self.test_mpc_scan)
         self.mcp_thread_test.daemon = True
         self.mcp_thread_test.start()
 
-    def get_start_image_images(self):
-        """
-        Gets the index of the starting image.
-
-        This method retrieves the index of the starting image from the autolog file.
-        It reads the autolog file to get the latest image index, increments it by one,
-        and returns the result as the starting index for the next image.
-
-        Returns
-        -------
-        int
-            The index of the starting image.
-
-        Raises
-        ------
-        Exception
-            If there is an error in retrieving the starting image index.
-        """
-        # self.f = open(self.autolog, "a+")
-        self.g.seek(0)
-        lines = np.loadtxt(self.autolog_images, comments="#", delimiter="\t", unpack=False, usecols=(0,))
-        if lines.size > 0:
-            try:
-                start_image = lines[-1] + 1
-            except:
-                start_image = lines + 1
-            print("The last image had index " + str(int(start_image - 1)))
-        else:
-            start_image = 0
-        # self.f.close()
-        return start_image
-
-    def get_start_image_slm_param_scan(self):
-
-        # self.f = open(self.autolog, "a+")
-        self.slmps.seek(0)
-        lines = np.loadtxt(self.autolog_slm_param_scan, comments="#", delimiter="\t", unpack=False, usecols=(0,))
-        if lines.size > 0:
-            try:
-                start_image = lines[-1] + 1
-            except:
-                start_image = lines + 1
-            print("The last image had index " + str(int(start_image - 1)))
-        else:
-            start_image = 0
-        # self.f.close()
-        return start_image
-
     def get_start_image(self):
-        """
-        Gets the index of the starting image.
-
-        This method retrieves the index of the starting image from the autolog file.
-        It reads the autolog file to get the latest image index, increments it by one,
-        and returns the result as the starting index for the next image.
-
-        Returns
-        -------
-        int
-            The index of the starting image.
-
-        Raises
-        ------
-        Exception
-            If there is an error in retrieving the starting image index.
-        """
-        # self.f = open(self.autolog, "a+")
         self.f.seek(0)
         lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
         if lines.size > 0:
@@ -3514,27 +3162,16 @@ class Feedbacker(object):
                 start_image = lines[-1] + 1
             except:
                 start_image = lines + 1
-            print("The last image had index " + str(int(start_image - 1)))
+            message = "The last image had index " + str(int(start_image - 1))
+            self.insert_message(message)
         else:
             start_image = 0
-        # self.f.close()
         return start_image
 
     def red_only_scan(self):
-        """
-        Perform a scan of the red power. It sets the 'var_wprpower' variable to 1, which indicates that we use the
-        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
-        it sets the 'strvar_WPR_should' variable to the current value, moves the WPR  accordingly, takes an image
-        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
-
-        Returns
-        -------
-        None
-        """
         self.var_wprpower.set(1)
         WPR_steps = int(self.ent_WPR_steps.get())
         WPR_scan_list = np.linspace(float(self.ent_WPR_from.get()), float(self.ent_WPR_to.get()), WPR_steps)
-        print(WPR_scan_list)
 
         for i in np.arange(0, WPR_steps):
             r = WPR_scan_list[i]
@@ -3545,20 +3182,9 @@ class Feedbacker(object):
             self.plot_MCP(im)
 
     def green_only_scan(self):
-        """
-        Perform a scan of the green power. It sets the 'var_wpgpower' variable to 1, which indicates that we use the
-        "power mode" of the waveplate. It generates a list of power values to scan and for each power value,
-        it sets the 'strvar_WPG_should' variable to the current value, moves the WPG  accordingly, takes an image
-        with the specified number of averages from 'ent_avgs', saves the image, and plots the MCP image.
-
-        ReturnsW
-        -------
-        None
-        """
         self.var_wpgpower.set(1)
         WPG_steps = int(self.ent_WPG_steps.get())
         WPG_scan_list = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()), WPG_steps)
-        print(WPG_scan_list)
 
         for i in np.arange(0, WPG_steps):
             g = WPG_scan_list[i]
@@ -3569,22 +3195,15 @@ class Feedbacker(object):
             self.plot_MCP(im)
 
     def red_green_ratio_scan(self):
-        """
-        Perform a scan of the red and green ratio.
-
-        Returns
-        -------
-        None
-        """
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
         self.var_wprpower.set(1)
         self.var_wpgpower.set(1)
 
-        print("Power Values for R: ")
-        print(pr)
-        print("Power Values for G: ")
-        print(pg)
+        message = f'Power values for red: {pr}'
+        self.insert_message(message)
+        message = f'Power values for green: {pg}'
+        self.insert_message(message)
 
         for i in np.arange(0, steps):
             r = pr[i]
@@ -3605,50 +3224,6 @@ class Feedbacker(object):
                 self.save_im(im)
                 self.plot_MCP(im)
 
-    def phase_scan(self):
-        """
-        Scans the phase and captures images.
-
-        The scan parameters are specified in the GUI.
-        The captured images are saved to a file and the MCP signal is plotted.
-
-        Returns
-        -------
-        None
-        """
-        start_image = self.get_start_image()
-        self.phis = np.linspace(float(self.ent_from.get()), float(self.ent_to.get()), int(self.ent_steps.get()))
-        print("getting to scan starting point...")
-        self.strvar_setp.set(self.phis[0])
-        self.set_setpoint()
-        time.sleep(0.05)
-        print("Ready to scan the phase!")
-        for ind, phi in enumerate(self.phis):
-            start_time = time.time()
-            self.strvar_setp.set(phi)
-            self.set_setpoint()
-            t0 = time.time()
-            im = self.take_image(int(self.ent_avgs.get()))
-            if self.measurement_running and self.var_saveh5.get():
-                self.measurement_array_flat[self.measurement_counter, :, :] = im
-                if self.var_export_treated_image.get():
-                    E_new, im_new = self.final_image_treatment(im)
-                    self.measurement_treated_array_flat[self.measurement_counter, :, :] = im_new
-                self.time_stamps_array_flat[self.measurement_counter] = str(
-                    datetime.datetime.now().strftime("%H:%M:%S"))
-                self.phase_meas_array_flat[self.measurement_counter] = np.round(np.mean(np.unwrap(self.d_phase)), 2)
-                self.phase_std_array_flat[self.measurement_counter] = np.round(np.std(np.unwrap(self.d_phase)), 2)
-                print(self.measurement_counter)
-                self.measurement_counter = self.measurement_counter + 1
-            else:
-                self.save_im(im)
-            self.plot_MCP(im)
-            t1 = time.time()
-            print(f"Camera MCP {t1 - t0}")
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
-
     def get_power_values_for_ratio_scan(self):
         c = float(self.strvar_int_ratio_constant.get())
         x = float(self.ent_int_ratio_focus.get()) ** 2
@@ -3656,9 +3231,6 @@ class Feedbacker(object):
                              int(self.ent_ratio_steps.get()))
         pr = c - c * ratios
         pg = c * ratios / x
-        print(x)
-        print(c)
-        print(ratios)
         return pr, pg
 
     def focus_position_scan_green(self):
@@ -3705,125 +3277,16 @@ class Feedbacker(object):
             im = self.take_image(int(self.ent_avgs.get()))
             self.plot_MCP(im)
 
-    def measure_slm_scan(self):
-        self.but_meas_slm_param.config(fg='red')
-
-        status = self.var_scan_slm_param_option.get()
-
-        if status == "Nothing":
-            print("Nothing is selected")
-
-        elif status == "Supergaussian":
-            print("Supergaussian is selected")
-            self.slmps.write("# Supergaussian scan, " + self.ent_comment.get() + "\n")
-
-            pi_radius_steps = int(self.ent_supergaussian_steps.get())
-            self.measurement_counter = 0
-            self.measurement_array = np.zeros([pi_radius_steps]) * np.nan
-            self.focus_image_array = np.zeros([pi_radius_steps]) * np.nan
-            self.measurement_treated_array = np.zeros([pi_radius_steps]) * np.nan
-
-            self.time_stamps_array = np.zeros([pi_radius_steps]) * np.nan
-            self.time_stamps_array = self.time_stamps_array.astype('str')
-
-            self.pi_radius_array = np.linspace(float(self.ent_supergaussian_from.get()),
-                                               float(self.ent_supergaussian_to.get()),
-                                               int(self.ent_supergaussian_steps.get()))
-            self.aquisition_time = int(self.ent_exposure_time.get())
-            self.averages = int(self.ent_avgs.get())
-            self.mcp_voltage = float(self.ent_mcp.get())
-
-            self.focus_image_array_flat = self.focus_image_array.flatten()
-
-            self.focus_image_array_flat = np.zeros([self.focus_image_array_flat.size, 1080, 1440]) * np.nan
-
-            self.measurement_array_flat = self.measurement_array.flatten()
-            self.measurement_array_flat = np.zeros([self.measurement_array_flat.size, 512, 512]) * np.nan
-            self.measurement_treated_array_flat = self.measurement_array.flatten()
-            self.measurement_treated_array_flat = np.zeros(
-                [self.measurement_treated_array_flat.size, 512, 512]) * np.nan
-            self.time_stamps_array_flat = self.time_stamps_array.flatten()
-
-            self.measurement_running = 1
-            self.scan_supergaussian()
-
-        self.but_meas_slm_param.config(fg='green')
-        if self.measurement_running:
-            self.measurement_running = 0
-            self.measurement_counter = 0
-
-            self.measurement_array = self.measurement_array_flat.reshape(
-                [self.measurement_array.shape[0], 512, 512])
-
-            self.measurement_treated_array = self.measurement_treated_array_flat.reshape(
-                [self.measurement_treated_array.shape[0], 512, 512])
-
-            self.focus_image_array = self.focus_image_array_flat.reshape(
-                [self.focus_image_array.shape[0], 1080, 1440])
-
-            self.save_h5_slm_scan()
-
-        # Indicate completion by setting the event
-        self.scan_is_done = True
-        self.scan_is_done_threading.set()
-
-    def scan_supergaussian(self):
-        # this is for IR beam only
-        self.radius_steps = np.linspace(float(self.ent_supergaussian_from.get()),
-                                        float(self.ent_supergaussian_to.get()), int(self.ent_supergaussian_steps.get()))
-
-        x = np.linspace(-chip_width, chip_width, slm_size[1])
-        y = np.linspace(-chip_height, chip_height, slm_size[0])
-        [X, Y] = np.meshgrid(x, y)
-        rho = np.sqrt(X ** 2 + Y ** 2)
-        rho /= 2
-        # note : make sure that there another phase on the slm, otherwise a double scan leads to an error
-
-        if self.daheng_camera is not None:
-            for ind, desired_radius in enumerate(self.radius_steps):
-                # Set the new wavefront on the SLM
-                indices = np.where(rho <= desired_radius)
-                p1 = np.zeros_like(X)
-                p1[indices] = np.pi
-                phase = p1 / (2 * np.pi) * bit_depth
-                phase_map = self.parent.phase_map_red + phase
-                self.slm_lib.SLM_Disp_Open(int(self.parent.ent_scr_red.get()))
-                self.slm_lib.SLM_Disp_Data(int(self.parent.ent_scr_red.get()), phase_map,
-                                           slm_size[1], slm_size[0])
-                time.sleep(2)
-
-                im_MCP = self.take_image(int(self.ent_avgs.get()))
-                im_focus = self.daheng_camera.take_image(int(self.var_daheng_avg.get()))
-                # im_focus = Image.fromarray(im_focus)
-
-                if self.measurement_running and self.var_saveh5.get():
-                    self.measurement_array_flat[self.measurement_counter, :, :] = im_MCP
-                    self.focus_image_array_flat[self.measurement_counter, :, :] = im_focus
-                    if self.var_export_treated_image.get():
-                        E_new, im_new = self.final_image_treatment(im_MCP)
-                        self.measurement_treated_array_flat[self.measurement_counter, :, :] = im_new
-                    self.time_stamps_array_flat[self.measurement_counter] = str(
-                        datetime.datetime.now().strftime("%H:%M:%S"))
-                    print(self.measurement_counter)
-                    self.measurement_counter = self.measurement_counter + 1
-                else:
-                    self.save_im(im_MCP)
-
-                self.plot_MCP(im_MCP)
-
     def phase_scan(self):
         start_image = self.get_start_image()
         self.phis = np.linspace(float(self.ent_from.get()), float(self.ent_to.get()), int(self.ent_steps.get()))
-        print("getting to scan starting point...")
         self.strvar_setp.set(self.phis[0])
         self.set_setpoint()
         time.sleep(0.05)
-        print("Ready to scan the phase!")
         for ind, phi in enumerate(self.phis):
             start_time = time.time()
             self.strvar_setp.set(phi)
             self.set_setpoint()
-            t0 = time.time()
             im = self.take_image(int(self.ent_avgs.get()))
             if self.measurement_running and self.var_saveh5.get():
                 self.measurement_array_flat[self.measurement_counter, :, :] = im
@@ -3834,26 +3297,27 @@ class Feedbacker(object):
                     datetime.datetime.now().strftime("%H:%M:%S"))
                 self.phase_meas_array_flat[self.measurement_counter] = np.round(np.mean(np.unwrap(self.d_phase)), 2)
                 self.phase_std_array_flat[self.measurement_counter] = np.round(np.std(np.unwrap(self.d_phase)), 2)
-                print(self.measurement_counter)
+                self.insert_message(self.measurement_counter)
                 self.measurement_counter = self.measurement_counter + 1
             else:
                 self.save_im(im)
             self.plot_MCP(im)
-            t1 = time.time()
-            print(f"Camera MCP {t1 - t0}")
+
             end_time = time.time()
             elapsed_time = end_time - start_time
-            print("Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2))
+            #message = "Imagenr ", (start_image + ind), " Phase: ", round(phi, 2), " Elapsed time: ", round(elapsed_time, 2)
+            #self.insert_message(str(message))
 
     def abort_mpc_measurement(self):
         self.abort = 1
 
     def test_mpc_scan(self):
         grating_pos_array = np.linspace(float(self.ent_mpc_grating_from.get()), float(self.ent_mpc_grating_to.get()),
-                                     int(self.ent_mpc_grating_steps.get()))
+                                        int(self.ent_mpc_grating_steps.get()))
 
         for ind_pos, pos in enumerate(grating_pos_array):
-            print(ind_pos)
+            message = f'Current index: {ind_pos}'
+            self.insert_message(message)
             self.strvar_zaber_grating_should.set(str(pos))
             self.move_zaber_stage()
 
@@ -3866,20 +3330,23 @@ class Feedbacker(object):
         self.current_power_array = power_array
 
         grating_array = np.linspace(float(self.ent_mpc_grating_from.get()), float(self.ent_mpc_grating_to.get()),
-                                  int(self.ent_mpc_grating_steps.get()))
+                                    int(self.ent_mpc_grating_steps.get()))
         self.current_grating_array = grating_array
 
         self.but_MPC_measure.config(fg='red')
         pygame.mixer.init()
         pygame.mixer.music.load("ressources/ok_lets_go.mp3")
-        print("Okkkk let's go!")
+        message = "OKKKKKKKK LET'S GO"
+        self.insert_message(message)
         pygame.mixer.music.play()
         if self.var_mpc_scan_grating.get() == 1:
             self.scan_type = 3
             self.current_scan_type = 3
-            print("Now we scan the MPC grating!")
+            message = "Now we scan the MPC grating"
+            self.insert_message(message)
             res = np.zeros([512, 512, grating_array.size]) * np.nan
             res_treated = np.zeros([512, 512, grating_array.size]) * np.nan
+            self.abort = 0
             if self.MPC_grating is not None:
                 for ind_pos, pos in enumerate(grating_array):
                     if self.abort == 1:
@@ -3898,17 +3365,19 @@ class Feedbacker(object):
                         self.current_E = self.eaxis_correct
                         self.current_treated_images = res_treated
                         self.plot_analysis(3, res_treated, parameter1=lens_pos_array, parameter2=power_array,
-                                           parameter3 = grating_array, energy_axis=self.current_E)
+                                           parameter3=grating_array, energy_axis=self.current_E)
 
             else:
-                print("Would you pls initialize the grating :(")
+                message = "Check if the grating stage is initalized"
+                self.insert_message(message)
 
 
         elif self.var_mpc_scan_wp.get() == 1 and self.var_mpc_scan_lens.get() == 1:
             self.scan_type = 0
             self.current_scan_type = 0
             self.var_mpc_wp_power.set(1)
-            print("Now we are scanning lens AND power")
+            message = "Now we scan the lens position and the power"
+            self.insert_message(message)
             res = np.zeros([512, 512, lens_pos_array.size, power_array.size]) * np.nan
             res_treated = np.zeros([512, 512, lens_pos_array.size, power_array.size]) * np.nan
 
@@ -3916,7 +3385,7 @@ class Feedbacker(object):
                 if self.abort == 1:
                     break
                 self.strvar_mpc_lens_should.set(str(pos))
-                self.move_MPC_lens()
+                self.move_lens_stage()
                 for ind_power, power in enumerate(power_array):
                     if self.abort == 1:
                         break
@@ -3941,7 +3410,8 @@ class Feedbacker(object):
             self.scan_type = 1
             self.current_scan_type = 1
             self.var_mpc_wp_power.set(1)
-            print("Now we are scanning ONLY power")
+            message = "Now we scan the the power only"
+            self.insert_message(message)
             lens_pos_array = 0
             res = np.zeros([512, 512, power_array.size]) * np.nan
             res_treated = np.zeros([512, 512, power_array.size]) * np.nan
@@ -3968,8 +3438,8 @@ class Feedbacker(object):
         elif self.var_mpc_scan_wp.get() == 0 and self.var_mpc_scan_lens.get() == 1:
             self.scan_type = 2
             self.current_scan_type = 2
-
-            print("Now we are scanning ONLY lens position")
+            message = "Now we scan the the lens position only"
+            self.insert_message(message)
             power_array = 0
             res = np.zeros([512, 512, lens_pos_array.size]) * np.nan
             res_treated = np.zeros([512, 512, lens_pos_array.size]) * np.nan
@@ -3978,7 +3448,7 @@ class Feedbacker(object):
                 if self.abort == 1:
                     break
                 self.strvar_mpc_lens_should.set(str(pos))
-                self.move_MPC_lens()
+                self.move_lens_stage()
                 if self.ANDOR_cam == True:
                     im = self.take_image(int(self.ent_avgs.get()))
                 else:
@@ -3994,7 +3464,8 @@ class Feedbacker(object):
                                        energy_axis=self.current_E)
 
         else:
-            print("We are doing nothing.")
+            message = "Now we scan absolutely nothing"
+            self.insert_message(message)
             self.abort = 1
 
         if self.abort == 1:
@@ -4022,15 +3493,17 @@ class Feedbacker(object):
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
 
-    def plot_analysis(self, scan_type, treated_images, parameter1=None, parameter2=None, parameter3 = None, energy_axis=None):
+    def plot_analysis(self, scan_type, treated_images, parameter1=None, parameter2=None, parameter3=None,
+                      energy_axis=None):
         har = int(self.var_mcp_analysis_harmonic_order.get())
-        print(har)
+        message = f"Harmonics order: {har}"
+        self.insert_message(message)
         if energy_axis is not None:
             ind = int(np.argmin(abs(energy_axis - har * 1.2037300291262136)))
         else:
-            print("THERE IS NO ENERGY AXIS!!!")
+            message = "There is no energy axis"
+            self.insert_message(message)
             ind = 0
-        # print(ind,energy_axis[ind])
 
         if scan_type == 0:
             self.axAnalysis_1.clear()
@@ -4042,7 +3515,7 @@ class Feedbacker(object):
             else:
                 imm = self.axAnalysis_1.imshow(np.flipud(np.nansum(treated_images, axis=(0, 1)).T),
                                                extent=[parameter1[0], parameter1[-1], parameter2[0],
-                                                       parameter2[-1]], aspect='auto', norm = 'linear')
+                                                       parameter2[-1]], aspect='auto', norm='linear')
                 cbar1 = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_1)
 
             self.axAnalysis_1.set_xlabel("Lens position (mm)")
@@ -4054,12 +3527,13 @@ class Feedbacker(object):
                 imm2 = self.axAnalysis_2.imshow(
                     np.flipud(np.nansum(treated_images[ind - 8:ind + 8, :, :], axis=(0, 1)).T),
                     extent=[parameter1[0], parameter1[-1], parameter2[0],
-                            parameter2[-1]], aspect='auto',norm=LogNorm())
+                            parameter2[-1]], aspect='auto', norm=LogNorm())
                 cbar2 = self.figrAnalysis.colorbar(imm2, ax=self.axAnalysis_2)
             else:
-                imm2 = self.axAnalysis_2.imshow(np.flipud(np.nansum(treated_images[ind - 8:ind + 8,:, :], axis=(0, 1)).T),
-                                                extent=[parameter1[0], parameter1[-1], parameter2[0],
-                                                        parameter2[-1]], aspect='auto',norm = 'linear')
+                imm2 = self.axAnalysis_2.imshow(
+                    np.flipud(np.nansum(treated_images[ind - 8:ind + 8, :, :], axis=(0, 1)).T),
+                    extent=[parameter1[0], parameter1[-1], parameter2[0],
+                            parameter2[-1]], aspect='auto', norm='linear')
                 cbar2 = self.figrAnalysis.colorbar(imm2, ax=self.axAnalysis_2)
             self.axAnalysis_2.set_xlabel("Lens position (mm)")
             self.axAnalysis_2.set_ylabel("Power (W)")
@@ -4072,26 +3546,26 @@ class Feedbacker(object):
 
             self.axAnalysis_3.clear()
         elif scan_type == 1:
-            print("Plotting the power scan!")
+            message = "Plotting the power scan..."
+            self.insert_message(message)
             self.axAnalysis_1.clear()
             self.axAnalysis_1.plot(parameter2, np.nansum(treated_images, axis=(0, 1)).ravel())
             self.axAnalysis_1.set_xlabel("Power (W)")
             self.axAnalysis_1.set_ylabel("Total signal")
             self.axAnalysis_1.set_title("Yield: whole image")
 
-
             self.axAnalysis_2.clear()
-            self.axAnalysis_2.plot(parameter2, np.nansum(treated_images[ind - 8:ind + 8,:, :], axis=(0, 1)).ravel())
+            self.axAnalysis_2.plot(parameter2, np.nansum(treated_images[ind - 8:ind + 8, :, :], axis=(0, 1)).ravel())
             self.axAnalysis_2.set_xlabel("Power (W)")
             self.axAnalysis_2.set_ylabel("Total signal")
             self.axAnalysis_2.set_title("Yield: H {}".format(har))
 
             self.axAnalysis_3.clear()
-            profiles = np.sum(treated_images,1)
+            profiles = np.sum(treated_images, 1)
             if self.var_log_scale.get() == 1:
                 imm = self.axAnalysis_3.imshow(np.flipud(profiles.T),
-                                                extent=[energy_axis[0], energy_axis[-1], parameter2[0],
-                                                        parameter2[-1]], aspect='auto',norm=LogNorm())
+                                               extent=[energy_axis[0], energy_axis[-1], parameter2[0],
+                                                       parameter2[-1]], aspect='auto', norm=LogNorm())
 
                 cbar1 = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_3)
                 self.axAnalysis_1.set_yscale('log')
@@ -4104,22 +3578,22 @@ class Feedbacker(object):
                 self.axAnalysis_1.set_yscale('linear')
                 self.axAnalysis_2.set_yscale('linear')
 
-
             self.axAnalysis_3.set_xlabel("Energy (eV)")
             self.axAnalysis_3.set_ylabel("Power (W)")
             self.axAnalysis_3.set_title("Profiles")
             try:
-                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),float(self.var_mcp_analysis_emax.get()))
+                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),
+                                           float(self.var_mcp_analysis_emax.get()))
             except:
                 self.axAnalysis_3.set_xlim(auto=True)
-
 
             self.figrAnalysis.tight_layout()
             self.canvas_results.draw()
             cbar1.remove()
 
         elif scan_type == 2:
-            print("Plotting the lens scan!")
+            message = "Plotting the lens scan..."
+            self.insert_message(message)
 
             self.axAnalysis_1.clear()
             self.axAnalysis_1.plot(parameter1, np.nansum(treated_images, axis=(0, 1)).ravel())
@@ -4128,7 +3602,7 @@ class Feedbacker(object):
             self.axAnalysis_1.set_title("Yield: whole image")
 
             self.axAnalysis_2.clear()
-            self.axAnalysis_2.plot(parameter1, np.nansum(treated_images[ind - 8:ind + 8,:, :], axis=(0, 1)).ravel())
+            self.axAnalysis_2.plot(parameter1, np.nansum(treated_images[ind - 8:ind + 8, :, :], axis=(0, 1)).ravel())
             self.axAnalysis_2.set_xlabel("Lens position (mm)")
             self.axAnalysis_2.set_ylabel("Total signal")
             self.axAnalysis_2.set_title("Yield: H {}".format(har))
@@ -4138,7 +3612,7 @@ class Feedbacker(object):
             if self.var_log_scale.get() == 1:
                 imm = self.axAnalysis_3.imshow(np.flipud(profiles.T),
                                                extent=[energy_axis[0], energy_axis[-1], parameter1[0],
-                                                       parameter1[-1]], aspect='auto', norm = LogNorm())
+                                                       parameter1[-1]], aspect='auto', norm=LogNorm())
                 cbar1 = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_3)
                 self.axAnalysis_1.set_yscale('log')
                 self.axAnalysis_2.set_yscale('log')
@@ -4154,7 +3628,8 @@ class Feedbacker(object):
             self.axAnalysis_3.set_ylabel("Lens position (mm)")
             self.axAnalysis_3.set_title("Profiles")
             try:
-                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),float(self.var_mcp_analysis_emax.get()))
+                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),
+                                           float(self.var_mcp_analysis_emax.get()))
             except:
                 self.axAnalysis_3.set_xlim(auto=True)
 
@@ -4163,7 +3638,8 @@ class Feedbacker(object):
             cbar1.remove()
 
         elif scan_type == 3:
-            print("Plotting the grating scan!")
+            message = "Pltting the grating scan..."
+            self.insert_message(message)
 
             self.axAnalysis_1.clear()
             self.axAnalysis_1.plot(parameter3, np.nansum(treated_images, axis=(0, 1)).ravel())
@@ -4179,10 +3655,10 @@ class Feedbacker(object):
 
             self.axAnalysis_3.clear()
             profiles = np.sum(treated_images, 1)
-            if self.var_log_scale.get() ==1:
+            if self.var_log_scale.get() == 1:
                 imm = self.axAnalysis_3.imshow(np.flipud(profiles.T),
                                                extent=[energy_axis[0], energy_axis[-1], parameter3[0],
-                                                       parameter3[-1]], aspect='auto',norm=LogNorm())
+                                                       parameter3[-1]], aspect='auto', norm=LogNorm())
                 cbar1 = self.figrAnalysis.colorbar(imm, ax=self.axAnalysis_3)
                 self.axAnalysis_1.set_yscale('log')
                 self.axAnalysis_2.set_yscale('log')
@@ -4198,7 +3674,8 @@ class Feedbacker(object):
             self.axAnalysis_3.set_ylabel("Grating position (mm)")
             self.axAnalysis_3.set_title("Profiles")
             try:
-                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),float(self.var_mcp_analysis_emax.get()))
+                self.axAnalysis_3.set_xlim(float(self.var_mcp_analysis_emin.get()),
+                                           float(self.var_mcp_analysis_emax.get()))
             except:
                 self.axAnalysis_3.set_xlim(auto=True)
             # divs = np.zeros_like(parameter1)
@@ -4225,12 +3702,10 @@ class Feedbacker(object):
             cbar1.remove()
 
     def measure_all(self):
-        print("yay i made it into the measure all function")
         self.but_meas_all.config(fg='red')
-        # self.f = open(self.autolog, "a+")
 
         status = self.var_scan_wp_option.get()
-        print(status)
+        self.insert_message(status)
 
         if status == "Green Focus":
             if self.var_phasescan.get() == 1:
@@ -4241,7 +3716,8 @@ class Feedbacker(object):
                     self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
                     self.focus_position_scan_green()
             else:
-                print("Are you sure you do not want to scan the phase for each focus position?")
+                message = "Are you sure you do not want to scan the phase for each focus position?"
+                self.insert_message(message)
                 if self.var_background.get() == 1:
                     self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
                     self.focus_position_scan_green()
@@ -4258,7 +3734,8 @@ class Feedbacker(object):
                     self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
                     self.focus_position_scan_red()
             else:
-                print("Are you sure you do not want to scan the phase for each focus position?")
+                message = "Are you sure you do not want to scan the phase for each focus position?"
+                self.insert_message(message)
                 if self.var_background.get() == 1:
                     self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
                     self.focus_position_scan_red()
@@ -4279,7 +3756,8 @@ class Feedbacker(object):
                         "# PhaseScan, " + self.ent_comment.get() + "\n")
                     self.phase_scan()
             else:
-                print("Would you please select something to actually scan")
+                message = "Select something to scan"
+                self.insert_message(message)
 
         elif status == "Red/Green Ratio":
             if self.var_phasescan.get() == 1:
@@ -4322,20 +3800,20 @@ class Feedbacker(object):
                     self.measurement_running = 1
                     self.red_green_ratio_scan()
             else:
-                print("Are you sure you do not want to scan the phase for each ratio?")
+                message = "Are you sure you do not want to scan the phase for each ratio?"
+                self.insert_message(message)
 
         elif status == "Only Red":
             self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
             self.red_only_scan()
-            print(status)
+            self.insert_message(status)
         elif status == "Only Green":
             self.f.write("# GreenOnlyScan, " + self.ent_comment.get() + "\n")
             self.green_only_scan()
-            print(status)
+            self.insert_message(status)
         else:
-            print("something fishy is going on")
+            self.insert_message("Bruh")
 
-        # self.f.close()
         self.but_meas_all.config(fg='green')
         if self.measurement_running:
             self.measurement_running = 0
@@ -4357,17 +3835,8 @@ class Feedbacker(object):
         self.scan_is_done_threading.set()
 
     def measure(self):
-        """
-        Performs a phase scan
 
-        Returns
-        -------
-        None
-        """
         self.but_meas_scan.config(fg='red')
-
-        # if self.var_phasescan.get() == 1:
-        # self.f = open(self.autolog, "a+")
         if self.var_background.get() == 1:
             self.f.write(
                 "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
@@ -4378,52 +3847,26 @@ class Feedbacker(object):
             self.f.write(
                 "# PhaseScan, " + self.ent_comment.get() + "\n")
             self.phase_scan()
-        # self.f.close()
 
         self.but_meas_scan.config(fg='green')
 
     def measure_simple(self):
-        """
-        Performs a simple measurement.
 
-        This method performs a simple measurement by capturing images and plotting the MCP signal.
-        It retrieves the index of the starting image from the autolog file using the `get_start_image()`
-        method, captures the image using the `take_image()` method, saves the image to a file using
-        the `save_image()` method, plots the MCP signal using the `plot_MCP()` method, and then closes
-        the file.
-
-        Returns
-        -------
-        None
-        """
         self.but_meas_simple.config(fg='red')
-        # (self.autolog, "a+")
 
-        # start_image = self.get_start_image()
 
         if self.var_background.get() == 1:
             self.f.write("# BACKGROUND SingleImage, " + self.ent_comment.get() + '\n')
         else:
             self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
-        # info = self.ent_avgs.get() + " averages" + " comment: " + self.ent_comment.get()
-        # self.save_image(im, start_image, info)
+
         im = self.take_image(int(self.ent_avgs.get()))
         self.save_im(im)
         self.plot_MCP(im)
         self.but_meas_simple.config(fg='green')
-        # self.f.close()
+
 
     def feedback(self):
-        """
-        Displays a phase map on the SLM.
-
-        The phase map is calculated based on the `phase_map` attribute of the parent object and the flat phase value specified in the GUI.
-        The phase map is then displayed on the SLM.
-
-        Returns
-        -------
-        None
-        """
         if self.ent_flat.get() != '':
             phi = float(self.ent_flat.get())
         else:
@@ -4438,16 +3881,7 @@ class Feedbacker(object):
                                        slm_size[1], slm_size[0])
 
     def eval_spec(self):
-        """
-        Acquisition function for spectrometer.
 
-        This function acquires raw data from a spectrometer and calculates the phase angle of the Fourier transform of the data.
-        It continuously acquires data until `stop_acquire` flag is set to 1.
-
-        Returns:
-        --------
-        None
-        """
         while True:
             time.sleep(0.01)
 
@@ -4460,7 +3894,7 @@ class Feedbacker(object):
             self.trace = data[start:stop]
             self.wavelength = wavelength[start:stop]
 
-            # print(timestamp)
+
 
             im_fft = np.fft.fft(self.trace)
             self.abs_im_fft = np.abs(im_fft)
@@ -4472,22 +3906,26 @@ class Feedbacker(object):
                 self.im_angl = 0
             self.lbl_angle.config(text=np.round(self.im_angl, 6))
 
-            # creating the phase vector
             self.im_phase[:-1] = self.im_phase[1:]
             self.im_phase[-1] = self.im_angl
+
+            # creating the phase vector
+
 
             # calculating standard deviation
             mean = np.mean(self.im_phase)
             std = np.sqrt(np.sum((self.im_phase - mean) ** 2) / (len(self.im_phase) - 1))
-            self.lbl_std_val.config(text=np.round(std, 4))
+            if std < 0.12:
+                self.lbl_std_val.config(text=np.round(std, 4), fg='green')
+            else:
+                self.lbl_std_val.config(text=np.round(std, 4), fg='red')
 
             if self.stop_acquire == 1:
                 self.stop_acquire = 0
                 break
             if self.meas_has_started:
                 self.d_phase.append(self.im_angl)
-                # print("phase saving should be activated")
-                # g.write(str(self.im_angl)+"\n")
+
             self.plot_fft_blit()
 
     def spc_img(self):
@@ -4502,6 +3940,7 @@ class Feedbacker(object):
         self.render_thread.daemon = True
         self.render_thread.start()
         self.plot_phase()
+        self.plot_voltage()
 
     def take_background(self):
         """
@@ -4568,6 +4007,12 @@ class Feedbacker(object):
         self.figrMCP_treated.tight_layout()
         self.imgMCP_treated.draw()
         cbar.remove()
+
+       # with h5py.File('data.h5', 'w') as hf:
+            #hf.create_dataset('e_axis', data=self.eaxis_correct)
+            #hf.create_dataset('y_axis', data=np.arange(0, 512))
+            #hf.create_dataset('image_T', data=image.T)
+            #print('done')
 
     def plot_calibration_image(self, image):
         image = np.flipud(image)
@@ -4745,7 +4190,6 @@ class Feedbacker(object):
         """
         # find maximum in the fourier trace
         maxindex = np.where(self.abs_im_fft == np.max(self.abs_im_fft[3:50]))[0][0]
-        print(maxindex)
 
         self.ax1r.clear()
         self.ax1r.plot(self.wavelength, self.trace)
@@ -4770,8 +4214,10 @@ class Feedbacker(object):
         self.figr.canvas.restore_region(self.ax1r_blit)
         self.figr.canvas.restore_region(self.ax2r_blit)
         self.trace_line.set_data(self.wavelength, self.trace)
+        self.trace_line.set_color('green')
         self.ax1r.draw_artist(self.trace_line)
         self.fourier_line.set_data(np.arange(50), self.abs_im_fft[:50])
+        self.fourier_line.set_color('green')
         self.ax1r.draw_artist(self.fourier_line)
         self.fourier_indicator.set_data([maxindex], [self.abs_im_fft[maxindex] + 0.05])
         self.ax1r.draw_artist(self.fourier_indicator)
@@ -4794,10 +4240,38 @@ class Feedbacker(object):
         """
         self.figp.canvas.restore_region(self.ax1p_blit)
         self.phase_line.set_data(np.arange(1000), self.im_phase)
+        self.V_line.set_color('blue')
         self.ax1p.draw_artist(self.phase_line)
         self.figp.canvas.blit(self.ax1p.bbox)
         self.figp.canvas.flush_events()
         self.win.after(50, self.plot_phase)
+
+
+    def plot_voltage(self):
+        """
+        Plot the phase image using blitting.
+
+        Updates the plot element with the new phase data, blits the canvas,
+        and uses recursion to call itself after 50 milliseconds.
+
+        Returns
+        -------
+        None
+        """
+        mean_value = np.mean(self.im_voltage[-100:])
+        lower_limit =  -0.25 + mean_value
+        upper_limit =  0.25 + mean_value
+        self.ax1V.set_ylim(lower_limit, upper_limit)
+
+
+        self.figV.canvas.restore_region(self.ax1V_blit)
+        self.V_line.set_data(np.arange(1000), self.im_voltage)
+        self.V_line.set_color('red')
+        self.ax1V.draw_artist(self.V_line)
+        self.figV.canvas.draw()
+        self.figV.canvas.blit(self.ax1V.bbox)
+        self.figV.canvas.flush_events()
+        self.win.after(50, self.plot_voltage)
 
     def spec_activate(self):
         """
@@ -4815,11 +4289,13 @@ class Feedbacker(object):
                 avs.AVS_Init()
             if self.active_spec_handle is None:
                 speclist = avs.AVS_GetList()
-                print(str(len(speclist)) + ' spectrometer(s) found.')
+                message = str(len(speclist)) + ' spectrometer(s) found.'
+                self.insert_message(message)
                 self.active_spec_handle = avs.AVS_Activate(speclist[0])
                 self.ent_spc_ind.config(state='disabled')
         except:
-            print('There was no spectrometer found!')
+            message = 'There was no spectrometer found!'
+            self.insert_message(message)
 
     def spec_deactivate(self):
         """
@@ -4857,7 +4333,8 @@ class Feedbacker(object):
             avs.AVS_Measure(self.active_spec_handle)
             self.eval_spec()
         except:
-            print('No spectrometer found!')
+            message = 'No spectrometer found'
+            self.insert_message(message )
 
     def stop_measure(self):
         """
@@ -4945,16 +4422,33 @@ class Feedbacker(object):
         -------
         None
         """
+        self.home_pid_piezo()
         self.set_setpoint()
         self.set_pid_val()
+        self.pid.sample_time = float(self.ent_spc_exp.get())*1e-3
+        self.pid.output_limits = (-10, 10)
 
         while True:
-            time.sleep(0.05)
-            correction = self.pid((self.im_angl - self.set_point + np.pi) % (2 * np.pi) - np.pi)
-            self.strvar_flat.set(correction)
+            #time.sleep(float(self.ent_spc_exp.get())*1e-3)
+            # deviation_slm = (self.im_angl - self.set_point + np.pi) % (2 * np.pi) - np.pi
+            # correction_slm = self.pid(deviation_slm)
+            # self.strvar_flat.set(str(correction_slm))
+
+            deviation = (self.im_angl - self.set_point + np.pi) % (2 * np.pi) - np.pi  # -pi to pi
+            deviation_in_V = deviation / (2 * np.pi) * 0.38
+
+            correction_piezo = self.pid(deviation_in_V)
+            self.strvar_pid_stage_set_position.set(str(correction_piezo))
+
+            self.im_voltage[:-1] = self.im_voltage[1:]
+            self.im_voltage[-1] = correction_piezo
+
             self.feedback()
+
             # print(self.pid.components)
             if self.stop_pid:
+                correction_piezo = self.pid(0)
+                self.strvar_pid_stage_set_position.set(str(correction_piezo))
                 break
 
     def enbl_pid(self):
@@ -5013,7 +4507,8 @@ class Feedbacker(object):
             header = "Wavelength (nm)\tCounts (arb.u)"
             np.savetxt(file_path.name, fringes, delimiter="\t", header=header)
             file_path.close()
-            print(f"Spectral fringes saved to {file_path.name}")
+            message = f"Spectral fringes saved to {file_path.name}"
+            self.insert_message(message )
             self.but_spc_export_fringes.config(fg='green')
 
     def enable_save_spc_phase_stability(self):
@@ -5045,7 +4540,8 @@ class Feedbacker(object):
             header = "Time (arb.u)\tTwo-color phase (rad)"
             np.savetxt(file_path.name, phase_stability, delimiter="\t", header=header)
             file_path.close()
-            print(f"Phase stability saved to {file_path.name}")
+            message = f"Phase stability saved to {file_path.name}"
+            self.insert_message(message )
         self.but_spc_export_phase_stab.config(fg='green')
 
     def on_close(self):
@@ -5060,7 +4556,7 @@ class Feedbacker(object):
         None
         """
         self.f.close()
-        #self.g.close()
+        # self.g.close()
         plt.close(self.figr)
         plt.close(self.figp)
         self.disable_motors()

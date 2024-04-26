@@ -110,6 +110,45 @@ def process_image(image):
     return new_image, som_x, som_y
 
 
+def process_image_new(image):
+    # Remove the background noise, #TODO - back reflection treatment
+    #image[image <= np.min(image) + 1] = 0
+
+    # Hot pixels treatment
+    # Create four shifted versions of the input image, one for each direction
+    shifted_right = np.roll(image, 1, axis=1)
+    shifted_left = np.roll(image, -1, axis=1)
+    shifted_up = np.roll(image, -1, axis=0)
+    shifted_down = np.roll(image, 1, axis=0)
+
+    # Calculate a boolean mask where the value is True if the corresponding pixel has all neighbors equal to 0
+    neighbors = (shifted_right == 0) & (shifted_left == 0) & (shifted_up == 0) & (shifted_down == 0)
+
+    # Set the value of all pixels that are identified as hot pixels (neighbors is True) and have a value greater than
+    # 0 to 0
+    image[neighbors & (image > 0)] = 0
+
+    # Calculate the second order moment (variance)
+    #old_som = find_second_order_moment(image)
+    #print(f'old som {old_som}')
+
+    # Calculate the radius such as the number is the next 2**n
+    #radius = 32
+    #radius = 2 ** np.ceil(np.log2((np.max(som[1]) + np.max(som[0])) / 2))
+
+    # Cut the value outside the circle of chosen radius
+    #new_image, cut_x, cut_y = set_outside_circle_to_zero(image, radius)
+
+    # Normalize to the area
+    #new_image = new_image / np.sum(new_image)
+
+    new_som = find_second_order_moment(image)
+    #print(f'new som {new_som}')
+    som_x,som_y = new_som
+
+    return image, som_x, som_y
+
+
 def k_transverse_calc(cut_x, cut_y, delta_xy):
     k_transverse_max = np.pi / delta_xy
     k_transverse = (cut_x * k_transverse_max / (len(cut_x) / 2), cut_y * k_transverse_max / (len(cut_y) / 2))

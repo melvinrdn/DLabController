@@ -14,7 +14,7 @@ class NV40:
         self.s.close()
         self.s.open()
         self.closedLoop(closed_loop)
-        print('PiezoJena stage initialized.')
+        print('from jena_piezo_V3: PiezoJena stage initialized.')
         self.binit = True
         self.remoteControl(True)
 
@@ -31,7 +31,7 @@ class NV40:
 
     def set_position(self, pos):
         if self.bLock:
-            print('PiezoJena: Too many setposition commands, ignoring one.')
+            print('from jena_piezo_V3: Too many setposition commands, ignoring one.')
             return
         if self.binit:
             self.bLock = True
@@ -46,10 +46,10 @@ class NV40:
                 cnt += 1
                 if cnt > 20:
                     self.bLock = False
-                    raise ValueError('Target position not reached.')
+                    raise ValueError('from jena_piezo_V3: Target position not reached.')
             self.bLock = False
         else:
-            raise ValueError('Class not initialized using the init() method.')
+            raise ValueError('from jena_piezo_V3: Class not initialized using the init() method.')
 
     def get_position(self):
         if self.binit:
@@ -62,16 +62,16 @@ class NV40:
                 time.sleep(0.1)
                 cnt += 1
                 if cnt > 5:
-                    raise ValueError('Reading failed!')
+                    raise ValueError('from jena_piezo_V3: Reading failed!')
 
             if response.startswith('err'):
-                raise ValueError(f'There was an error reading: {response}')
+                raise ValueError(f'from jena_piezo_V3: There was an error reading: {response}')
 
             pos = float(response[3:])
             return pos
 
         else:
-            raise ValueError('Class not initialized using the init() method.')
+            raise ValueError('from jena_piezo_V3: Class not initialized using the init() method.')
 
     def __del__(self):
         if self.s and self.s.is_open:

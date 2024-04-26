@@ -10,6 +10,8 @@ from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
 from diagnostic_board import diagnostic_board
+from diagnostic_board import diagnostic_board_new
+
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
 
@@ -115,6 +117,10 @@ class DLabController:
                                           command=self.open_diagnostic_board)
         but_diagnostic_board.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
 
+        but_diagnostic_board_new = ttk.Button(self.frm_side_panel, text='NEW M2',
+                                          command=self.open_diagnostic_board_new)
+        but_diagnostic_board_new.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
+
         but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
         but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
@@ -150,6 +156,16 @@ class DLabController:
         None
         """
         self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
+
+    def open_diagnostic_board_new(self):
+        """
+        Opens the diagnostic board.
+
+        Returns
+        -------
+        None
+        """
+        self.diagnostic_board_win = diagnostic_board_new.DiagnosticBoard(self)
 
     def open_pub_green(self):
         """

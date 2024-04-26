@@ -205,7 +205,7 @@ def phase_retrieval(image_focus, E_slm, beam_param, slm_param, method, max_iter=
         E_focus_pr_zp = fft2c(E_slm_pr_zp)
         corr_temp = abs(np.corrcoef(E_focus_pr_zp.flatten(), E_focus_cut_zp.flatten())[0, 1])
         corr_list.append(corr_temp)
-        print(f"Pearson coeff: {corr_temp}")
+        #print(f"Pearson coeff: {corr_temp}")
         # Impose amplitude of the target (ugly vortex)
         A = abs(E_focus_cut_zp) * np.exp(1j * np.angle(E_focus_pr_zp))
         # Back propagation to the slm
