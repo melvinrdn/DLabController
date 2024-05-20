@@ -70,6 +70,11 @@ def set_outside_circle_to_zero(image, radius):
 
     return new_image, cut_x, cut_y
 
+def zero_padding_2N(original_array):
+    N = original_array.shape[0]
+    pad_width = ((N // 2, N // 2), (N // 2, N // 2))
+    padded_array = np.pad(original_array, pad_width, mode='constant', constant_values=0)
+    return padded_array
 
 def process_image(image):
     # Remove the background noise, #TODO - back reflection treatment
@@ -94,7 +99,7 @@ def process_image(image):
     #print(f'old som {old_som}')
 
     # Calculate the radius such as the number is the next 2**n
-    radius = 32
+    radius = 64
     #radius = 2 ** np.ceil(np.log2((np.max(som[1]) + np.max(som[0])) / 2))
 
     # Cut the value outside the circle of chosen radius
@@ -107,7 +112,9 @@ def process_image(image):
     #print(f'new som {new_som}')
     som_x,som_y = new_som
 
-    return new_image, som_x, som_y
+    new_image2 = zero_padding_2N(new_image)
+
+    return new_image2, som_x, som_y
 
 
 def process_image_new(image):

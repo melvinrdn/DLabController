@@ -179,7 +179,7 @@ class Feedbacker(object):
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         # self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
-        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC Campaign")
+        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
 
         frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
         frm_mpc_campaign_stages.grid(row=0, column=0)
@@ -192,7 +192,7 @@ class Feedbacker(object):
         frm_stage = ttk.Frame(frm_scans)
         frm_wp_power_cal = ttk.Frame(frm_scans)
         frm_calculator = ttk.Frame(frm_scans)
-        self.frm_notebook_waveplate.add(frm_stage, text="Waveplate control")
+        self.frm_notebook_waveplate.add(frm_stage, text="Stage control")
         self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
         self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
 
@@ -465,10 +465,6 @@ class Feedbacker(object):
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
         self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
 
-        self.var_split_scan = tk.IntVar()
-        self.cb_split_scan = tk.Checkbutton(frm_measure, text='Split Scan', variable=self.var_split_scan, onvalue=1,
-                                            offvalue=0,
-                                            command=None)
 
         self.var_background = tk.IntVar()
         self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
@@ -485,7 +481,7 @@ class Feedbacker(object):
                                                       offvalue=0,
                                                       command=None)
 
-        lbl_avgs = tk.Label(frm_measure, text='Avgs:')
+        lbl_avgs = tk.Label(frm_measure, text='Averages:')
         self.strvar_avgs = tk.StringVar(self.win, '1')
         self.ent_avgs = tk.Entry(
             frm_measure, width=5, validate='all',
@@ -514,12 +510,12 @@ class Feedbacker(object):
         lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
 
         lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
-        self.strvar_mcp = tk.StringVar(self.win, '-1550')
+        self.strvar_mcp = tk.StringVar(self.win, '-1400')
         self.ent_mcp = tk.Entry(
             frm_measure, width=25, validate='none',
             textvariable=self.strvar_mcp)
 
-        lbl_comment = tk.Label(frm_measure, text='comment:')
+        lbl_comment = tk.Label(frm_measure, text='Comment:')
         self.strvar_comment = tk.StringVar(self.win, '')
         self.ent_comment = tk.Entry(
             frm_measure, width=25, validate='none',
@@ -604,7 +600,7 @@ class Feedbacker(object):
         self.but_cam_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_cam_stage)
         self.but_cam_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_cam_stage)
 
-        lbl_delay_stage = tk.Label(frm_stage, text='Delay stage:')
+        lbl_delay_stage = tk.Label(frm_stage, text='Delay:')
         self.strvar_delay_stage_is = tk.StringVar(self.win, '')
         self.ent_delay_stage_is = tk.Entry(
             frm_stage, width=10, validate='all',
@@ -667,8 +663,6 @@ class Feedbacker(object):
 
         lbl_MPC_maxangle = tk.Label(frm_mpc_campaign_current, text='Max Angle (deg)')
         lbl_MPC_currentpower = tk.Label(frm_mpc_campaign_current, text='Current Power (W)')
-        lbl_MPC_pulseduration = tk.Label(frm_mpc_campaign, text='Pulse duration (fs)')
-        lbl_MPC_reprate = tk.Label(frm_mpc_campaign, text='Rep Rate (kHz)')
 
         self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
         self.ent_mpc_lens_nr = tk.Entry(
@@ -1308,8 +1302,6 @@ class Feedbacker(object):
         self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
         self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
-        self.cb_split_scan.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-
         # setting up frm_phase_scan
         lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         lbl_to.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
@@ -3112,19 +3104,10 @@ class Feedbacker(object):
             self.but_view_live.config(fg='green')
 
     def enabl_mcp_all(self):
-
-        if self.var_split_scan.get() == 1:
-            if self.var_scan_wp_option.get() == "Red/Green Ratio":
-                self.stop_mcp = False
-                self.split = threading.Thread(target=self.split_threading)
-                self.split.daemon = True
-                self.split.start()
-
-        else:
-            self.stop_mcp = False
-            self.mcp_thread = threading.Thread(target=self.measure_all)
-            self.mcp_thread.daemon = True
-            self.mcp_thread.start()
+        self.stop_mcp = False
+        self.mcp_thread = threading.Thread(target=self.measure_all)
+        self.mcp_thread.daemon = True
+        self.mcp_thread.start()
 
     def enabl_mcp(self):
 

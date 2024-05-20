@@ -10,7 +10,6 @@ from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
 from diagnostic_board import diagnostic_board
-from diagnostic_board import diagnostic_board_new
 
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
@@ -32,7 +31,7 @@ class DLabController:
         self.main_win = parent
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
         self.main_win.title('D-Lab Controller - Main Interface')
-        self.main_win.geometry("1210x880")
+        self.main_win.geometry("900x600")
         self.main_win.resizable(False, False)
 
         self.style = ttk.Style()
@@ -57,8 +56,7 @@ class DLabController:
         self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
         self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
 
-        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Hardware')
-        self.frm_bottom_side_panel = ttk.Frame(self.main_win)
+        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Side Panel')
 
         but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings', command=self.save_green)
         but_load_green = ttk.Button(self.frm_top_b_green, text='Load green settings', command=self.load_green)
@@ -94,16 +92,17 @@ class DLabController:
         self.frm_bottom_red.grid(row=3, column=1, sticky='nsew')
 
         self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
-        self.frm_bottom_side_panel.grid(row=3, column=2, sticky='nsew')
 
         lbl_screen_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
         lbl_screen_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        self.fig_green = Figure(figsize=(4, 3.5), dpi=110)
+        self.fig_green = Figure(figsize=(3, 2))
         self.ax_green = self.fig_green.add_subplot(111)
+        self.ax_green.figure.tight_layout()
 
-        self.fig_red = Figure(figsize=(4, 3.5), dpi=110)
+        self.fig_red = Figure(figsize=(3, 2))
         self.ax_red = self.fig_red.add_subplot(111)
+        self.ax_red.figure.tight_layout()
 
         self.img_green = FigureCanvasTkAgg(self.fig_green, self.frm_top_b_green)
         self.tk_widget_fig_green = self.img_green.get_tk_widget()
@@ -113,29 +112,30 @@ class DLabController:
         self.tk_widget_fig_red = self.img_red.get_tk_widget()
         self.tk_widget_fig_red.grid(row=2, sticky='ew')
 
-        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Diagnostic board',
+        but_feedback = ttk.Button(self.frm_side_panel, text='Feedbacker', command=self.open_feedback_window)
+        but_feedback.grid(row=0, column=0, sticky='nsew')
+
+        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='M2 & PR',
                                           command=self.open_diagnostic_board)
-        but_diagnostic_board.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        but_diagnostic_board.grid(row=1, column=0, sticky='nsew')
 
-        but_diagnostic_board_new = ttk.Button(self.frm_side_panel, text='NEW M2',
-                                          command=self.open_diagnostic_board_new)
-        but_diagnostic_board_new.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
 
-        but_exit = ttk.Button(self.frm_bottom_side_panel, text='Exit', command=self.exit_prog)
-        but_exit.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-
-        but_feedback = ttk.Button(self.frm_bottom_green, text='Feedbacker', command=self.open_feedback_window)
         but_publish_green = ttk.Button(self.frm_bottom_green, text='Publish green', command=self.open_pub_green)
-        but_feedback.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
         but_publish_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
         but_publish_red = ttk.Button(self.frm_bottom_red, text='Publish red', command=self.open_pub_red)
         but_publish_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        print("Done")
+        print("Done !")
+        print("Loading the default parameters..")
+        self.load_red_default()
+        #self.load_green_default() #When the green SLM comes back, adapt load_green_default
+        print("Done !")
         print("-----------")
         print("Welcome to the D-Lab Controller !")
         print("-----------")
+
+
 
     def open_feedback_window(self):
         """
@@ -156,16 +156,6 @@ class DLabController:
         None
         """
         self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
-
-    def open_diagnostic_board_new(self):
-        """
-        Opens the diagnostic board.
-
-        Returns
-        -------
-        None
-        """
-        self.diagnostic_board_win = diagnostic_board_new.DiagnosticBoard(self)
 
     def open_pub_green(self):
         """
@@ -312,7 +302,6 @@ class DLabController:
         self.ax_green.imshow(phase, cmap='bwr', interpolation='None', extent=(
             -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
             slm_size[0] * 8e-3 / 4 / 2))
-
         self.ax_green.set_xlabel('y (wL)')
         self.ax_green.set_ylabel('x (wL)')
         self.ax_green.figure.tight_layout()
@@ -335,11 +324,9 @@ class DLabController:
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase, cmap='bwr', interpolation='None', extent=(
+        self.ax_red.imshow(phase, cmap='hsv', interpolation='None', extent=(
             -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
             slm_size[0] * 8e-3 / 4 / 2))
-        self.ax_red.set_xlabel('y (wL)')
-        self.ax_red.set_ylabel('x (wL)')
         self.ax_red.figure.tight_layout()
         self.img_red.draw()
 
@@ -387,7 +374,8 @@ class DLabController:
         each phase type
         """
         if filepath is None:
-            filepath = asksaveasfilename(
+            initial_directory = './ressources/saved_settings'
+            filepath = asksaveasfilename(initialdir=initial_directory,
                 defaultextension='txt',
                 filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
             )
@@ -418,7 +406,8 @@ class DLabController:
         each phase type.
         """
         if filepath is None:
-            filepath = askopenfilename(
+            initial_directory = './ressources/saved_settings'
+            filepath = asksaveasfilename(initialdir=initial_directory,
                 filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
             )
             if not filepath:
@@ -455,7 +444,8 @@ class DLabController:
         each phase type
         """
         if filepath is None:
-            filepath = asksaveasfilename(
+            initial_directory = './ressources/saved_settings'
+            filepath = asksaveasfilename(initialdir=initial_directory,
                 defaultextension='txt',
                 filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
             )
@@ -486,7 +476,8 @@ class DLabController:
         each phase type.
         """
         if filepath is None:
-            filepath = askopenfilename(
+            initial_directory = './ressources/saved_settings'
+            filepath = askopenfilename(initialdir=initial_directory,
                 filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
             )
             if not filepath:
@@ -505,6 +496,43 @@ class DLabController:
                 print('Not able to load red settings')
         except FileNotFoundError:
             print(f'No red settings file found at {filepath}')
+
+
+    def load_red_default(self):
+        filepath = './ressources/saved_settings/default_red_settings.txt'
+        try:
+            with open(filepath, 'r') as f:
+                dics = json.loads(f.read())
+            try:
+                for num, phase in enumerate(self.phase_refs_red):
+                    phase.load_(dics[phase.name_()]['Params'])
+                    self.vars_red[num].set(dics[phase.name_()]['Enabled'])
+                self.ent_scr_red.delete(0, tk.END)
+                self.ent_scr_red.insert(0, dics['screen_pos'])
+                print("Red settings loaded successfully")
+                self.open_pub_red()
+            except ValueError:
+                print('Not able to load red settings')
+        except FileNotFoundError:
+            print(f'No red settings file found at {filepath}')
+
+    def load_green_default(self):
+        filepath = './ressources/saved_settings/default_green_settings.txt'
+        try:
+            with open(filepath, 'r') as f:
+                dics = json.loads(f.read())
+            try:
+                for num, phase in enumerate(self.phase_refs_green):
+                    phase.load_(dics[phase.name_()]['Params'])
+                    self.vars_green[num].set(dics[phase.name_()]['Enabled'])
+                self.ent_scr_green.delete(0, tk.END)
+                self.ent_scr_green.insert(0, dics['screen_pos'])
+                print("Green settings loaded successfully")
+            except ValueError:
+                print('Not able to load green settings')
+        except FileNotFoundError:
+            print(f'No green settings file found at {filepath}')
+
 
     def publish_window_closed(self):
         """

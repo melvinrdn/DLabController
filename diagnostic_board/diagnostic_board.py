@@ -17,8 +17,8 @@ from scipy import interpolate
 import pandas as pd
 
 import diagnostic_board.daheng_camera as dh
-from diagnostic_board.beam_treatment_functions import process_image
-import diagnostic_board.phase_retrieval as pr
+from diagnostic_board.beam_treatment_functions import process_image_new
+from diagnostic_board.nl_pr import NLOptimizer
 from drivers.thorlabs_apt_driver import core as apt
 from drivers import gxipy_driver as gx
 
@@ -31,6 +31,8 @@ class DiagnosticBoard:
 
         self.initial_roi = (0, 540, 0, 720)  # x1 x2 y1 y2
         self.current_roi = self.initial_roi
+        self.relevant_image = None
+        self.current_M2_exposures = []
         self.roi_rectangle = None
         self.default_zoom_green = (0, 720, 0, 540)
         self.default_zoom_red = (0, 720, 0, 540)
@@ -70,16 +72,12 @@ class DiagnosticBoard:
 
         self.frm_notebook_phase_retrieval = ttk.Notebook(self.frm_phase_retrieval)
         self.frm_pr_settings = ttk.Frame(self.frm_notebook_phase_retrieval)
-        self.frm_beam_profile_settings = ttk.Frame(self.frm_notebook_phase_retrieval)
-        self.frm_notebook_phase_retrieval.add(self.frm_pr_settings, text='PR settings')
-        self.frm_notebook_phase_retrieval.add(self.frm_beam_profile_settings, text="Beam profile settings")
+        self.frm_notebook_phase_retrieval.add(self.frm_pr_settings, text="Nonlinear Optimization")
         self.frm_notebook_phase_retrieval.grid(row=0, column=0, sticky='nsew')
 
         self.frm_notebook_phase_retrieval_plots = ttk.Notebook(self.frm_phase_retrieval)
         self.frm_pr_plot_reconstruction = ttk.Frame(self.frm_notebook_phase_retrieval_plots)
-        self.frm_pr_plot_correction = ttk.Frame(self.frm_notebook_phase_retrieval_plots)
         self.frm_notebook_phase_retrieval_plots.add(self.frm_pr_plot_reconstruction, text="PR - Reconstruction")
-        self.frm_notebook_phase_retrieval_plots.add(self.frm_pr_plot_correction, text='PR - Correction')
         self.frm_notebook_phase_retrieval_plots.grid(row=1, column=0, sticky='nsew')
 
         self.frm_cam.grid(row=0, column=0, sticky='nsew')
@@ -92,23 +90,24 @@ class DiagnosticBoard:
         self.frm_m2_parameters.grid(row=0, column=0, sticky='nsew')
         self.frm_m2_plot.grid(row=1, column=0, sticky='nsew')
 
-        lbl_method_choice = ttk.Label(self.frm_pr_settings, text='Method chosen :')
-        self.strvar_method_choice = tk.StringVar(self.frm_phase_retrieval, 'Gerchberg-Saxton')
-        self.cbox_method_choice = ttk.Combobox(self.frm_pr_settings, textvariable=self.strvar_method_choice)
-        self.cbox_method_choice.bind("<<ComboboxSelected>>", self.change_method)
-        self.cbox_method_choice['values'] = ('Vortex', 'Gerchberg-Saxton')
-        lbl_method_choice.grid(row=0, column=0, sticky='nsew')
-        self.cbox_method_choice.grid(row=0, column=1, sticky='nsew')
-        self.run_pr = ttk.Button(self.frm_pr_settings, text='Run PR', command=self.run_phase_retrieval)
-        self.run_pr.grid(row=0, column=2)
-
-        self.send_to_slm = ttk.Button(self.frm_pr_settings, text='Send correction to SLM ',
-                                      command=self.send_correction_to_SLM)
-        self.send_to_slm.grid(row=0, column=3)
-
-        self.open_beam_profile = ttk.Button(self.frm_beam_profile_settings, text='Open beam profile ',
+        self.open_beam_profile = ttk.Button(self.frm_pr_settings, text='Open beam profile ',
                                             command=self.open_beam_profile)
-        self.open_beam_profile.grid(row=0, column=0)
+        self.open_beam_profile.grid(row=0, column=0, sticky='nsew')
+        self.take_beam_profile = ttk.Button(self.frm_pr_settings, text='Take beam profile ',
+                                            command=self.open_beam_profile)
+        self.take_beam_profile.grid(row=1, column=0, sticky='nsew')
+
+        self.run_pr = ttk.Button(self.frm_pr_settings, text='Run PR', command=self.run_phase_retrieval)
+        self.run_pr.grid(row=0, column=1, sticky='nsew')
+        self.send_to_slm = ttk.Button(self.frm_pr_settings, text='Send to SLM ',
+                                      command=self.send_correction_to_SLM)
+        self.send_to_slm.grid(row=1, column=1, sticky='nsew')
+
+        lbl_max_zn_coef = ttk.Label(self.frm_pr_settings, text="# Zn")
+        self.var_max_zn_coef = tk.StringVar(self.win, value="16")
+        self.ent_max_zn_coef = ttk.Entry(self.frm_pr_settings, textvariable=self.var_max_zn_coef)
+        lbl_max_zn_coef.grid(row=0, column=2, sticky='nsew')
+        self.ent_max_zn_coef.grid(row=0, column=3, sticky='nsew')
 
         self.figr_pr = Figure(figsize=(6, 4), dpi=100)
         self.axs_pr = self.figr_pr.subplots(2, 2)
@@ -118,17 +117,10 @@ class DiagnosticBoard:
         self.img_pr.draw()
         self.axs_blit_pr = self.figr_pr.canvas.copy_from_bbox(self.axs_pr[0, 0].bbox)
 
-        self.figr_pr_corr = Figure(figsize=(6, 4), dpi=100)
-        self.axs_pr_corr = self.figr_pr_corr.subplots(1, 2)
-        self.img_pr_corr = FigureCanvasTkAgg(self.figr_pr_corr, self.frm_pr_plot_correction)
-        self.tk_widget_pr_corr = self.img_pr_corr.get_tk_widget()
-        self.tk_widget_pr_corr.grid(row=0, column=0, sticky='nsew')
-        self.img_pr_corr.draw()
-        self.axs_blit_pr_corr = self.figr_pr_corr.canvas.copy_from_bbox(self.axs_pr_corr[0].bbox)
-
         self.figr = Figure(figsize=(6, 4), dpi=100)
         self.ax1r = self.figr.add_subplot(111)
         self.ax1r.grid()
+        self.ax2 = self.ax1r.twinx()
         self.figr.tight_layout()
         self.figr.canvas.draw()
         self.img1r = FigureCanvasTkAgg(self.figr, self.frm_m2_plot)
@@ -137,17 +129,6 @@ class DiagnosticBoard:
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
 
-        lbl_max_iter = ttk.Label(self.frm_pr_settings, text="Max iteration")
-        self.var_max_iter = tk.StringVar(self.win, value="200")
-        self.ent_max_iter = ttk.Entry(self.frm_pr_settings, textvariable=self.var_max_iter)
-        lbl_max_iter.grid(row=1, column=0)
-        self.ent_max_iter.grid(row=1, column=1)
-
-        lbl_tolerance = ttk.Label(self.frm_pr_settings, text="Tolerance")
-        self.var_tolerance = tk.StringVar(self.win, value="1e-7")
-        self.ent_tolerance = ttk.Entry(self.frm_pr_settings, textvariable=self.var_tolerance)
-        lbl_tolerance.grid(row=2, column=0)
-        self.ent_tolerance.grid(row=2, column=1)
 
         lbl_daheng_stage_from = ttk.Label(self.frm_scan_settings, text="From")
         lbl_daheng_stage_to = ttk.Label(self.frm_scan_settings, text="To")
@@ -179,11 +160,11 @@ class DiagnosticBoard:
                                                 width=5)
         self.ent_daheng_stage_steps.grid(row=1, column=2, sticky='nsew')
 
-        self.but_find_focus = ttk.Button(self.frm_scan_settings, text="Find focus",
+        self.but_backgrounds = ttk.Button(self.frm_scan_settings, text="Get backgrounds",
                                          command=self.find_focus_thread)
-        self.but_find_focus.grid(row=1, column=4, sticky='nsew')
+        self.but_backgrounds.grid(row=1, column=4, sticky='nsew')
 
-        self.but_scan_daheng = ttk.Button(self.frm_scan_settings, text="Stage scan",
+        self.but_scan_daheng = ttk.Button(self.frm_scan_settings, text="Get M2",
                                           command=self.scan_daheng_thread)
         self.but_scan_daheng.grid(row=2, column=4, sticky='nsew')
 
@@ -261,46 +242,46 @@ class DiagnosticBoard:
                                     validatecommand=(vcmd, '%P'),
                                     textvariable=self.strvar_roi_y2)
 
-        lbl_upper_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Up threshold:')
-        self.strvar_upper_saturation_threshold = tk.StringVar(self.win, '0.0000005')
-        self.ent_upper_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
-                                                        textvariable=self.strvar_upper_saturation_threshold,
-                                                        validate='key',
-                                                        validatecommand=(vcmd, '%P'))
+       # lbl_upper_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Up threshold:')
+       # self.strvar_upper_saturation_threshold = tk.StringVar(self.win, '0.0000005')
+       # self.ent_upper_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
+        #                                                textvariable=self.strvar_upper_saturation_threshold,
+        #                                                validate='key',
+        #                                                validatecommand=(vcmd, '%P'))
 
-        lbl_lower_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Lower threshold:')
-        self.strvar_lower_saturation_threshold = tk.StringVar(self.win, '0.0000001')
-        self.ent_lower_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
-                                                        textvariable=self.strvar_lower_saturation_threshold,
-                                                        validate='key',
-                                                        validatecommand=(vcmd, '%P'))
+       # lbl_lower_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Lower threshold:')
+       # self.strvar_lower_saturation_threshold = tk.StringVar(self.win, '0.0000001')
+       # self.ent_lower_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
+       #                                                 textvariable=self.strvar_lower_saturation_threshold,
+       #                                                 validate='key',
+       #                                                 validatecommand=(vcmd, '%P'))
 
-        lbl_increase_factor = ttk.Label(self.frm_scan_settings, text='Increase factor:')
-        self.strvar_increase_factor = tk.StringVar(self.win, '1.02')
-        self.ent_increase_factor = ttk.Entry(self.frm_scan_settings, width=20,
-                                             textvariable=self.strvar_increase_factor, validate='key',
-                                             validatecommand=(vcmd, '%P'))
+        #lbl_increase_factor = ttk.Label(self.frm_scan_settings, text='Increase factor:')
+        #self.strvar_increase_factor = tk.StringVar(self.win, '1.02')
+        #self.ent_increase_factor = ttk.Entry(self.frm_scan_settings, width=20,
+        #                                     textvariable=self.strvar_increase_factor, validate='key',
+        #                                     validatecommand=(vcmd, '%P'))
 
-        lbl_decrease_factor = ttk.Label(self.frm_scan_settings, text='Decrease factor:')
-        self.strvar_decrease_factor = tk.StringVar(self.win, '0.99')
-        self.ent_decrease_factor = ttk.Entry(self.frm_scan_settings, width=20,
-                                             textvariable=self.strvar_decrease_factor, validate='key',
-                                             validatecommand=(vcmd, '%P'))
+        #lbl_decrease_factor = ttk.Label(self.frm_scan_settings, text='Decrease factor:')
+        #self.strvar_decrease_factor = tk.StringVar(self.win, '0.99')
+        #self.ent_decrease_factor = ttk.Entry(self.frm_scan_settings, width=20,
+        #                                     textvariable=self.strvar_decrease_factor, validate='key',
+        #                                     validatecommand=(vcmd, '%P'))
 
-        lbl_increase_factor.grid(row=2, column=0, sticky='nsew')
-        self.ent_increase_factor.grid(row=2, column=1, sticky='nsew')
-        lbl_decrease_factor.grid(row=3, column=0, sticky='nsew')
-        self.ent_decrease_factor.grid(row=3, column=1, sticky='nsew')
-        lbl_upper_saturation_threshold.grid(row=4, column=0, sticky='nsew')
-        self.ent_upper_saturation_threshold.grid(row=4, column=1, sticky='nsew')
-        lbl_lower_saturation_threshold.grid(row=5, column=0, sticky='nsew')
-        self.ent_lower_saturation_threshold.grid(row=5, column=1, sticky='nsew')
+        #lbl_increase_factor.grid(row=2, column=0, sticky='nsew')
+        #self.ent_increase_factor.grid(row=2, column=1, sticky='nsew')
+        #lbl_decrease_factor.grid(row=3, column=0, sticky='nsew')
+        #self.ent_decrease_factor.grid(row=3, column=1, sticky='nsew')
+        #lbl_upper_saturation_threshold.grid(row=4, column=0, sticky='nsew')
+        #self.ent_upper_saturation_threshold.grid(row=4, column=1, sticky='nsew')
+        #lbl_lower_saturation_threshold.grid(row=5, column=0, sticky='nsew')
+        #self.ent_lower_saturation_threshold.grid(row=5, column=1, sticky='nsew')
         self.but_abort = ttk.Button(self.frm_scan_settings, text="Abort scan",
                                     command=self.abort_scan)
         self.but_abort.grid(row=3, column=4, sticky='nsew')
-        self.but_abort = ttk.Button(self.frm_scan_settings, text="Stop optimization",
-                                    command=self.stop_optimization)
-        self.but_abort.grid(row=3, column=5, sticky='nsew')
+        #self.but_abort = ttk.Button(self.frm_scan_settings, text="Stop optimization",
+        #                            command=self.stop_optimization)
+        #self.but_abort.grid(row=3, column=5, sticky='nsew')
 
         lbl_roi_x1.grid(row=2, column=0, sticky='nsew')
         self.ent_roi_x1.grid(row=2, column=1, padx=(0, 10))
@@ -412,6 +393,13 @@ class DiagnosticBoard:
             datetime.date.today()) + '-' + 'auto-log-camera_focus.txt'
         self.autolog_cam = open(self.autolog_camera_focus, "a+")
 
+        self.styleR = ttk.Style()
+        self.styleR.configure('RED', foreground='red')
+        self.styleG = ttk.Style()
+        self.styleG.configure('GREEN', foreground='green')
+        self.styleB =  ttk.Style()
+        self.styleB.configure('BLACK', foreground='black')
+
     def is_number_input(self, P):
         if P.strip() == "":
             return True
@@ -485,185 +473,22 @@ class DiagnosticBoard:
         df.to_csv('C_interpolated.csv', index=False, header=False)
 
     def run_phase_retrieval(self):
+        self.phase_retrieval_thread = threading.Thread(target=self.open_phase_retrieval)
+        self.phase_retrieval_thread.daemon = True
+        self.phase_retrieval_thread.start()
 
-        max_iter = int(self.ent_max_iter.get())
-        tolerance = float(self.ent_tolerance.get())
-
-        factor_plot = 2
-        factor_slm = 4
-        with_vortex = 1
-
-        f = 25e-2
-        w_L = 4.0e-3
-        x_slm_max = 4 * w_L
-
-        method = self.strvar_method_choice.get()
-        if method == 'Gerchberg-Saxton':
-            on = 0
-        elif method == 'Vortex':
-            on = 1
+    def open_phase_retrieval(self):
+        print(int(self.var_max_zn_coef.get()))
+        F = self.image_array
+        if self.image_array is not None:
+            nlopt = NLOptimizer(int(self.var_max_zn_coef.get()), F)
+            nlopt.phase_retrieval()
         else:
-            message = 'Please select a PR method'
+            message = 'There is no beam profile loaded'
             self.insert_message(message)
+        print('done')
 
-        if self.wavelength is None:
-            message = 'Please select a wavelength'
-            self.insert_message(message)
-        else:
-            lambda_0 = self.wavelength
 
-        beam_param = [lambda_0, f, w_L]
-
-        y_slm_max = x_slm_max
-        N_x = 2 ** 8
-        N_y = N_x
-        slm_param = [x_slm_max, y_slm_max, N_x, N_y]
-
-        x_slm, y_slm, extent_slm = pr.define_slm_plan(slm_param, print_option=False)
-        self.extent_slm = extent_slm
-        intensity_slm = pr.gaussian_2D(x_slm, y_slm, w_L)
-        phase_vortex = pr.create_phase_vortex(x_slm, y_slm, w_L, vortex_order=1) * on
-        E_slm = np.sqrt(intensity_slm) * np.exp(1j * phase_vortex)
-
-        if on == 1:
-            path = "./diagnostic_board/red_vortex_for_vgs_demo.bmp"
-        else:
-            path = "./diagnostic_board/red_focus_for_gs_demo.bmp"
-
-        # image_array = np.array(Image.open(path))
-        image_focus, som_x, som_y = process_image(self.image_array)
-        image_focus = pr.zero_padding_to_second(image_focus, E_slm)
-
-        dx = 3.45e-6
-        x_focus = np.arange(-N_x // 2, N_x // 2) * dx
-        y_focus = x_focus
-        extent_focus = [x_focus[0], x_focus[-1], y_focus[0], y_focus[-1]]
-
-        intensity_slm_zp = pr.zero_padding_2N(abs(E_slm) ** 2)
-
-        E_focus = np.sqrt(image_focus)
-        som_x_focus, som_y_focus = pr.get_som(abs(E_focus) ** 2, dx)
-        som_max = np.max([som_x_focus, som_y_focus])
-        E_focus_cut = pr.cut_focus(E_focus, x_focus, y_focus, som_max, factor=2)
-
-        # Create vortex
-        phase_vortex_pr = pr.create_phase_vortex(x_slm, y_slm, w_L, 1) * on
-        # Zero padding
-        phase_vortex_pr_zp = pr.zero_padding_2N(phase_vortex_pr)
-        E_focus_cut_zp = pr.zero_padding_2N(E_focus_cut)
-        # Initial guess for phase retrieval
-        E_slm_pr_zp = np.sqrt(intensity_slm_zp) * np.exp(1j * phase_vortex_pr_zp)
-
-        corr_list = []
-
-        t_start = time.time()
-        for i in np.linspace(0, max_iter - 1, max_iter):
-            message = f'{((i + 1) / max_iter) * 100:.1f} %'
-            self.insert_message(message)
-            # Propagation to the focus
-            E_focus_pr_zp = pr.fft2c(E_slm_pr_zp)
-            corr_temp = abs(np.corrcoef(E_focus_pr_zp.flatten(), E_focus_cut_zp.flatten())[0, 1])
-            corr_list.append(corr_temp)
-            # print(f"Pearson coeff: {corr_temp}")
-            # Impose amplitude of the target (ugly vortex)
-            A = abs(E_focus_cut_zp) * np.exp(1j * np.angle(E_focus_pr_zp))
-            # Back propagation to the slm
-            B = pr.ifft2c(A)
-            # Impose amplitude of the gaussian on the SLM + the phase retrieved
-            E_slm_pr_zp = np.sqrt(intensity_slm_zp) * np.exp(1j * np.angle(B))
-
-            if i > 0 and abs((corr_list[-1] - corr_list[-2]) / corr_list[-2]) < tolerance:
-                message = f"Converged with {int(i + 1)} iterations"
-                self.insert_message(message)
-                break
-
-        t_end = time.time()
-        message = f"Loop time: {t_end - t_start:.5f} s"
-        self.insert_message(message)
-
-        # Clip the array into original form
-        E_slm_pr = pr.clip_to_original_size(E_slm_pr_zp, E_focus_cut)
-        E_focus_pr = pr.clip_to_original_size(E_focus_pr_zp, E_focus_cut)
-
-        # Calculate the correction pattern
-        H = np.angle(E_slm_pr)  # Distorted phase pattern on the slm
-        C = H - phase_vortex_pr * with_vortex  # Correction to apply on the slm for the gaussian beam if we come with a vortex
-        C = (C + np.pi) % (2 * np.pi) - np.pi  # Correction pattern wrapped
-        #plt.imshow(C)
-        #plt.show()
-
-        E_slm_fourier_zp = pr.ifft2c(E_focus_cut_zp * np.exp(1j * np.angle(E_focus_pr_zp)))
-        # Padding of the E_slm_corrected before propagation
-        E_slm_corrected_zp = E_slm_fourier_zp * np.exp(-1j * pr.zero_padding_2N(C)) * np.exp(-1j * phase_vortex_pr_zp)
-        # Propagation
-        E_focus_corrected_zp = pr.fft2c(E_slm_corrected_zp)
-        # Clip to original size
-        E_focus_corrected = pr.clip_to_original_size(E_focus_corrected_zp, E_focus_cut)
-
-        # Cutting the arrays
-        self.C = pr.cut_slm(C, x_slm, y_slm, beam_param, factor=factor_slm)
-        E_focus_cut = pr.cut_focus(E_focus, x_focus, y_focus, som_max, factor=factor_plot)
-        E_focus_pr_cut = pr.cut_focus(E_focus_pr, x_focus, y_focus, som_max, factor=factor_plot)
-        E_focus_corrected_cut = pr.cut_focus(E_focus_corrected, x_focus, y_focus, som_max, factor=factor_plot)
-
-        def add_colorbar(ax, im, cmap='turbo'):
-            cbar = ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04, cmap=cmap)
-
-        # TODO fix plot (figures must be cleared before plotting another one)
-
-        im1 = self.axs_pr[0, 0].imshow(abs(E_focus_cut) ** 2, extent=extent_focus, cmap='turbo')
-        self.axs_pr[0, 0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[0, 0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[0, 0].set_ylabel('y [m]')
-        self.axs_pr[0, 0].set_xlabel('x [m]')
-        self.axs_pr[0, 0].set_title('$|E(x,y)|^2$ Measured')
-        add_colorbar(self.axs_pr[0, 0], im1, cmap='turbo')
-
-        im2 = self.axs_pr[0, 1].imshow(abs(E_focus_pr_cut) ** 2, extent=extent_focus, cmap='turbo')
-        self.axs_pr[0, 1].set_xlim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[0, 1].set_ylim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[0, 1].set_ylabel('y [m]')
-        self.axs_pr[0, 1].set_xlabel('x [m]')
-        self.axs_pr[0, 1].set_title('$|E(x,y)|^2$ Retrieved')
-        add_colorbar(self.axs_pr[0, 1], im2, cmap='turbo')
-
-        im3 = self.axs_pr[1, 0].imshow(np.angle(E_focus_pr_cut), extent=extent_focus, cmap='hsv')
-        self.axs_pr[1, 0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[1, 0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[1, 0].set_ylabel('y [m]')
-        self.axs_pr[1, 0].set_xlabel('x [m]')
-        self.axs_pr[1, 0].set_title('$W(x,y)$ Retrieved')
-        add_colorbar(self.axs_pr[1, 0], im3, cmap='bwr')
-
-        self.axs_pr[1, 1].imshow(pr.complex2rgb(E_focus_pr_cut), extent=extent_focus, cmap='hsv')
-        self.axs_pr[1, 1].set_xlim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[1, 1].set_ylim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr[1, 1].set_ylabel('y [m]')
-        self.axs_pr[1, 1].set_xlabel('x [m]')
-        self.axs_pr[1, 1].set_title('$|E(x,y)|e^{iW(x,y)} $ Retrieved')
-        add_colorbar(self.axs_pr[1, 1], im3, cmap='hsv')
-
-        self.figr_pr.tight_layout()
-        self.img_pr.draw()
-
-        im4 = self.axs_pr_corr[1].imshow(self.C, extent=self.extent_slm, cmap='bwr')
-        self.axs_pr_corr[1].set_ylim((-4.8e-3, 4.8e-3))
-        self.axs_pr_corr[1].set_xlim((-7.68e-3, 7.68e-3))
-        self.axs_pr_corr[1].set_ylabel('y [m]')
-        self.axs_pr_corr[1].set_xlabel('x [m]')
-        self.axs_pr_corr[1].set_title('Phase on SLM')
-        add_colorbar(self.axs_pr_corr[1], im4, cmap='bwr')
-
-        self.axs_pr_corr[0].imshow(pr.complex2rgb(E_focus_corrected_cut), extent=extent_focus)
-        self.axs_pr_corr[0].set_xlim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr_corr[0].set_ylim((-factor_plot * som_max, factor_plot * som_max))
-        self.axs_pr_corr[0].set_ylabel('y [m]')
-        self.axs_pr_corr[0].set_xlabel('x [m]')
-        self.axs_pr_corr[0].set_title('$|E(x,y)|e^{iW(x,y)} $ Corrected')
-        add_colorbar(self.axs_pr_corr[0], im3, cmap='hsv')
-
-        self.figr_pr_corr.tight_layout()
-        self.img_pr_corr.draw()
 
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
         def beam_quality_factor_fit(z, w0, M2, z0):
@@ -686,19 +511,19 @@ class DiagnosticBoard:
         self.ax1r.clear()
         self.ax1r.grid(True)
 
-        self.ax1r.plot(z, som_x, linestyle='None', marker='x', color='blue')
-        self.ax1r.plot(z, som_y, linestyle='None', marker='x', color='red')
-        self.ax1r.plot(z_fit, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit),
+        self.ax1r.plot(z*1e3, som_x*1e6, linestyle='None', marker='x', color='blue')
+        self.ax1r.plot(z*1e3, som_y*1e6, linestyle='None', marker='x', color='red')
+        self.ax1r.plot(z_fit*1e3, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit)*1e6,
                        label=f'M_sq_y: {abs(params_y[1]):.2f}, '
                              f'w0_y: {params_y[0] * 1e6:.2f} µm, '
                              f'z0_y: {params_y[2] * 1e3:.2f} mm', color='red')
-        self.ax1r.plot(z_fit, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit),
+        self.ax1r.plot(z_fit*1e3, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit)*1e6,
                        label=f'M_sq_x: {abs(params_x[1]):.2f}, '
                              f'w0_x: {params_x[0] * 1e6:.2f} µm, '
                              f'z0_x: {params_x[2] * 1e3:.2f} mm', color='blue')
 
-        self.ax1r.set_ylabel('z [m]')
-        self.ax1r.set_xlabel('x [m]')
+        self.ax1r.set_ylabel(r'$w$ (2nd order moment, μm)')
+        self.ax1r.set_xlabel('Stage position (mm)')
         self.ax1r.legend()
         self.figr.tight_layout()
         self.img1r.draw()
@@ -764,7 +589,7 @@ class DiagnosticBoard:
         som_y = np.zeros(dz, dtype=float)
 
         for i in range(dz):
-            processed_image, som_x[i], som_y[i] = process_image(self.images[:, :, i])
+            processed_image, som_x[i], som_y[i] = process_image_new(self.images[:, :, i])
             processed_images[f'processed_image_{i}'] = processed_image
 
         som_y *= 3.45e-6
@@ -792,10 +617,17 @@ class DiagnosticBoard:
 
     def initialize_daheng(self):
         device_manager = gx.DeviceManager()
-        self.daheng_camera = dh.DahengCamera(int(self.strvar_cam_ind.get()))
+        try:
+            self.daheng_camera = dh.DahengCamera(int(self.strvar_cam_ind.get()))
+            #self.but_cam_init.config(style='GREEN')
+        except:
+            self.insert_message("Something went wrong with init of camera:(")
+            #self.but_cam_init.config(style='RED')
 
     def close_daheng(self):
         self.daheng_camera.close_daheng()
+        #self.but_cam_init.config(style='BLACK')
+        #self.but_cam_disconnect.config(style='GREEN')
         self.daheng_camera = None
 
     def single_daheng_thread(self):
@@ -812,9 +644,70 @@ class DiagnosticBoard:
 
     def find_focus_thread(self):
         self.daheng_is_live = False
-        self.daheng_thread = threading.Thread(target=self.find_focus)
+        self.daheng_thread = threading.Thread(target=self.get_backgrounds)
         self.daheng_thread.daemon = True
         self.daheng_thread.start()
+
+
+    def get_backgrounds(self):
+        self.daheng_is_live = False
+        # self.but_cam_live.config(style='BLACK')
+        from_ = float(self.var_daheng_stage_from.get())
+        to_ = float(self.var_daheng_stage_to.get())
+        steps_ = int(self.var_daheng_stage_steps.get())
+        stage_steps = np.linspace(from_, to_, steps_)
+
+        if self.WPcam is None:
+            self.insert_message('Stage is not connected')
+            return
+        if self.daheng_camera is None:
+            self.insert_message('Camera is not connected')
+            return
+
+        rel_size1 = self.relevant_image.shape[0]
+        rel_size2 = self.relevant_image.shape[1]
+        #        res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
+        res = np.zeros([rel_size1, rel_size2, int(steps_)])
+
+        exposures = []
+        self.ax1r.clear()
+        # self.ax2 = self.ax1r.twinx()
+        self.ax2.clear()
+        self.ax1r.grid(True)
+
+        if np.asarray(self.current_M2_exposures).size != 0:
+            for ind, pos in enumerate(stage_steps):
+                if self.abort == 1:
+                    message = 'Aborted'
+                    self.insert_message(message)
+                    break
+                self.strvar_WPcam_should.set(pos)
+                self.move_WPcam()
+                #self.adjust_exposure_new()
+                #self.optimized = False
+                optimized_exposure = self.current_M2_exposures[ind]
+                self.insert_message(f'Position: {pos}, Exposure: {optimized_exposure} µs')
+                im = self.daheng_camera.take_image(int(optimized_exposure), int(self.strvar_cam_gain.get()),
+                                                   int(self.strvar_cam_avg.get()))
+                self.plot_daheng(im)
+
+                res[:, :, ind] = self.relevant_image
+                #imtest, temx, temy = process_image_new(self.relevant_image)
+                self.ax1r.scatter(pos, np.mean(self.relevant_image), color="blue")
+                self.ax1r.scatter(pos, np.max(self.relevant_image), color="black")
+                self.ax1r.set_ylabel(r'Background')
+                self.ax1r.set_xlabel('Stage position (mm)')
+                #self.ax1r.set_xlim([np.min(stage_steps), np.max(stage_steps)])
+                #intim = self.relevant_image / np.sum(self.relevant_image)
+                #maxval = np.max(intim)
+                #self.ax2.scatter(pos, maxval, color="black", marker="x")
+                # self.ax2.set_ylabel(r'Intensity')
+                self.figr.tight_layout()
+                self.img1r.draw()
+                #exposures.append(optimized_exposure)
+            if self.abort == 0:
+                #self.current_M2_exposures = exposures
+                self.save_daheng_scans(res, stage_steps, exposures, bg = 1)
 
     def abort_scan(self):
         if self.abort == 0:
@@ -837,6 +730,8 @@ class DiagnosticBoard:
         self.daheng_thread.start()
 
     def scan_stage_daheng(self):
+        self.daheng_is_live = False
+        #self.but_cam_live.config(style='BLACK')
         from_ = float(self.var_daheng_stage_from.get())
         to_ = float(self.var_daheng_stage_to.get())
         steps_ = int(self.var_daheng_stage_steps.get())
@@ -849,8 +744,16 @@ class DiagnosticBoard:
             self.insert_message('Camera is not connected')
             return
 
-        res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
+        rel_size1 = self.relevant_image.shape[0]
+        rel_size2 = self.relevant_image.shape[1]
+#        res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
+        res = np.zeros([rel_size1, rel_size2, int(steps_)])
+
         exposures = []
+        self.ax1r.clear()
+        #self.ax2 = self.ax1r.twinx()
+        self.ax2.clear()
+        self.ax1r.grid(True)
 
         for ind, pos in enumerate(stage_steps):
             if self.abort == 1:
@@ -859,61 +762,38 @@ class DiagnosticBoard:
                 break
             self.strvar_WPcam_should.set(pos)
             self.move_WPcam()
-            self.adjust_exposure()
+            self.adjust_exposure_new()
             self.optimized = False
             optimized_exposure = float(self.strvar_cam_exp.get())
             self.insert_message(f'Position: {pos}, Exposure: {optimized_exposure} µs')
             im = self.daheng_camera.take_image(int(optimized_exposure), int(self.strvar_cam_gain.get()),
                                                int(self.strvar_cam_avg.get()))
             self.plot_daheng(im)
-            res[:, :, ind] = im
+
+            res[:, :, ind] = self.relevant_image
+            imtest,temx,temy = process_image_new(self.relevant_image)
+            self.ax1r.scatter(pos, temx, color ="blue")
+            self.ax1r.scatter(pos, temy, color="red")
+            self.ax1r.set_ylabel(r'$w$ (2nd order moment, μm)')
+            self.ax1r.set_xlabel('Stage position (mm)')
+            self.ax1r.set_xlim([np.min(stage_steps), np.max(stage_steps)])
+            intim = self.relevant_image/np.sum(self.relevant_image)
+            maxval = np.max(intim)
+            self.ax2.scatter(pos, maxval, color="black", marker = "x")
+            #self.ax2.set_ylabel(r'Intensity')
+            self.figr.tight_layout()
+            self.img1r.draw()
             exposures.append(optimized_exposure)
         if self.abort == 0:
+            self.current_M2_exposures = exposures
             self.save_daheng_scans(res, stage_steps, exposures)
 
-    def find_focus(self):
-        from_ = float(self.var_daheng_stage_from.get())
-        to_ = float(self.var_daheng_stage_to.get())
-        steps_ = int(self.var_daheng_stage_steps.get())
-        stage_steps = np.linspace(from_, to_, steps_)
-
-        if self.WPcam is None:
-            self.insert_message('Stage is not connected')
-            return
-        if self.daheng_camera is None:
-            self.insert_message('Camera is not connected')
-            return
-
-        saturation_percents = []
-
-        for ind, pos in enumerate(stage_steps):
-            if self.abort == 1:
-                message = 'Aborted'
-                self.insert_message(message)
-                break
-            self.strvar_WPcam_should.set(pos)
-            self.move_WPcam()
-            im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                               int(self.strvar_cam_avg.get()))
-            saturated_pixels = (im >= 255).mean() * 100
-            saturation_percents.append(saturated_pixels)
-            self.insert_message(f'Position: {pos}, Saturated pixels %: {saturated_pixels:.2f}')
-            self.plot_daheng(im)
-
-        # Find the position with the highest saturation percentage
-        max_saturation_index = np.argmax(saturation_percents)
-        focus_position = stage_steps[max_saturation_index]
-        self.insert_message(f'Focus position : {focus_position}')
-        self.strvar_WPcam_should.set(focus_position)
-        self.move_WPcam()
-        im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                           int(self.strvar_cam_avg.get()))
-        self.plot_daheng(im)
-
-    def save_daheng_scans(self, res, pos, exp):
+    def save_daheng_scans(self, res, pos, exp, bg = 0):
         nr = self.get_start_image_images()
-
-        self.autolog_cam.write("#" + self.ent_comment.get() + "\n")
+        if bg == 0:
+            self.autolog_cam.write("#" + self.ent_comment.get() + "\n")
+        else:
+            self.autolog_cam.write("#" + " BACKGROUND for "+ self.ent_comment.get() + "\n")
 
         data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(
             datetime.date.today()) + '-camera_focus-' + str(
@@ -949,56 +829,44 @@ class DiagnosticBoard:
     def update_daheng_live_button(self):
         if self.daheng_is_live == True:
             message = 'Live view on'
+            #self.but_cam_live.config(style='GREEN')
             self.insert_message(message)
         else:
             message = 'Live view off'
+            #self.but_cam_live.config(style='BLACK')
             self.insert_message(message)
 
-    def adjust_exposure(self):
-        saturation_threshold = float(self.ent_upper_saturation_threshold.get())
-        lower_saturation_threshold = float(self.ent_lower_saturation_threshold.get())
-        decrease_factor = float(self.ent_decrease_factor.get())
-        increase_factor = float(self.ent_increase_factor.get())
+
+    def adjust_exposure_new(self):
         min_exposure = 20
         max_exposure = 900000
-
-        while not self.optimized:
-            im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                               int(self.strvar_cam_avg.get()))
-            if self.abort == 1:
-                message = 'Aborted'
-                self.insert_message(message)
-                self.optimized = True
-
-            self.plot_daheng(im)
-
-            saturated_pixels = (im >= 255).mean()
-
-            current_exposure = int(self.strvar_cam_exp.get())
-
-            if saturated_pixels > saturation_threshold:
-                new_exposure = max(min_exposure, int(current_exposure * decrease_factor))
-                if new_exposure == min_exposure:
-                    self.insert_message(
-                        f"Reached minimum exposure limit of {min_exposure} µs. Cannot decrease further.")
-                    self.optimized = True
-                else:
-                    self.insert_message(
-                        f"Image is saturated. Adjusting exposure to {new_exposure} µs to avoid saturation.")
-            elif saturated_pixels < lower_saturation_threshold:
-                new_exposure = min(max_exposure, int(current_exposure * increase_factor))
-                if new_exposure == max_exposure:
-                    self.insert_message(
-                        f"Reached maximum exposure limit of {max_exposure} µs. Cannot increase further.")
-                    self.optimized = True
-                else:
-                    self.insert_message(f"Increasing exposure to {new_exposure} µs.")
+        if self.daheng_is_live == True:
+            rel = self.relevant_image
+            if np.max(rel) > 254:
+                new_exposure = int(self.strvar_cam_exp.get())/2
+                self.strvar_cam_exp.set(str(int(new_exposure)))
             else:
-                self.insert_message(f"Exposure is optimized at {current_exposure} µs.")
+                new_exposure = 255/np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
+                self.strvar_cam_exp.set(str(int(new_exposure)))
                 self.optimized = True
 
-            if not self.optimized:
-                self.strvar_cam_exp.set(str(new_exposure))
+        else:
+            while not self.optimized:
+                im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                   int(self.strvar_cam_avg.get()))
+                self.plot_daheng(im)
+                rel = self.relevant_image
+                if np.max(rel) > 254:
+                    new_exposure = int(self.strvar_cam_exp.get())/2
+                    self.strvar_cam_exp.set(str(int(new_exposure)))
+                else:
+                    new_exposure = 255/np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
+                    self.strvar_cam_exp.set(str(int(new_exposure)))
+                    im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                       int(self.strvar_cam_avg.get()))
+                    self.plot_daheng(im)
+                    self.optimized = True
+                    self.insert_message(f"Exposure is optimized at {new_exposure} µs.")
 
     def live_daheng(self):
         if self.daheng_camera is not None:
@@ -1009,42 +877,12 @@ class DiagnosticBoard:
                 self.plot_daheng(im)
 
                 if self.automatic_exposure.get():
-                    self.simple_adjust_exposure(im)
+                    #self.simple_adjust_exposure(im)
+                    self.adjust_exposure_new()
         else:
             self.daheng_is_live = False
             self.insert_message('self.daheng_camera is None')
 
-    def simple_adjust_exposure(self, image):
-        saturation_threshold = float(self.ent_upper_saturation_threshold.get())
-        lower_saturation_threshold = float(self.ent_lower_saturation_threshold.get())
-        decrease_factor = float(self.ent_decrease_factor.get())
-        increase_factor = float(self.ent_increase_factor.get())
-        max_exposure = 900000
-        min_exposure = 20
-
-        saturated_pixels = (image >= 255).mean()
-
-        current_exposure = int(self.strvar_cam_exp.get())
-
-        if saturated_pixels > saturation_threshold:
-            new_exposure = max(min_exposure, int(current_exposure * decrease_factor))
-            if new_exposure == min_exposure:
-                self.insert_message(f"Reached minimum exposure limit of {min_exposure} µs.")
-            else:
-                self.insert_message(f"Adjusted exposure to {new_exposure} µs to avoid saturation.")
-        elif saturated_pixels < lower_saturation_threshold:
-            new_exposure = min(max_exposure, int(current_exposure * increase_factor))
-            if new_exposure == max_exposure:
-                self.insert_message(f"Reached maximum exposure limit of {max_exposure} µs.")
-            else:
-                self.insert_message(f"Increasing exposure to {new_exposure} µs.")
-        else:
-            new_exposure = current_exposure
-            self.insert_message(
-                f"Close to threshold, keeping exposure at {new_exposure} µs.")
-            return
-
-        self.strvar_cam_exp.set(str(new_exposure))
 
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
@@ -1071,6 +909,14 @@ class DiagnosticBoard:
                 return
 
             cropped_im = im[y1:y2, x1:x2]
+            self.relevant_image = cropped_im
+            if np.max(self.relevant_image)>254:
+                self.frm_cam.config(text = "SATURATED!")
+            elif np.max(self.relevant_image)>240:
+                self.frm_cam.config(text="ALMOST saturated, max: {}".format(int(np.max(self.relevant_image))))
+            else:
+                self.frm_cam.config(text="Camera display, max: {}".format(int(np.max(self.relevant_image))))
+
 
             image = Image.fromarray(cropped_im)
             image_resized = image.resize((720, 540), resample=0)
@@ -1120,8 +966,10 @@ class DiagnosticBoard:
             self.WPcam = apt.Motor(int(self.ent_WPcam_Nr.get()))
             message = "WPcam connected"
             self.insert_message(message)
+            #self.but_WPcam_Ini.config(style='GREEN')
         except:
             message = "Not able to initalize WPcam"
+            #self.but_WPcam_Ini.config(style='RED')
             self.insert_message(message)
 
     def home_WPcam(self):
@@ -1164,6 +1012,7 @@ class DiagnosticBoard:
 
     def on_close(self):
         self.autolog_cam.close()
-        self.close_daheng()
+        if self.daheng_camera is not None:
+            self.close_daheng()
         self.disable_motors()
         self.win.destroy()

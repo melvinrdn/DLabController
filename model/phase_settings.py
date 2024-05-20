@@ -4,12 +4,16 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
+import model.dummy_old_phase_retrieval as gs
+from prysm import coordinates, geometry, polynomials, propagation, fttools
+import matplotlib.pyplot as plt
+import os
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-gs = None
 aberration = None
 
 types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian',
-         'HGB']  # defines the settings that we want to have!
+         'HGB','Image','Holo','Multi']  # defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):
@@ -200,13 +204,24 @@ class TypeBackground(BaseType):
 
         # Create a button for opening the background file
         btn_open = ttk.Button(lbl_frm, text='Open Background file',
-                              command=self.open_file)
+                              command=self.open_background_file)
         btn_open.grid(row=0)
 
         # Create a label for displaying the selected file
-        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=400,
+        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=300,
                                   justify='left', foreground='gray')
         self.lbl_file.grid(row=1)
+
+    def open_background_file(self):
+        """
+        Open a file dialog to choose a file and load its data.
+        """
+
+        initial_directory = os.path.join('.', 'ressources', 'background')
+        filepath = askopenfilename(initialdir=initial_directory,
+                                    filetypes=[('CSV data arrays', '*.csv'),('Image Files', '*.bmp'),("Text files", "*.txt"), ("All files", "*.*")])
+        self._read_file(filepath)
+        self.lbl_file['text'] = f'{filepath}'
 
     def phase(self):
         """
@@ -714,16 +729,21 @@ class TypeLens(BaseType):
                                             textvariable=self.strvar_focus_position)
 
         # setup
-        lbl_ben.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
-        lbl_wavelength.grid(row=0, column=2, sticky='e', padx=(10, 0), pady=5)
-        self.ent_ben.grid(row=0, column=1, sticky='w', padx=(0, 10))
-        self.ent_wavelength.grid(row=0, column=3, sticky='w', padx=(0, 10))
-        lbl_slope.grid(row=1, column=0, sticky='e', padx=(10, 0), pady=5)
-        lbl_zero.grid(row=1, column=2, sticky='e', padx=(10, 0), pady=5)
-        self.ent_slope.grid(row=1, column=1, sticky='w', padx=(0, 10))
-        self.ent_zero.grid(row=1, column=3, sticky='w', padx=(0, 10))
-        lbl_focus_position.grid(row=2, column=0, sticky='e', padx=(10, 0), pady=5)
-        self.ent_focus_position.grid(row=2, column=1, sticky='w', padx=(0, 10))
+
+        lbl_wavelength.grid(row=0, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_wavelength.grid(row=0, column=1, sticky='w', padx=(0, 10))
+
+        lbl_zero.grid(row=1, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_zero.grid(row=1, column=1, sticky='w', padx=(0, 10))
+
+        lbl_ben.grid(row=2, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_ben.grid(row=2, column=1, sticky='w', padx=(0, 10))
+
+        lbl_slope.grid(row=3, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_slope.grid(row=3, column=1, sticky='w', padx=(0, 10))
+
+        lbl_focus_position.grid(row=4, column=0, sticky='e', padx=(10, 0), pady=5)
+        self.ent_focus_position.grid(row=4, column=1, sticky='w', padx=(0, 10))
 
         # Set a flag to prevent recursive updates
         self.updating = False
@@ -894,7 +914,7 @@ class TypeMultibeam(BaseType):
             The parent window for the frame.
 
         """
-        self.name = 'Multibeam'
+        self.name = 'Multi'
         self.frm_ = ttk.Frame(parent)
         self.frm_.grid(row=5, column=0, sticky='nsew')
         lbl_frm = ttk.LabelFrame(self.frm_, text='Multibeam')
@@ -1451,7 +1471,7 @@ class TypeVortex(BaseType):
         self.strvars[0].set(dict['vort_ord'])
 
 
-class TypeZernike(BaseType):
+class TypeZernikeold(BaseType):
     """
     Class for managing Zernike polynomials settings for a phase calculation.
 
@@ -1519,7 +1539,7 @@ class TypeZernike(BaseType):
                 coeffs[i] = float(entry.get())
 
         x = np.linspace(-chip_width * 500, chip_width * 500, slm_size[1])
-        y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[0])
+        y = np.linspace(-chip_height * 500, chip_height * 500, slm_size[1])
         [X, Y] = np.meshgrid(x, y)
 
         rho = np.sqrt(X ** 2 + Y ** 2)
@@ -1579,6 +1599,107 @@ class TypeZernike(BaseType):
         """
         for i, varname in enumerate(self.varnames):
             self.strvars[i].set(dict[varname])
+
+
+class TypeZernike(BaseType):
+    def __init__(self, parent):
+
+        self.name = 'Zernike'
+        self.frm_ = ttk.Frame(parent)
+        self.frm_.grid(row=7, column=0, sticky='nsew')
+        lbl_frm = ttk.LabelFrame(self.frm_, text='Zernike polynomials')
+        lbl_frm.grid(row=0, column=0, sticky='ew')
+
+        self.filepath = ''
+
+        self.filepath_var = tk.StringVar()
+        ttk.Button(lbl_frm, text="Browse File", command=self.load_file).grid(row=0, column=0, pady=10)
+
+        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=300,
+                              justify='left', foreground='gray')
+        self.lbl_file.grid(row=1)
+
+        ttk.Button(lbl_frm, text="Plot", command=self.plot_data).grid(row=2, column=0, pady=10)
+
+
+    def load_file(self):
+        initial_directory = os.path.join('.', 'ressources', 'aberration_correction')
+        filepath = askopenfilename(initialdir=initial_directory,
+                                    filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        if filepath:
+            self.filepath = filepath
+            self.lbl_file['text'] = f'{filepath}'
+
+    def plot_data(self):
+        if self.filepath:
+            data = np.loadtxt(self.filepath, skiprows=1)
+            js = data[:, 0].astype(int)
+            coefs = data[:, 1]
+            self.open_plot_window(js, coefs)
+
+    def open_plot_window(self, js, coefs):
+        plot_window = tk.Toplevel(self.frm_)
+        plot_window.title("Zernike Coefficients Plot")
+        plot_window.geometry("600x400")
+
+        fig, ax = plt.subplots(figsize=(4,3))
+        ax.bar(js, coefs, color='blue', alpha=0.8)
+        ax.set_title("Zernike Coefficients")
+        ax.set_xlabel('Zernike Mode (j)')
+        ax.set_ylabel("Coefficient (nm RMS)")
+        ax.figure.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=plot_window)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        toolbar = NavigationToolbar2Tk(canvas, plot_window)
+        toolbar.update()
+        canvas._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    def phase(self):
+
+        data = np.loadtxt(self.filepath, skiprows=1)
+        js = data[:, 0].astype(int)
+        zernike_coefs = data[:, 1]
+
+        size = 1.92 # horizontal size in wL
+        x, y = coordinates.make_xy_grid(slm_size[1], diameter=size)
+        r, t = coordinates.cart_to_polar(x, y)
+
+        nms = [polynomials.noll_to_nm(j) for j in js]
+        zernike_basis = list(polynomials.zernike_nm_sequence(nms, r, t))
+
+        phase = polynomials.sum_of_2d_modes(zernike_basis, zernike_coefs)
+        start_row = (slm_size[1] - 1200) // 2
+        phase = phase[start_row:start_row + 1200, :]
+        return phase
+
+    def save_(self):
+        """
+        Save the current state of the TypeVortex object.
+
+        Returns
+        -------
+        dict : dict
+            A dictionary of the current state.
+        """
+        dict = {'filepath': self.lbl_file['text']}
+        return dict
+
+    def load_(self, dict):
+        """
+        Load a saved state for the TypeZernike object.
+
+        Parameters
+        ----------
+        dict : dict
+            A dictionary of the saved state.
+        """
+        self.filepath = dict.get('filepath', '')
+        self.lbl_file['text'] = dict['filepath']
+
+
 
 
 class TypeImage(TypeBackground):
@@ -1656,7 +1777,7 @@ class TypeHologram(BaseType):
         self.img = None
 
         btn_open = ttk.Button(lbl_frm, text='Open generated hologram', command=self.open_file)
-        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=400, justify='left', foreground='gray')
+        self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=300, justify='left', foreground='gray')
         lbl_act_file = ttk.Label(lbl_frm, text='Active Hologram file:', justify='left')
         btn_generate = ttk.Button(lbl_frm, text='Launch Hologram Generator', command=self.open_generator)
 
