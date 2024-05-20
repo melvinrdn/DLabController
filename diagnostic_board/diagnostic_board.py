@@ -5,7 +5,7 @@ import csv
 import tkinter as tk
 from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
-
+import matplotlib.cm as cm
 import h5py
 import numpy as np
 from PIL import Image, ImageTk
@@ -64,7 +64,7 @@ class DiagnosticBoard:
         self.frm_m2_diagnostics = ttk.Frame(self.frm_notebook_diagnostics)
         self.frm_phase_retrieval = ttk.Frame(self.frm_notebook_diagnostics)
         self.frm_notebook_diagnostics.add(self.frm_m2_diagnostics, text='M2 Diagnostics')
-        self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
+        #self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
         self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
 
         self.frm_m2_parameters = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Parameters")
@@ -168,8 +168,8 @@ class DiagnosticBoard:
                                           command=self.scan_daheng_thread)
         self.but_scan_daheng.grid(row=2, column=4, sticky='nsew')
 
-        self.open_h5_file = ttk.Button(self.frm_m2_parameters, text='Open h5 file', command=self.open_h5_file)
-        self.open_h5_file.grid(row=0, column=0, sticky='nsew')
+        #self.open_h5_file = ttk.Button(self.frm_m2_parameters, text='Open h5 file', command=self.open_h5_file)
+        #self.open_h5_file.grid(row=0, column=0, sticky='nsew')
 
         frm_cam_but = ttk.Frame(frm_controls)
         frm_cam_but_set = ttk.Frame(frm_cam_but)
@@ -205,6 +205,12 @@ class DiagnosticBoard:
         self.box_auto_exp = ttk.Checkbutton(frm_cam_but_set, text='Auto exposure',
                                             variable=self.automatic_exposure,
                                             onvalue=1, offvalue=0)
+
+        self.crosshair_cam = tk.IntVar(value=0)
+        self.box_crosshair = ttk.Checkbutton(frm_cam_but_set, text='Crosshair',
+                                            variable=self.crosshair_cam,
+                                            onvalue=1, offvalue=0, command=self.toggle_crosshair_visibility)
+
 
         lbl_cam_gain = ttk.Label(frm_cam_but_set, text='Gain (0-24):')
         self.strvar_cam_gain = tk.StringVar(self.win, '0')
@@ -294,16 +300,17 @@ class DiagnosticBoard:
         self.ent_roi_y2.grid(row=3, column=3, padx=(0, 10))
 
         lbl_cam_ind.grid(row=0, column=0, sticky='nsew')
-        self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10))
+        self.ent_cam_ind.grid(row=0, column=1, padx=(0, 10), sticky='nsew')
         frm_cam_but_set.grid(row=0, column=0, sticky='nsew')
         frm_cam_but.grid(row=1, column=0, sticky='nsew')
         lbl_cam_exp.grid(row=6, column=0, sticky='nsew')
-        self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10))
-        self.box_auto_exp.grid(row=6, column=2, padx=(0, 10))
+        self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10), sticky='nsew')
+        self.box_auto_exp.grid(row=6, column=2, padx=(0, 10), sticky='nsew')
+        self.box_crosshair.grid(row=7, column=2, padx=(0, 10), sticky='nsew')
         lbl_cam_gain.grid(row=7, column=0, sticky='nsew')
-        self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10))
+        self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10), sticky='nsew')
         lbl_cam_avg.grid(row=8, column=0, sticky='nsew')
-        self.ent_cam_avg.grid(row=8, column=1, padx=(0, 10))
+        self.ent_cam_avg.grid(row=8, column=1, padx=(0, 10), sticky='nsew')
 
         self.but_cam_init.grid(row=1, column=0, sticky='nsew')
         self.but_cam_disconnect.grid(row=2, column=0, sticky='nsew')
@@ -373,10 +380,9 @@ class DiagnosticBoard:
         self.img_canvas.bind('<ButtonRelease-1>', self.end_roi_selection)
         self.img_canvas.bind('<Button-3>', self.toggle_crosshair_lock)
         self.win.bind('<r>', self.reset_roi)
-        self.win.bind('<c>', self.toggle_crosshair_visibility)
 
-        self.crosshair_visible = True
-        self.crosshair_locked = False
+        self.crosshair_visible = False
+        self.crosshair_locked = True
 
         frm_bottom = ttk.Frame(self.win)
         frm_bottom.grid(row=3, column=0, columnspan=2)
@@ -429,7 +435,7 @@ class DiagnosticBoard:
         self.img_canvas.coords(self.vertical_line, x, 0, x, self.img_canvas.winfo_height())
         self.pos_label.config(text=f"Position: x={x:.2f}, y={y:.2f}")
 
-    def toggle_crosshair_visibility(self, event):
+    def toggle_crosshair_visibility(self):
         self.crosshair_visible = not self.crosshair_visible
         if self.crosshair_visible:
             self.img_canvas.itemconfig(self.horizontal_line, state='normal')
@@ -487,7 +493,6 @@ class DiagnosticBoard:
             message = 'There is no beam profile loaded'
             self.insert_message(message)
         print('done')
-
 
 
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
@@ -917,16 +922,22 @@ class DiagnosticBoard:
             else:
                 self.frm_cam.config(text="Camera display, max: {}".format(int(np.max(self.relevant_image))))
 
-
-            image = Image.fromarray(cropped_im)
-            image_resized = image.resize((720, 540), resample=0)
+            colored_image_array = self.apply_colormap(cropped_im, colormap_name='turbo')
+            colored_image = Image.fromarray(colored_image_array)
+            image_resized = colored_image.resize((720, 540), resample=Image.NEAREST)
             photo = ImageTk.PhotoImage(image_resized)
-
             self.img_canvas.itemconfig(self.image, image=photo)
             self.img_canvas.image = photo
+
         except ValueError as e:
             message = f"Error processing the image: {e}"
             self.insert_message(message)
+
+    def apply_colormap(self,image_array, colormap_name='viridis'):
+        colormap = cm.get_cmap(colormap_name)
+        colored_image = colormap(image_array / 255.0)  # Normalize to [0, 1] range
+        colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)  # Discard alpha channel and convert to uint8
+        return colored_image
 
     def start_roi_selection(self, event):
         if self.roi_rectangle:

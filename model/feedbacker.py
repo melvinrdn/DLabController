@@ -155,7 +155,7 @@ class Feedbacker(object):
         frm_mcp_all = ttk.Frame(self.win)
 
         # Spectrometer
-        frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
+        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
 
         self.frm_notebook_param_spc = ttk.Notebook(self.win)
         frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
@@ -176,10 +176,12 @@ class Feedbacker(object):
         frm_phase_scan = ttk.Frame(frm_scans)
         frm_const_intensity_scan = ttk.Frame(frm_scans)
         frm_mpc_campaign = ttk.Frame(frm_scans)
+        frm_beam_shaping_scan = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         # self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
+        self.frm_notebook_scans.add(frm_beam_shaping_scan, text="Beam Shaping scan")
 
         frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
         frm_mpc_campaign_stages.grid(row=0, column=0)
@@ -390,80 +392,14 @@ class Feedbacker(object):
                                            offvalue=0,
                                            command=None)
 
-        # I = cst frame
-
-        self.frm_m2_plot = ttk.LabelFrame(frm_const_intensity_scan, text="M2 Plot")
-        self.frm_m2_plot.grid(row=0, column=0, sticky='nsew')
-        self.frm_m2_param = ttk.LabelFrame(frm_const_intensity_scan, text="Parameters")
-        self.frm_m2_param.grid(row=0, column=1, sticky='nsew')
-        self.open_h5_file = tk.Button(self.frm_m2_param, text='Open h5 file', command=self.open_h5_file)
-        self.open_h5_file.grid(row=0, column=0)
-
-        lbl_pulse_length_m2 = tk.Label(self.frm_m2_param, text='Pulse length (fs):')
-        self.strvar_pulse_length_m2 = tk.StringVar(self.win, '180')
-        self.ent_pulse_length_m2 = tk.Entry(
-            self.frm_m2_param, width=8, validate='all',
-            textvariable=self.strvar_pulse_length_m2)
-
-        lbl_rep_rate_m2 = tk.Label(self.frm_m2_param, text='Repetition rate (kHz):')
-        self.strvar_rep_rate_m2 = tk.StringVar(self.win, '10')
-        self.ent_rep_rate_m2 = tk.Entry(
-            self.frm_m2_param, width=8, validate='all',
-            textvariable=self.strvar_rep_rate_m2)
-
-        lbl_beam_radius_m2 = tk.Label(self.frm_m2_param, text='Beam radius (µm):')
-        self.strvar_beam_radius_m2 = tk.StringVar(self.win, '30')
-        self.ent_beam_radius_m2 = tk.Entry(
-            self.frm_m2_param, width=8, validate='all',
-            textvariable=self.strvar_beam_radius_m2)
-
-        lbl_pulse_length_m2.grid(row=1, column=0, sticky='nsew')
-        self.ent_pulse_length_m2.grid(row=1, column=1, sticky='nsew')
-        lbl_rep_rate_m2.grid(row=2, column=0, sticky='nsew')
-        self.ent_rep_rate_m2.grid(row=2, column=1, sticky='nsew')
-        lbl_beam_radius_m2.grid(row=3, column=0, sticky='nsew')
-        self.ent_beam_radius_m2.grid(row=3, column=1, sticky='nsew')
-
-        lbl_target_intensity = tk.Label(self.frm_m2_param, text='Target intensity (1e14 W/cm2):')
-        lbl_target_intensity.grid(row=4, column=0)
-        self.strvar_target_intensity = tk.StringVar(self.win, '1')
-        self.ent_target_intensity = tk.Entry(
-            self.frm_m2_param,
-            textvariable=self.strvar_target_intensity)
-        self.ent_target_intensity.grid(row=4, column=1)
-
-        lbl_p_steps = tk.Label(self.frm_m2_param, text='Number of P steps:')
-        lbl_p_steps.grid(row=5, column=0)
-        self.strvar_p_steps = tk.StringVar(self.win, '10')
-        self.ent_p_steps = tk.Entry(
-            self.frm_m2_param,
-            textvariable=self.strvar_p_steps)
-        self.ent_p_steps.grid(row=5, column=1)
-
-        self.but_set_target_intensity = tk.Button(self.frm_m2_param, text='Set parameters',
-                                                  command=self.set_target_intensity)
-        self.but_set_target_intensity.grid(row=6, column=0)
-
-        sizefactor_m2 = 0.8
-        self.figr_m2 = Figure(figsize=(6 * sizefactor_m2, 4 * sizefactor_m2), dpi=100)
-        self.ax1r_m2 = self.figr_m2.add_subplot(211)
-        self.ax2r_m2 = self.figr_m2.add_subplot(212)
-        self.ax1r_m2.grid()
-        self.ax2r_m2.grid()
-        self.figr_m2.tight_layout()
-        self.figr_m2.canvas.draw()
-        self.img1r_m2 = FigureCanvasTkAgg(self.figr_m2, self.frm_m2_plot)
-        self.tk_widget_figr_m2 = self.img1r_m2.get_tk_widget()
-        self.tk_widget_figr_m2.grid(row=0, column=0, sticky='nsew')
-        self.img1r_m2.draw()
-        self.ax1r_m2_blit = self.figr_m2.canvas.copy_from_bbox(self.ax1r_m2.bbox)
-        self.ax2r_m2_blit = self.figr_m2.canvas.copy_from_bbox(self.ax2r_m2.bbox)
-
         # MEASUREMENT FRAME
         self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
         self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
         self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
         self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
+
+        self.but_hide_twocolor = tk.Button(frm_measure, text='Hide/Show Spectrometer', command=self.hide_show_spectrometer)
+        self.frm_plt_visible = False
 
 
         self.var_background = tk.IntVar()
@@ -654,7 +590,7 @@ class Feedbacker(object):
         lbl_mpc_lens_label = tk.Label(frm_mpc_campaign_scans, text='Lens')
         lbl_mpc_grating_label = tk.Label(frm_mpc_campaign_scans, text='Grating')
 
-        lbl_lens_stage = tk.Label(frm_mpc_campaign_stages, text='Lens')
+        lbl_lens_stage = tk.Label(frm_stage, text='Lens:')
         lbl_MPC_wp = tk.Label(frm_mpc_campaign_stages, text='WP')
         lbl_zaber_grating = tk.Label(frm_mpc_campaign_stages, text='Grating')
 
@@ -666,17 +602,17 @@ class Feedbacker(object):
 
         self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
         self.ent_mpc_lens_nr = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_nr)
         self.strvar_mpc_lens_is = tk.StringVar(self.win, '')
         self.ent_mpc_lens_is = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_is)
         self.strvar_mpc_lens_should = tk.StringVar(self.win, '')
         self.ent_mpc_lens_should = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
+            frm_stage, width=10, validate='all',
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_should)
 
@@ -787,10 +723,10 @@ class Feedbacker(object):
         self.but_MPC_abort = tk.Button(frm_mpc_campaign_scans, text='ABORT!!!', command=self.abort_mpc_measurement)
         self.but_MPC_test_scan = tk.Button(frm_mpc_campaign_scans, text='Test scan', command=self.enabl_mpc_test_scan)
 
-        self.but_lens_stage_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_lens_stage)
-        self.but_lens_stage_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_lens_stage)
-        self.but_lens_stage_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_lens_stage)
-        self.but_lens_stage_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_lens_stage)
+        self.but_lens_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_lens_stage)
+        self.but_lens_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_lens_stage)
+        self.but_lens_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_lens_stage)
+        self.but_lens_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_lens_stage)
 
         self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_wp)
         self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_wp)
@@ -827,16 +763,16 @@ class Feedbacker(object):
                                                   command=None)
 
         lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_lens_stage.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
         lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         lbl_zaber_grating.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
         lbl_Nr_MPC.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         lbl_is_MPC.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         lbl_should_MPC.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.ent_mpc_lens_nr.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_is.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_should.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
@@ -868,10 +804,10 @@ class Feedbacker(object):
         self.but_MPC_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
         self.but_MPC_test_scan.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_lens_stage_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Ini.grid(row=5, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Home.grid(row=5, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Read.grid(row=5, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Move.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
         self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
@@ -1189,10 +1125,9 @@ class Feedbacker(object):
         self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
                                                command=self.remove_background)
 
-        self.frm_notebook_param_spc.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        #self.frm_notebook_param_spc.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        #self.frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
-        frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        # frm_mcp_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
@@ -1235,8 +1170,8 @@ class Feedbacker(object):
         but_bck.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up buttons frm_bot
-        but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        but_feedback.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        #but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        #but_feedback.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_spc_pid
         lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1294,11 +1229,12 @@ class Feedbacker(object):
         lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.cb_background.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        self.cb_saveh5.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
-        self.cb_export_treated_image.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+        self.cb_saveh5.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+        self.cb_export_treated_image.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
 
         self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_hide_twocolor.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
         self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
@@ -1312,56 +1248,54 @@ class Feedbacker(object):
         self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_stage
-        lbl_Stage.grid(row=0, column=1, pady=2, sticky='nsew')
-        lbl_Nr.grid(row=0, column=2, pady=2, sticky='nsew')
-        lbl_is.grid(row=0, column=3, pady=2, sticky='nsew')
-        lbl_should.grid(row=0, column=4, pady=2, sticky='nsew')
+        lbl_Stage.grid(row=0, column=0, pady=2, padx=2,sticky='nsew')
+        lbl_Nr.grid(row=0, column=1, pady=2, padx=2,sticky='nsew')
+        lbl_is.grid(row=0, column=2, pady=2, padx=2,sticky='nsew')
+        lbl_should.grid(row=0, column=3, pady=2, padx=2,sticky='nsew')
 
-        lbl_WPR.grid(row=1, column=1, pady=2, sticky='nsew')
-        lbl_WPG.grid(row=2, column=1, pady=2, sticky='nsew')
-        lbl_delay_stage.grid(row=3, column=1, pady=2, sticky='nsew')
-        lbl_cam_stage.grid(row=4, column=1, pady=2, sticky='nsew')
+        lbl_WPR.grid(row=1, column=0, pady=2, padx=2,sticky='nsew')
+        lbl_WPG.grid(row=2, column=0, pady=2, padx=2,sticky='nsew')
+        lbl_delay_stage.grid(row=3, column=0, padx=2,pady=2, sticky='nsew')
+        lbl_cam_stage.grid(row=4, column=0, padx=2,pady=2, sticky='nsew')
+        lbl_lens_stage.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_Nr.grid(row=1, column=2, pady=2, sticky='nsew')
-        self.ent_WPG_Nr.grid(row=2, column=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_Nr.grid(row=3, column=2, pady=2, sticky='nsew')
+        self.ent_WPR_Nr.grid(row=1, column=1, pady=2, padx=2,sticky='nsew')
+        self.ent_WPG_Nr.grid(row=2, column=1, pady=2, padx=2,sticky='nsew')
+        self.ent_delay_stage_Nr.grid(row=3, column=1, padx=2,pady=2, sticky='nsew')
+        self.ent_cam_stage_Nr.grid(row=4, column=1,padx=2, pady=2, sticky='nsew')
 
-        self.ent_cam_stage_Nr.grid(row=4, column=2, pady=2, sticky='nsew')
+        self.ent_WPR_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_is.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_is.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_is.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.ent_cam_stage_is.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_should.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_should.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_should.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.ent_cam_stage_should.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Ini.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPR_Ini.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Home.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Read.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Move.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPG_Ini.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Home.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Read.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Move.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_cam_stage_Ini.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Home.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Read.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Move.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_delay_stage_Ini.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Home.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Read.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Move.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.cb_wprpower.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
-        self.cb_wpgpower.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
+        self.cb_wprpower.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.cb_wpgpower.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1720,7 +1654,7 @@ class Feedbacker(object):
         self.ax2r.set_ylim(0, .6)
         self.figr.tight_layout()
         self.figr.canvas.draw()
-        self.img1r = FigureCanvasTkAgg(self.figr, frm_plt)
+        self.img1r = FigureCanvasTkAgg(self.figr, self.frm_plt)
         self.tk_widget_figr = self.img1r.get_tk_widget()
         self.tk_widget_figr.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.img1r.draw()
@@ -1736,7 +1670,7 @@ class Feedbacker(object):
         self.ax1p.grid()
         self.figp.tight_layout()
         self.figp.canvas.draw()
-        self.img1p = FigureCanvasTkAgg(self.figp, frm_plt)
+        self.img1p = FigureCanvasTkAgg(self.figp, self.frm_plt)
         self.tk_widget_figp = self.img1p.get_tk_widget()
         self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.img1p.draw()
@@ -1750,7 +1684,7 @@ class Feedbacker(object):
         self.ax1V.grid()
         self.figV.tight_layout()
         self.figV.canvas.draw()
-        self.img1V = FigureCanvasTkAgg(self.figV, frm_plt)
+        self.img1V = FigureCanvasTkAgg(self.figV, self.frm_plt)
         self.tk_widget_figV = self.img1V.get_tk_widget()
         self.tk_widget_figV.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.img1V.draw()
@@ -1795,6 +1729,15 @@ class Feedbacker(object):
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
         self.open_calibrator_on_start()
+
+    def hide_show_spectrometer(self):
+        if self.frm_plt_visible:
+            self.frm_plt.grid_remove()
+            self.frm_notebook_param_spc.grid_remove()
+        else:
+            self.frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+            self.frm_notebook_param_spc.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_plt_visible = not self.frm_plt_visible
 
     def insert_message(self, message):
         self.output_console.configure(state='normal')
