@@ -13,7 +13,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 aberration = None
 
 types = ['Background', 'Lens', 'Tilt', 'Vortex', 'Zernike', 'Binary', 'Supergaussian',
-         'HGB','Image','Holo','Multi']  # defines the settings that we want to have!
+         'HGB', 'Image', 'Holo', 'Multi']  # defines the settings that we want to have!
 
 
 def new_type(frm_mid, typ):
@@ -219,7 +219,8 @@ class TypeBackground(BaseType):
 
         initial_directory = os.path.join('.', 'ressources', 'background')
         filepath = askopenfilename(initialdir=initial_directory,
-                                    filetypes=[('CSV data arrays', '*.csv'),('Image Files', '*.bmp'),("Text files", "*.txt"), ("All files", "*.*")])
+                                   filetypes=[('CSV data arrays', '*.csv'), ('Image Files', '*.bmp'),
+                                              ("Text files", "*.txt"), ("All files", "*.*")])
         self._read_file(filepath)
         self.lbl_file['text'] = f'{filepath}'
 
@@ -1339,7 +1340,7 @@ class TypeHGB(BaseType):
         lbl_frm = ttk.LabelFrame(self.frm_, text='HG beam')
         lbl_frm.grid(row=0, column=0, sticky='ew')
 
-        lbl_texts = ['radius of phase jump (wL):']
+        lbl_texts = ['R of the first circle (wL):', 'R of the second circle (wL):']
         labels = [ttk.Label(lbl_frm, text=lbl_text) for lbl_text in lbl_texts]
         vcmd = (parent.register(self.callback))
         self.strvars = [tk.StringVar() for lbl_text in lbl_texts]
@@ -1364,8 +1365,9 @@ class TypeHGB(BaseType):
         rho /= 2
         w_L = 4e-3
 
-        desired_radius = coeffs
-        indices_p1 = np.where(rho <= 2 * desired_radius * w_L)
+        desired_radius = coeffs[0]
+        factor = coeffs[1]
+        indices_p1 = np.where(rho <= factor * desired_radius * w_L)
 
         p1 = np.zeros_like(X)
         p1[indices_p1] = np.pi
@@ -1616,16 +1618,15 @@ class TypeZernike(BaseType):
         ttk.Button(lbl_frm, text="Browse File", command=self.load_file).grid(row=0, column=0, pady=10)
 
         self.lbl_file = ttk.Label(lbl_frm, text='', wraplength=300,
-                              justify='left', foreground='gray')
+                                  justify='left', foreground='gray')
         self.lbl_file.grid(row=1)
 
         ttk.Button(lbl_frm, text="Plot", command=self.plot_data).grid(row=2, column=0, pady=10)
 
-
     def load_file(self):
         initial_directory = os.path.join('.', 'ressources', 'aberration_correction')
         filepath = askopenfilename(initialdir=initial_directory,
-                                    filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+                                   filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if filepath:
             self.filepath = filepath
             self.lbl_file['text'] = f'{filepath}'
@@ -1642,7 +1643,7 @@ class TypeZernike(BaseType):
         plot_window.title("Zernike Coefficients Plot")
         plot_window.geometry("600x400")
 
-        fig, ax = plt.subplots(figsize=(4,3))
+        fig, ax = plt.subplots(figsize=(4, 3))
         ax.bar(js, coefs, color='blue', alpha=0.8)
         ax.set_title("Zernike Coefficients")
         ax.set_xlabel('Zernike Mode (j)')
@@ -1663,7 +1664,7 @@ class TypeZernike(BaseType):
         js = data[:, 0].astype(int)
         zernike_coefs = data[:, 1]
 
-        size = 1.92 # horizontal size in wL
+        size = 1.92  # horizontal size in wL
         x, y = coordinates.make_xy_grid(slm_size[1], diameter=size)
         r, t = coordinates.cart_to_polar(x, y)
 
@@ -1698,8 +1699,6 @@ class TypeZernike(BaseType):
         """
         self.filepath = dict.get('filepath', '')
         self.lbl_file['text'] = dict['filepath']
-
-
 
 
 class TypeImage(TypeBackground):
@@ -1838,4 +1837,3 @@ class TypeHologram(BaseType):
         """
         self.lbl_file['text'] = dict['filepath']
         self._read_file(dict['filepath'])
-

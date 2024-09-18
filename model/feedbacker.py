@@ -9,6 +9,7 @@ from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
 from tkinter.scrolledtext import ScrolledText
 import pygame
 from scipy.optimize import curve_fit
+from matplotlib.colors import LinearSegmentedColormap
 
 import cv2
 import h5py
@@ -33,6 +34,21 @@ from drivers.thorlabs_apt_driver import core as apt
 from drivers.vimba_driver import *
 from ressources.calibration import waveplate_calibrator as cal
 from ressources.slm_infos import slm_size, bit_depth
+
+colors = [
+    (1, 1, 1),  # white
+    (0, 0, 0.5),  # dark blue
+    (0, 0, 1),  # clearer blue
+    (0, 1, 1),  # turquoise
+    (0, 1, 0),  # green
+    (1, 1, 0),  # yellow
+    (1, 0.5, 0),  # orange
+    (1, 0, 0),   # red
+    (0.5, 0, 0)  # darker red
+]
+
+custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
+
 
 
 class Feedbacker(object):
@@ -176,12 +192,12 @@ class Feedbacker(object):
         frm_phase_scan = ttk.Frame(frm_scans)
         frm_const_intensity_scan = ttk.Frame(frm_scans)
         frm_mpc_campaign = ttk.Frame(frm_scans)
-        frm_beam_shaping_scan = ttk.Frame(frm_scans)
+        frm_beam_shaping = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         # self.frm_notebook_scans.add(frm_const_intensity_scan, text="I=cst z-scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
-        self.frm_notebook_scans.add(frm_beam_shaping_scan, text="Beam Shaping scan")
+        self.frm_notebook_scans.add(frm_beam_shaping, text="Beam Shaping scan")
 
         frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
         frm_mpc_campaign_stages.grid(row=0, column=0)
@@ -189,6 +205,11 @@ class Feedbacker(object):
         frm_mpc_campaign_scans.grid(row=1, column=0)
         frm_mpc_campaign_current = ttk.Frame(frm_mpc_campaign)
         frm_mpc_campaign_current.grid(row=1, column=1)
+
+        frm_beam_shaping_scans = ttk.LabelFrame(frm_beam_shaping, text='Scan')
+        frm_beam_shaping_scans.grid(row=0, column=0)
+
+
 
         self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
         frm_stage = ttk.Frame(frm_scans)
@@ -590,6 +611,14 @@ class Feedbacker(object):
         lbl_mpc_lens_label = tk.Label(frm_mpc_campaign_scans, text='Lens')
         lbl_mpc_grating_label = tk.Label(frm_mpc_campaign_scans, text='Grating')
 
+
+        lbl_beam_shaping_to = tk.Label(frm_beam_shaping_scans, text='to')
+        lbl_beam_shaping_from = tk.Label(frm_beam_shaping_scans, text='from')
+        lbl_beam_shaping_steps = tk.Label(frm_beam_shaping_scans, text='steps')
+
+        lbl_beam_shaping_stage_label = tk.Label(frm_beam_shaping_scans, text='Stage')
+        lbl_beam_shaping_lens_label = tk.Label(frm_beam_shaping_scans, text='Lens')
+
         lbl_lens_stage = tk.Label(frm_stage, text='Lens:')
         lbl_MPC_wp = tk.Label(frm_mpc_campaign_stages, text='WP')
         lbl_zaber_grating = tk.Label(frm_mpc_campaign_stages, text='Grating')
@@ -696,6 +725,22 @@ class Feedbacker(object):
             validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_grating_steps)
 
+        self.strvar_beam_shaping_lens_from = tk.StringVar(self.win, '5')
+        self.ent_beam_shaping_lens_from = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_from)
+        self.strvar_beam_shaping_lens_to = tk.StringVar(self.win, '10')
+        self.ent_beam_shaping_lens_to = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_to)
+        self.strvar_beam_shaping_lens_steps = tk.StringVar(self.win, '5')
+        self.ent_beam_shaping_lens_steps = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            validatecommand=(vcmd, '%d', '%P', '%S'),
+            textvariable=self.strvar_mpc_lens_steps)
+
         self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
         self.ent_mpc_maxpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
@@ -722,6 +767,9 @@ class Feedbacker(object):
         self.but_MPC_measure = tk.Button(frm_mpc_campaign_scans, text='Measure The MPC', command=self.enabl_mpc_meas)
         self.but_MPC_abort = tk.Button(frm_mpc_campaign_scans, text='ABORT!!!', command=self.abort_mpc_measurement)
         self.but_MPC_test_scan = tk.Button(frm_mpc_campaign_scans, text='Test scan', command=self.enabl_mpc_test_scan)
+
+        self.but_beam_shaping_measure = tk.Button(frm_beam_shaping_scans, text='Measure', command=self.enabl_beam_shaping_meas)
+        self.but_beam_shaping_abort = tk.Button(frm_beam_shaping_scans, text='Abort', command=self.abort_beam_shaping_measurement)
 
         self.but_lens_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_lens_stage)
         self.but_lens_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_lens_stage)
@@ -762,6 +810,13 @@ class Feedbacker(object):
                                                   offvalue=0,
                                                   command=None)
 
+        self.var_beam_shaping_scan_lens = tk.IntVar()
+        self.cb_beam_shaping_scan_lens = tk.Checkbutton(frm_beam_shaping_scans, text='Scan Lens',
+                                               variable=self.var_beam_shaping_scan_lens,
+                                               onvalue=1,
+                                               offvalue=0,
+                                               command=None)
+
         lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
@@ -787,6 +842,21 @@ class Feedbacker(object):
         lbl_mpc_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         lbl_mpc_wp_label.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         lbl_mpc_grating_label.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_beam_shaping_stage_label.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_to.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_steps.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_beam_shaping_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_shaping_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_shaping_lens_steps.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_beam_shaping_measure.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_beam_shaping_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.cb_beam_shaping_scan_lens.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
         self.ent_mpc_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
@@ -3073,6 +3143,13 @@ class Feedbacker(object):
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
+    def enabl_beam_shaping_meas(self):
+
+        self.stop_beam_shaping = False
+        self.beam_shaping_thread = threading.Thread(target=self.measure_beam_shaping)
+        self.beam_shaping_thread.daemon = True
+        self.beam_shaping_thread.start()
+
     def enabl_mpc_test_scan(self):
 
         self.stop_mcp_test = False
@@ -3236,6 +3313,10 @@ class Feedbacker(object):
 
     def abort_mpc_measurement(self):
         self.abort = 1
+
+    def abort_beam_shaping_measurement(self):
+        self.abort = 1
+
 
     def test_mpc_scan(self):
         grating_pos_array = np.linspace(float(self.ent_mpc_grating_from.get()), float(self.ent_mpc_grating_to.get()),
@@ -3411,6 +3492,72 @@ class Feedbacker(object):
                     hf.create_dataset('treated_images', data=res_treated)
                     hf.create_dataset('e_axis', data=self.eaxis_correct)
 
+                hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
+                hf.create_dataset('averages', data=int(self.ent_avgs.get()))
+                hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
+
+            log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
+            self.f.write(log_entry)
+            self.but_MPC_measure.config(fg='green')
+
+
+
+
+    def measure_beam_shaping(self):
+        lens_pos_array = np.linspace(float(self.ent_beam_shaping_lens_from.get()), float(self.ent_beam_shaping_lens_to.get()),
+                                     int(self.ent_beam_shaping_lens_steps.get()))
+        self.current_lens_position_array = lens_pos_array
+        self.but_beam_shaping_measure.config(fg='red')
+        message = "LET'S GO"
+        self.insert_message(message)
+
+        if self.var_beam_shaping_scan_lens.get() == 1:
+            self.scan_type = 2
+            self.current_scan_type = 2
+            message = "Scanning the the lens position"
+            self.insert_message(message)
+            power_array = 0
+            res = np.zeros([512, 512, lens_pos_array.size]) * np.nan
+            res_treated = np.zeros([512, 512, lens_pos_array.size]) * np.nan
+
+            for ind_pos, pos in enumerate(lens_pos_array):
+                if self.abort == 1:
+                    break
+                self.strvar_mpc_lens_should.set(str(pos))
+                self.move_lens_stage()
+                if self.ANDOR_cam == True:
+                    im = self.take_image(int(self.ent_avgs.get()))
+                else:
+                    im = np.random.rand(512, 512)
+                self.plot_MCP(im)
+                res[:, :, ind_pos] = im
+                if self.eaxis is not None:
+                    E_new, im_new = self.final_image_treatment(im)
+                    res_treated[:, :, ind_pos] = im_new
+                    self.current_E = self.eaxis_correct
+                    self.current_treated_images = res_treated
+                    self.plot_analysis(2, res_treated, parameter1=lens_pos_array, parameter2=power_array,
+                                       energy_axis=self.current_E)
+
+        else:
+            message = "Now we scan absolutely nothing"
+            self.insert_message(message)
+            self.abort = 1
+
+        if self.abort == 1:
+            self.but_MPC_measure.config(fg='magenta')
+            self.abort = 0
+        else:
+            nr = self.get_start_image()
+            filename = self.saving_folder + '-' + str(int(nr)) + '.h5'
+
+            with h5py.File(filename, 'w') as hf:
+                hf.create_dataset('raw_images', data=res)
+                hf.create_dataset('lens_position', data=lens_pos_array)
+                #hf.create_dataset('scan_type', data=self.scan_type)
+                if self.eaxis is not None:
+                    hf.create_dataset('treated_images', data=res_treated)
+                    hf.create_dataset('e_axis', data=self.eaxis_correct)
                 hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
                 hf.create_dataset('averages', data=int(self.ent_avgs.get()))
                 hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
@@ -3604,24 +3751,24 @@ class Feedbacker(object):
                                            float(self.var_mcp_analysis_emax.get()))
             except:
                 self.axAnalysis_3.set_xlim(auto=True)
-            # divs = np.zeros_like(parameter1)
-            # for ind_pos, pos in enumerate(parameter1):
-            #    x_data = np.arange(0, 512)
-            #    y_data = np.nansum(treated_images[:, ind-8:ind+8,ind_pos], axis = 1)
-            #    try:
-            #        A_fit, mu_fit, sigma_fit, B_fit = help.fit_gaussian(x_data,y_data)
-            #        divs[ind_pos] = sigma_fit
-            #    except:
-            #        divs[ind_pos] = np.nan
+            divs = np.zeros_like(parameter1)
+            for ind_pos, pos in enumerate(parameter1):
+                x_data = np.arange(0, 512)
+                y_data = np.nansum(treated_images[:, ind-8:ind+8,ind_pos], axis = 1)
+                try:
+                    A_fit, mu_fit, sigma_fit, B_fit = help.fit_gaussian(x_data,y_data)
+                    divs[ind_pos] = sigma_fit
+                except:
+                    divs[ind_pos] = np.nan
 
-            # self.axAnalysis_3.clear()
-            # self.axAnalysis_3.plot(parameter1, divs)
-            # self.axAnalysis_3.set_xlabel("Lens position (mm)")
-            # self.axAnalysis_3.set_xlim(parameter1[0],parameter1[-1])
-            # self.axAnalysis_3.set_ylim(0,200)
+            self.axAnalysis_3.clear()
+            self.axAnalysis_3.plot(parameter1, divs)
+            self.axAnalysis_3.set_xlabel("Lens position (mm)")
+            self.axAnalysis_3.set_xlim(parameter1[0],parameter1[-1])
+            self.axAnalysis_3.set_ylim(0,200)
 
-            # self.axAnalysis_3.set_ylabel("Divergence (px)")
-            # self.axAnalysis_3.set_title("Div: H {}".format(har))
+            self.axAnalysis_3.set_ylabel("Divergence (px)")
+            self.axAnalysis_3.set_title("Div: H {}".format(har))
 
             self.figrAnalysis.tight_layout()
             self.canvas_results.draw()
@@ -3943,7 +4090,7 @@ class Feedbacker(object):
     def plot_calibration_image(self, image):
         image = np.flipud(image)
         self.axMCP_calibrate.clear()
-        self.axMCP_calibrate.imshow(image.T)
+        self.axMCP_calibrate.imshow(image.T,cmap=custom_cmap)
         # self.axMCP.set_aspect('equal')
 
         self.axMCP_calibrate.set_xlabel("Energy equivalent")
@@ -4039,7 +4186,7 @@ class Feedbacker(object):
 
         elif self.ANDOR_cam is True:
             self.axMCP.clear()
-            pcm = self.axMCP.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T)
+            pcm = self.axMCP.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T,cmap='turbo')
             cbar = self.figrMCP.colorbar(pcm, ax=self.axMCP)
 
             # self.axMCP.set_aspect('equal')

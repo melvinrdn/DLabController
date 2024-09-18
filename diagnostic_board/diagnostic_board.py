@@ -10,6 +10,7 @@ import h5py
 import numpy as np
 from PIL import Image, ImageTk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from scipy.optimize import curve_fit
@@ -22,6 +23,20 @@ from diagnostic_board.nl_pr import NLOptimizer
 from drivers.thorlabs_apt_driver import core as apt
 from drivers import gxipy_driver as gx
 
+
+colors = [
+    (1, 1, 1),  # white
+    (0, 0, 0.5),  # dark blue
+    (0, 0, 1),  # clearer blue
+    (0, 1, 1),  # turquoise
+    (0, 1, 0),  # green
+    (1, 1, 0),  # yellow
+    (1, 0.5, 0),  # orange
+    (1, 0, 0),   # red
+    (0.5, 0, 0)  # darker red
+]
+
+custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
 class DiagnosticBoard:
     def __init__(self, parent):
@@ -64,8 +79,8 @@ class DiagnosticBoard:
         self.frm_m2_diagnostics = ttk.Frame(self.frm_notebook_diagnostics)
         self.frm_phase_retrieval = ttk.Frame(self.frm_notebook_diagnostics)
         self.frm_notebook_diagnostics.add(self.frm_m2_diagnostics, text='M2 Diagnostics')
-        #self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
-        self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
+        # self.frm_notebook_diagnostics.add(self.frm_phase_retrieval, text="Phase retrieval")
+        # self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
 
         self.frm_m2_parameters = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Parameters")
         self.frm_m2_plot = ttk.LabelFrame(self.frm_m2_diagnostics, text="M2 Plot")
@@ -129,7 +144,6 @@ class DiagnosticBoard:
         self.img1r.draw()
         self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
 
-
         lbl_daheng_stage_from = ttk.Label(self.frm_scan_settings, text="From")
         lbl_daheng_stage_to = ttk.Label(self.frm_scan_settings, text="To")
         lbl_daheng_stage_steps = ttk.Label(self.frm_scan_settings, text="Steps")
@@ -161,15 +175,15 @@ class DiagnosticBoard:
         self.ent_daheng_stage_steps.grid(row=1, column=2, sticky='nsew')
 
         self.but_backgrounds = ttk.Button(self.frm_scan_settings, text="Get backgrounds",
-                                         command=self.find_focus_thread)
+                                          command=self.find_focus_thread)
         self.but_backgrounds.grid(row=1, column=4, sticky='nsew')
 
         self.but_scan_daheng = ttk.Button(self.frm_scan_settings, text="Get M2",
                                           command=self.scan_daheng_thread)
         self.but_scan_daheng.grid(row=2, column=4, sticky='nsew')
 
-        #self.open_h5_file = ttk.Button(self.frm_m2_parameters, text='Open h5 file', command=self.open_h5_file)
-        #self.open_h5_file.grid(row=0, column=0, sticky='nsew')
+        # self.open_h5_file = ttk.Button(self.frm_m2_parameters, text='Open h5 file', command=self.open_h5_file)
+        # self.open_h5_file.grid(row=0, column=0, sticky='nsew')
 
         frm_cam_but = ttk.Frame(frm_controls)
         frm_cam_but_set = ttk.Frame(frm_cam_but)
@@ -189,6 +203,9 @@ class DiagnosticBoard:
         self.but_cam_live = ttk.Button(frm_cam_but, text='Live', command=self.live_daheng_thread)
         self.but_cam_single = ttk.Button(frm_cam_but, text='Single', command=self.single_daheng_thread)
 
+        self.but_expand_reduce = ttk.Button(frm_cam_but, text='Reduce/Expand window', command=self.expand_reduce_panels)
+        self.frm_param = False
+
         lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
         self.strvar_cam_ind = tk.StringVar(self.win, '3')
         self.ent_cam_ind = ttk.Entry(frm_cam_but_set, width=8,
@@ -205,12 +222,6 @@ class DiagnosticBoard:
         self.box_auto_exp = ttk.Checkbutton(frm_cam_but_set, text='Auto exposure',
                                             variable=self.automatic_exposure,
                                             onvalue=1, offvalue=0)
-
-        self.crosshair_cam = tk.IntVar(value=0)
-        self.box_crosshair = ttk.Checkbutton(frm_cam_but_set, text='Crosshair',
-                                            variable=self.crosshair_cam,
-                                            onvalue=1, offvalue=0, command=self.toggle_crosshair_visibility)
-
 
         lbl_cam_gain = ttk.Label(frm_cam_but_set, text='Gain (0-24):')
         self.strvar_cam_gain = tk.StringVar(self.win, '0')
@@ -248,46 +259,9 @@ class DiagnosticBoard:
                                     validatecommand=(vcmd, '%P'),
                                     textvariable=self.strvar_roi_y2)
 
-       # lbl_upper_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Up threshold:')
-       # self.strvar_upper_saturation_threshold = tk.StringVar(self.win, '0.0000005')
-       # self.ent_upper_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
-        #                                                textvariable=self.strvar_upper_saturation_threshold,
-        #                                                validate='key',
-        #                                                validatecommand=(vcmd, '%P'))
-
-       # lbl_lower_saturation_threshold = ttk.Label(self.frm_scan_settings, text='Lower threshold:')
-       # self.strvar_lower_saturation_threshold = tk.StringVar(self.win, '0.0000001')
-       # self.ent_lower_saturation_threshold = ttk.Entry(self.frm_scan_settings, width=20,
-       #                                                 textvariable=self.strvar_lower_saturation_threshold,
-       #                                                 validate='key',
-       #                                                 validatecommand=(vcmd, '%P'))
-
-        #lbl_increase_factor = ttk.Label(self.frm_scan_settings, text='Increase factor:')
-        #self.strvar_increase_factor = tk.StringVar(self.win, '1.02')
-        #self.ent_increase_factor = ttk.Entry(self.frm_scan_settings, width=20,
-        #                                     textvariable=self.strvar_increase_factor, validate='key',
-        #                                     validatecommand=(vcmd, '%P'))
-
-        #lbl_decrease_factor = ttk.Label(self.frm_scan_settings, text='Decrease factor:')
-        #self.strvar_decrease_factor = tk.StringVar(self.win, '0.99')
-        #self.ent_decrease_factor = ttk.Entry(self.frm_scan_settings, width=20,
-        #                                     textvariable=self.strvar_decrease_factor, validate='key',
-        #                                     validatecommand=(vcmd, '%P'))
-
-        #lbl_increase_factor.grid(row=2, column=0, sticky='nsew')
-        #self.ent_increase_factor.grid(row=2, column=1, sticky='nsew')
-        #lbl_decrease_factor.grid(row=3, column=0, sticky='nsew')
-        #self.ent_decrease_factor.grid(row=3, column=1, sticky='nsew')
-        #lbl_upper_saturation_threshold.grid(row=4, column=0, sticky='nsew')
-        #self.ent_upper_saturation_threshold.grid(row=4, column=1, sticky='nsew')
-        #lbl_lower_saturation_threshold.grid(row=5, column=0, sticky='nsew')
-        #self.ent_lower_saturation_threshold.grid(row=5, column=1, sticky='nsew')
         self.but_abort = ttk.Button(self.frm_scan_settings, text="Abort scan",
                                     command=self.abort_scan)
         self.but_abort.grid(row=3, column=4, sticky='nsew')
-        #self.but_abort = ttk.Button(self.frm_scan_settings, text="Stop optimization",
-        #                            command=self.stop_optimization)
-        #self.but_abort.grid(row=3, column=5, sticky='nsew')
 
         lbl_roi_x1.grid(row=2, column=0, sticky='nsew')
         self.ent_roi_x1.grid(row=2, column=1, padx=(0, 10))
@@ -306,7 +280,6 @@ class DiagnosticBoard:
         lbl_cam_exp.grid(row=6, column=0, sticky='nsew')
         self.ent_cam_exp.grid(row=6, column=1, padx=(0, 10), sticky='nsew')
         self.box_auto_exp.grid(row=6, column=2, padx=(0, 10), sticky='nsew')
-        self.box_crosshair.grid(row=7, column=2, padx=(0, 10), sticky='nsew')
         lbl_cam_gain.grid(row=7, column=0, sticky='nsew')
         self.ent_cam_gain.grid(row=7, column=1, padx=(0, 10), sticky='nsew')
         lbl_cam_avg.grid(row=8, column=0, sticky='nsew')
@@ -316,6 +289,7 @@ class DiagnosticBoard:
         self.but_cam_disconnect.grid(row=2, column=0, sticky='nsew')
         self.but_cam_live.grid(row=3, column=0, sticky='nsew')
         self.but_cam_single.grid(row=4, column=0, sticky='nsew')
+        self.but_expand_reduce.grid(row=5, column=0, sticky='nsew')
 
         lbl_Stage = ttk.Label(frm_stage, text='Stage')
         lbl_Nr = ttk.Label(frm_stage, text='#')
@@ -372,14 +346,14 @@ class DiagnosticBoard:
         self.vertical_line = self.img_canvas.create_line(0, 0, 0, 540, fill='red', dash=(4, 2))
 
         self.output_console = ScrolledText(self.img_canvas_param, height=10, state='disabled')
-        self.output_console.grid(row=1, column=0, columnspan=4, sticky='ew')
 
         self.img_canvas.bind('<Motion>', self.update_crosshair)
         self.img_canvas.bind('<Button-1>', self.start_roi_selection)
         self.img_canvas.bind('<B1-Motion>', self.update_roi_selection)
         self.img_canvas.bind('<ButtonRelease-1>', self.end_roi_selection)
         self.img_canvas.bind('<Button-3>', self.toggle_crosshair_lock)
-        self.win.bind('<r>', self.reset_roi)
+        self.win.bind('<Control-r>', self.reset_roi)
+        self.win.bind('<Control-c>', self.toggle_crosshair_visibility)
 
         self.crosshair_visible = False
         self.crosshair_locked = True
@@ -403,8 +377,13 @@ class DiagnosticBoard:
         self.styleR.configure('RED', foreground='red')
         self.styleG = ttk.Style()
         self.styleG.configure('GREEN', foreground='green')
-        self.styleB =  ttk.Style()
+        self.styleB = ttk.Style()
         self.styleB.configure('BLACK', foreground='black')
+
+        self.initialize_daheng()
+        self.live_daheng_thread()
+        self.init_WPcam()
+        self.read_WPcam()
 
     def is_number_input(self, P):
         if P.strip() == "":
@@ -414,6 +393,15 @@ class DiagnosticBoard:
             return True
         except ValueError:
             return False
+
+    def expand_reduce_panels(self):
+        if self.frm_param:
+            self.frm_notebook_diagnostics.grid_remove()
+            self.output_console.grid_remove()
+        else:
+            self.frm_notebook_diagnostics.grid(row=0, column=3, sticky='nsew')
+            self.output_console.grid(row=1, column=0, columnspan=4, sticky='ew')
+        self.frm_param = not self.frm_param
 
     def insert_message(self, message):
         self.output_console.configure(state='normal')
@@ -435,7 +423,7 @@ class DiagnosticBoard:
         self.img_canvas.coords(self.vertical_line, x, 0, x, self.img_canvas.winfo_height())
         self.pos_label.config(text=f"Position: x={x:.2f}, y={y:.2f}")
 
-    def toggle_crosshair_visibility(self):
+    def toggle_crosshair_visibility(self, event):
         self.crosshair_visible = not self.crosshair_visible
         if self.crosshair_visible:
             self.img_canvas.itemconfig(self.horizontal_line, state='normal')
@@ -458,7 +446,8 @@ class DiagnosticBoard:
 
     def send_correction_to_SLM(self):
 
-        C = self.crop_array(self.C, self.extent_slm, xlim=[-7.68e-3, 7.68e-3], ylim=[-4.8e-3, 4.8e-3]) # thoses limit correspond to the slm size in m
+        C = self.crop_array(self.C, self.extent_slm, xlim=[-7.68e-3, 7.68e-3],
+                            ylim=[-4.8e-3, 4.8e-3])  # thoses limit correspond to the slm size in m
         plt.imshow(C)
         plt.show()
 
@@ -469,9 +458,8 @@ class DiagnosticBoard:
         f = interpolate.interp2d(x, y, C, kind='linear')
         C_interpolated = f(x_new, y_new)
 
-
         normalized_C = (C_interpolated - np.min(C_interpolated)) / (
-                    np.max(C_interpolated) - np.min(C_interpolated)) * 1023
+                np.max(C_interpolated) - np.min(C_interpolated)) * 1023
 
         normalized_C = np.clip(normalized_C, 0, 1023)
 
@@ -494,7 +482,6 @@ class DiagnosticBoard:
             self.insert_message(message)
         print('done')
 
-
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
         def beam_quality_factor_fit(z, w0, M2, z0):
             return w0 * np.sqrt(1 + (z - z0) ** 2 * (M2 * lambda_0 / (np.pi * w0 ** 2)) ** 2)
@@ -516,13 +503,13 @@ class DiagnosticBoard:
         self.ax1r.clear()
         self.ax1r.grid(True)
 
-        self.ax1r.plot(z*1e3, som_x*1e6, linestyle='None', marker='x', color='blue')
-        self.ax1r.plot(z*1e3, som_y*1e6, linestyle='None', marker='x', color='red')
-        self.ax1r.plot(z_fit*1e3, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit)*1e6,
+        self.ax1r.plot(z * 1e3, som_x * 1e6, linestyle='None', marker='x', color='blue')
+        self.ax1r.plot(z * 1e3, som_y * 1e6, linestyle='None', marker='x', color='red')
+        self.ax1r.plot(z_fit * 1e3, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit) * 1e6,
                        label=f'M_sq_y: {abs(params_y[1]):.2f}, '
                              f'w0_y: {params_y[0] * 1e6:.2f} µm, '
                              f'z0_y: {params_y[2] * 1e3:.2f} mm', color='red')
-        self.ax1r.plot(z_fit*1e3, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit)*1e6,
+        self.ax1r.plot(z_fit * 1e3, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit) * 1e6,
                        label=f'M_sq_x: {abs(params_x[1]):.2f}, '
                              f'w0_x: {params_x[0] * 1e6:.2f} µm, '
                              f'z0_x: {params_x[2] * 1e3:.2f} mm', color='blue')
@@ -624,15 +611,15 @@ class DiagnosticBoard:
         device_manager = gx.DeviceManager()
         try:
             self.daheng_camera = dh.DahengCamera(int(self.strvar_cam_ind.get()))
-            #self.but_cam_init.config(style='GREEN')
+            # self.but_cam_init.config(style='GREEN')
         except:
             self.insert_message("Something went wrong with init of camera:(")
-            #self.but_cam_init.config(style='RED')
+            # self.but_cam_init.config(style='RED')
 
     def close_daheng(self):
         self.daheng_camera.close_daheng()
-        #self.but_cam_init.config(style='BLACK')
-        #self.but_cam_disconnect.config(style='GREEN')
+        # self.but_cam_init.config(style='BLACK')
+        # self.but_cam_disconnect.config(style='GREEN')
         self.daheng_camera = None
 
     def single_daheng_thread(self):
@@ -652,7 +639,6 @@ class DiagnosticBoard:
         self.daheng_thread = threading.Thread(target=self.get_backgrounds)
         self.daheng_thread.daemon = True
         self.daheng_thread.start()
-
 
     def get_backgrounds(self):
         self.daheng_is_live = False
@@ -688,8 +674,8 @@ class DiagnosticBoard:
                     break
                 self.strvar_WPcam_should.set(pos)
                 self.move_WPcam()
-                #self.adjust_exposure_new()
-                #self.optimized = False
+                # self.adjust_exposure_new()
+                # self.optimized = False
                 optimized_exposure = self.current_M2_exposures[ind]
                 self.insert_message(f'Position: {pos}, Exposure: {optimized_exposure} µs')
                 im = self.daheng_camera.take_image(int(optimized_exposure), int(self.strvar_cam_gain.get()),
@@ -697,22 +683,22 @@ class DiagnosticBoard:
                 self.plot_daheng(im)
 
                 res[:, :, ind] = self.relevant_image
-                #imtest, temx, temy = process_image_new(self.relevant_image)
+                # imtest, temx, temy = process_image_new(self.relevant_image)
                 self.ax1r.scatter(pos, np.mean(self.relevant_image), color="blue")
                 self.ax1r.scatter(pos, np.max(self.relevant_image), color="black")
                 self.ax1r.set_ylabel(r'Background')
                 self.ax1r.set_xlabel('Stage position (mm)')
-                #self.ax1r.set_xlim([np.min(stage_steps), np.max(stage_steps)])
-                #intim = self.relevant_image / np.sum(self.relevant_image)
-                #maxval = np.max(intim)
-                #self.ax2.scatter(pos, maxval, color="black", marker="x")
+                # self.ax1r.set_xlim([np.min(stage_steps), np.max(stage_steps)])
+                # intim = self.relevant_image / np.sum(self.relevant_image)
+                # maxval = np.max(intim)
+                # self.ax2.scatter(pos, maxval, color="black", marker="x")
                 # self.ax2.set_ylabel(r'Intensity')
                 self.figr.tight_layout()
                 self.img1r.draw()
-                #exposures.append(optimized_exposure)
+                # exposures.append(optimized_exposure)
             if self.abort == 0:
-                #self.current_M2_exposures = exposures
-                self.save_daheng_scans(res, stage_steps, exposures, bg = 1)
+                # self.current_M2_exposures = exposures
+                self.save_daheng_scans(res, stage_steps, exposures, bg=1)
 
     def abort_scan(self):
         if self.abort == 0:
@@ -736,7 +722,7 @@ class DiagnosticBoard:
 
     def scan_stage_daheng(self):
         self.daheng_is_live = False
-        #self.but_cam_live.config(style='BLACK')
+        # self.but_cam_live.config(style='BLACK')
         from_ = float(self.var_daheng_stage_from.get())
         to_ = float(self.var_daheng_stage_to.get())
         steps_ = int(self.var_daheng_stage_steps.get())
@@ -751,12 +737,12 @@ class DiagnosticBoard:
 
         rel_size1 = self.relevant_image.shape[0]
         rel_size2 = self.relevant_image.shape[1]
-#        res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
+        #        res = np.zeros([self.daheng_camera.imshape[0], self.daheng_camera.imshape[1], int(steps_)])
         res = np.zeros([rel_size1, rel_size2, int(steps_)])
 
         exposures = []
         self.ax1r.clear()
-        #self.ax2 = self.ax1r.twinx()
+        # self.ax2 = self.ax1r.twinx()
         self.ax2.clear()
         self.ax1r.grid(True)
 
@@ -776,16 +762,16 @@ class DiagnosticBoard:
             self.plot_daheng(im)
 
             res[:, :, ind] = self.relevant_image
-            imtest,temx,temy = process_image_new(self.relevant_image)
-            self.ax1r.scatter(pos, temx, color ="blue")
+            imtest, temx, temy = process_image_new(self.relevant_image)
+            self.ax1r.scatter(pos, temx, color="blue")
             self.ax1r.scatter(pos, temy, color="red")
             self.ax1r.set_ylabel(r'$w$ (2nd order moment, μm)')
             self.ax1r.set_xlabel('Stage position (mm)')
             self.ax1r.set_xlim([np.min(stage_steps), np.max(stage_steps)])
-            intim = self.relevant_image/np.sum(self.relevant_image)
+            intim = self.relevant_image / np.sum(self.relevant_image)
             maxval = np.max(intim)
-            self.ax2.scatter(pos, maxval, color="black", marker = "x")
-            #self.ax2.set_ylabel(r'Intensity')
+            self.ax2.scatter(pos, maxval, color="black", marker="x")
+            # self.ax2.set_ylabel(r'Intensity')
             self.figr.tight_layout()
             self.img1r.draw()
             exposures.append(optimized_exposure)
@@ -793,12 +779,12 @@ class DiagnosticBoard:
             self.current_M2_exposures = exposures
             self.save_daheng_scans(res, stage_steps, exposures)
 
-    def save_daheng_scans(self, res, pos, exp, bg = 0):
+    def save_daheng_scans(self, res, pos, exp, bg=0):
         nr = self.get_start_image_images()
         if bg == 0:
             self.autolog_cam.write("#" + self.ent_comment.get() + "\n")
         else:
-            self.autolog_cam.write("#" + " BACKGROUND for "+ self.ent_comment.get() + "\n")
+            self.autolog_cam.write("#" + " BACKGROUND for " + self.ent_comment.get() + "\n")
 
         data_filename = 'C:/data/' + str(datetime.date.today()) + '/' + str(
             datetime.date.today()) + '-camera_focus-' + str(
@@ -834,13 +820,12 @@ class DiagnosticBoard:
     def update_daheng_live_button(self):
         if self.daheng_is_live == True:
             message = 'Live view on'
-            #self.but_cam_live.config(style='GREEN')
+            # self.but_cam_live.config(style='GREEN')
             self.insert_message(message)
         else:
             message = 'Live view off'
-            #self.but_cam_live.config(style='BLACK')
+            # self.but_cam_live.config(style='BLACK')
             self.insert_message(message)
-
 
     def adjust_exposure_new(self):
         min_exposure = 20
@@ -848,10 +833,10 @@ class DiagnosticBoard:
         if self.daheng_is_live == True:
             rel = self.relevant_image
             if np.max(rel) > 254:
-                new_exposure = int(self.strvar_cam_exp.get())/2
+                new_exposure = int(self.strvar_cam_exp.get()) / 2
                 self.strvar_cam_exp.set(str(int(new_exposure)))
             else:
-                new_exposure = 255/np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
+                new_exposure = 255 / np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
                 self.strvar_cam_exp.set(str(int(new_exposure)))
                 self.optimized = True
 
@@ -862,10 +847,10 @@ class DiagnosticBoard:
                 self.plot_daheng(im)
                 rel = self.relevant_image
                 if np.max(rel) > 254:
-                    new_exposure = int(self.strvar_cam_exp.get())/2
+                    new_exposure = int(self.strvar_cam_exp.get()) / 2
                     self.strvar_cam_exp.set(str(int(new_exposure)))
                 else:
-                    new_exposure = 255/np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
+                    new_exposure = 255 / np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
                     self.strvar_cam_exp.set(str(int(new_exposure)))
                     im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
                                                        int(self.strvar_cam_avg.get()))
@@ -882,12 +867,11 @@ class DiagnosticBoard:
                 self.plot_daheng(im)
 
                 if self.automatic_exposure.get():
-                    #self.simple_adjust_exposure(im)
+                    # self.simple_adjust_exposure(im)
                     self.adjust_exposure_new()
         else:
             self.daheng_is_live = False
             self.insert_message('self.daheng_camera is None')
-
 
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
@@ -915,25 +899,28 @@ class DiagnosticBoard:
 
             cropped_im = im[y1:y2, x1:x2]
             self.relevant_image = cropped_im
-            if np.max(self.relevant_image)>254:
-                self.frm_cam.config(text = "SATURATED!")
-            elif np.max(self.relevant_image)>240:
+            if np.max(self.relevant_image) > 254:
+                self.frm_cam.config(text="SATURATED!")
+            elif np.max(self.relevant_image) > 240:
                 self.frm_cam.config(text="ALMOST saturated, max: {}".format(int(np.max(self.relevant_image))))
             else:
                 self.frm_cam.config(text="Camera display, max: {}".format(int(np.max(self.relevant_image))))
 
-            colored_image_array = self.apply_colormap(cropped_im, colormap_name='turbo')
+
+
+            colored_image_array = self.apply_colormap(cropped_im, colormap_name=custom_cmap)
             colored_image = Image.fromarray(colored_image_array)
             image_resized = colored_image.resize((720, 540), resample=Image.NEAREST)
             photo = ImageTk.PhotoImage(image_resized)
             self.img_canvas.itemconfig(self.image, image=photo)
             self.img_canvas.image = photo
-
         except ValueError as e:
             message = f"Error processing the image: {e}"
             self.insert_message(message)
 
-    def apply_colormap(self,image_array, colormap_name='viridis'):
+
+
+    def apply_colormap(self, image_array, colormap_name='viridis'):
         colormap = cm.get_cmap(colormap_name)
         colored_image = colormap(image_array / 255.0)  # Normalize to [0, 1] range
         colored_image = (colored_image[:, :, :3] * 255).astype(np.uint8)  # Discard alpha channel and convert to uint8
@@ -977,10 +964,10 @@ class DiagnosticBoard:
             self.WPcam = apt.Motor(int(self.ent_WPcam_Nr.get()))
             message = "WPcam connected"
             self.insert_message(message)
-            #self.but_WPcam_Ini.config(style='GREEN')
+            # self.but_WPcam_Ini.config(style='GREEN')
         except:
             message = "Not able to initalize WPcam"
-            #self.but_WPcam_Ini.config(style='RED')
+            # self.but_WPcam_Ini.config(style='RED')
             self.insert_message(message)
 
     def home_WPcam(self):

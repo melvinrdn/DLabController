@@ -9,8 +9,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
-from diagnostic_board import diagnostic_board
-
+from diagnostic_board import diagnostic_board, nozzle_view
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
 
@@ -31,7 +30,6 @@ class DLabController:
         self.main_win = parent
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
         self.main_win.title('D-Lab Controller - Main Interface')
-        self.main_win.geometry("900x600")
         self.main_win.resizable(False, False)
 
         self.style = ttk.Style()
@@ -42,6 +40,7 @@ class DLabController:
 
         self.feedback_win = None
         self.diagnostic_board_win = None
+        self.nozzle_view_win = None
 
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
@@ -81,10 +80,10 @@ class DLabController:
         self.setup_box_green(self.frm_top_green)
         self.setup_box_red(self.frm_top_red)
 
-        self.frm_top_green.grid(row=0, column=0, sticky='nsew')
-        self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
-        self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
-        self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
+        #self.frm_top_green.grid(row=0, column=0, sticky='nsew')
+        #self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
+        #self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
+        #self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
 
         self.frm_top_red.grid(row=0, column=1, sticky='nsew')
         self.frm_top_b_red.grid(row=1, column=1, sticky='nsew')
@@ -115,9 +114,18 @@ class DLabController:
         but_feedback = ttk.Button(self.frm_side_panel, text='Feedbacker', command=self.open_feedback_window)
         but_feedback.grid(row=0, column=0, sticky='nsew')
 
-        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='M2 & PR',
+        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Focus view',
                                           command=self.open_diagnostic_board)
         but_diagnostic_board.grid(row=1, column=0, sticky='nsew')
+
+        but_nozzle_view = ttk.Button(self.frm_side_panel, text='Nozzle view',
+                                          command=self.open_nozzle_view)
+        but_nozzle_view .grid(row=2, column=0, sticky='nsew')
+
+        but_green_panel = ttk.Button(self.frm_side_panel, text='Hide/Show Green',
+                                          command=self.hide_show_green_panel)
+        but_green_panel .grid(row=3, column=0, sticky='nsew')
+        self.frm_green_visible = False
 
 
         but_publish_green = ttk.Button(self.frm_bottom_green, text='Publish green', command=self.open_pub_green)
@@ -134,6 +142,21 @@ class DLabController:
         print("-----------")
         print("Welcome to the D-Lab Controller !")
         print("-----------")
+
+
+    def hide_show_green_panel(self):
+        if self.frm_green_visible:
+            self.frm_top_green.grid_remove()
+            self.frm_top_b_green.grid_remove()
+            self.frm_mid_green.grid_remove()
+            self.frm_bottom_green.grid_remove()
+        else:
+            self.frm_top_green.grid(row=0, column=0, sticky='nsew')
+            self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
+            self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
+            self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
+        self.frm_green_visible = not self.frm_green_visible
+
 
 
 
@@ -156,6 +179,17 @@ class DLabController:
         None
         """
         self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
+
+
+    def open_nozzle_view(self):
+        """
+        Opens the diagnostic board.
+
+        Returns
+        -------
+        None
+        """
+        self.nozzle_view_win = nozzle_view.Nozzleview(self)
 
     def open_pub_green(self):
         """
@@ -186,8 +220,8 @@ class DLabController:
         self.ent_scr_red.config(state='disabled')
         self.phase_map_red = self.get_phase_red()
 
+        self.update_phase_plot_red(self.phase_map_red - self.background_phase)
         self.phase_map_red = (self.phase_map_red % (bit_depth + 1)).astype(np.uint16)
-        self.update_phase_plot_red(self.phase_map_red)
 
         self.publish_window_red = int(self.ent_scr_red.get())
         slm.SLM_Disp_Open(int(self.ent_scr_red.get()))
@@ -275,11 +309,17 @@ class DLabController:
         """
         phase_red = np.zeros(slm_size)
         active_phase_types = []
+        self.background_phase = np.zeros(slm_size)
+
         for ind, phase_types_red in enumerate(self.phase_refs_red):
             if self.vars_red[ind].get() == 1:
                 active_phase_types.append(phase_types_red.__class__.__name__)
                 phase_red += phase_types_red.phase()
+                if phase_types_red.__class__.__name__ == 'TypeBackground':
+                    self.background_phase = phase_types_red.phase()
+
         print("Active phase(s) on the red SLM :", ', '.join(active_phase_types))
+
         return phase_red
 
     def update_phase_plot_green(self, phase):
@@ -324,7 +364,7 @@ class DLabController:
         None
         """
         self.ax_red.clear()
-        self.ax_red.imshow(phase, cmap='hsv', interpolation='None', extent=(
+        self.ax_red.imshow(phase, cmap='twilight', interpolation='None', extent=(
             -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
             slm_size[0] * 8e-3 / 4 / 2))
         self.ax_red.figure.tight_layout()
@@ -559,6 +599,7 @@ class DLabController:
         self.publish_window_closed()
         self.feedback_win = None
         self.diagnostic_board_win = None
+        self.nozzle_view_win = None
         self.main_win.destroy()
 
 
