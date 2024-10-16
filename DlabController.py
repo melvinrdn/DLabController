@@ -9,9 +9,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 import drivers.santec_driver._slm_py as slm
-from diagnostic_board import diagnostic_board, nozzle_view
 from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
+from diagnostic_board.GasDensity import GasDensity_app
 
 print('Done')
 
@@ -39,8 +39,7 @@ class DLabController:
         self.publish_window_red = None
 
         self.feedback_win = None
-        self.diagnostic_board_win = None
-        self.nozzle_view_win = None
+        self.GasDensity_app_win = None
 
         self.phase_map_green = np.zeros(slm_size)
         self.phase_map_red = np.zeros(slm_size)
@@ -80,11 +79,6 @@ class DLabController:
         self.setup_box_green(self.frm_top_green)
         self.setup_box_red(self.frm_top_red)
 
-        #self.frm_top_green.grid(row=0, column=0, sticky='nsew')
-        #self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
-        #self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
-        #self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
-
         self.frm_top_red.grid(row=0, column=1, sticky='nsew')
         self.frm_top_b_red.grid(row=1, column=1, sticky='nsew')
         self.frm_mid_red.grid(row=2, column=1, sticky='nsew')
@@ -114,19 +108,14 @@ class DLabController:
         but_feedback = ttk.Button(self.frm_side_panel, text='Feedbacker', command=self.open_feedback_window)
         but_feedback.grid(row=0, column=0, sticky='nsew')
 
-        but_diagnostic_board = ttk.Button(self.frm_side_panel, text='Focus view',
-                                          command=self.open_diagnostic_board)
-        but_diagnostic_board.grid(row=1, column=0, sticky='nsew')
-
-        but_nozzle_view = ttk.Button(self.frm_side_panel, text='Nozzle view',
-                                          command=self.open_nozzle_view)
-        but_nozzle_view .grid(row=2, column=0, sticky='nsew')
+        but_GasDensity_app = ttk.Button(self.frm_side_panel, text='Gas Density',
+                                          command=self.open_GasDensity_app)
+        but_GasDensity_app.grid(row=1, column=0, sticky='nsew')
 
         but_green_panel = ttk.Button(self.frm_side_panel, text='Hide/Show Green',
-                                          command=self.hide_show_green_panel)
-        but_green_panel .grid(row=3, column=0, sticky='nsew')
+                                     command=self.hide_show_green_panel)
+        but_green_panel.grid(row=3, column=0, sticky='nsew')
         self.frm_green_visible = False
-
 
         but_publish_green = ttk.Button(self.frm_bottom_green, text='Publish green', command=self.open_pub_green)
         but_publish_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
@@ -136,13 +125,12 @@ class DLabController:
 
         print("Done !")
         print("Loading the default parameters..")
-        self.load_red_default()
-        #self.load_green_default() #When the green SLM comes back, adapt load_green_default
+        # self.load_red_default()
+        # self.load_green_default() #When the green SLM comes back, adapt load_green_default
         print("Done !")
         print("-----------")
         print("Welcome to the D-Lab Controller !")
         print("-----------")
-
 
     def hide_show_green_panel(self):
         if self.frm_green_visible:
@@ -157,9 +145,6 @@ class DLabController:
             self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
         self.frm_green_visible = not self.frm_green_visible
 
-
-
-
     def open_feedback_window(self):
         """
         Open the feedback window.
@@ -170,7 +155,7 @@ class DLabController:
         """
         self.feedback_win = feedbacker.Feedbacker(self)
 
-    def open_diagnostic_board(self):
+    def open_GasDensity_app(self):
         """
         Opens the diagnostic board.
 
@@ -178,18 +163,7 @@ class DLabController:
         -------
         None
         """
-        self.diagnostic_board_win = diagnostic_board.DiagnosticBoard(self)
-
-
-    def open_nozzle_view(self):
-        """
-        Opens the diagnostic board.
-
-        Returns
-        -------
-        None
-        """
-        self.nozzle_view_win = nozzle_view.Nozzleview(self)
+        self.GasDensity_app_win = GasDensity_app.GasDensityApp()
 
     def open_pub_green(self):
         """
@@ -416,9 +390,9 @@ class DLabController:
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
-                defaultextension='txt',
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
+                                         defaultextension='txt',
+                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+                                         )
             if not filepath:
                 return
         dict = {}
@@ -448,8 +422,8 @@ class DLabController:
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
+                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+                                         )
             if not filepath:
                 return
         try:
@@ -486,9 +460,9 @@ class DLabController:
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
-                defaultextension='txt',
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
+                                         defaultextension='txt',
+                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+                                         )
             if not filepath:
                 return
         dict = {}
@@ -518,8 +492,8 @@ class DLabController:
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = askopenfilename(initialdir=initial_directory,
-                filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-            )
+                                       filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
+                                       )
             if not filepath:
                 return
         try:
@@ -536,7 +510,6 @@ class DLabController:
                 print('Not able to load red settings')
         except FileNotFoundError:
             print(f'No red settings file found at {filepath}')
-
 
     def load_red_default(self):
         filepath = './ressources/saved_settings/default_red_settings.txt'
@@ -573,7 +546,6 @@ class DLabController:
         except FileNotFoundError:
             print(f'No green settings file found at {filepath}')
 
-
     def publish_window_closed(self):
         """
         Handle the event of the publish display window being closed.
@@ -598,8 +570,7 @@ class DLabController:
         """
         self.publish_window_closed()
         self.feedback_win = None
-        self.diagnostic_board_win = None
-        self.nozzle_view_win = None
+        self.GasDensity_app_win = None
         self.main_win.destroy()
 
 

@@ -4,7 +4,6 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename
 import matplotlib.image as mpimg
 from ressources.slm_infos import slm_size, bit_depth, chip_width, chip_height
-import model.dummy_old_phase_retrieval as gs
 from prysm import coordinates, geometry, polynomials, propagation, fttools
 import matplotlib.pyplot as plt
 import os
@@ -1794,7 +1793,7 @@ class TypeHologram(BaseType):
         None
         """
         if self.gen_win is None:
-            self.gen_win = gs.GSWindow(self)
+            self.gen_win = 0
 
     def phase(self):
         """

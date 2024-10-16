@@ -18,11 +18,9 @@ from scipy import interpolate
 import pandas as pd
 
 import diagnostic_board.daheng_camera as dh
-from diagnostic_board.beam_treatment_functions import process_image_new
-from diagnostic_board.nl_pr import NLOptimizer
+from diagnostic_board.diagnostics_helpers import process_image
 from drivers.thorlabs_apt_driver import core as apt
 from drivers import gxipy_driver as gx
-
 
 colors = [
     (1, 1, 1),  # white
@@ -32,14 +30,15 @@ colors = [
     (0, 1, 0),  # green
     (1, 1, 0),  # yellow
     (1, 0.5, 0),  # orange
-    (1, 0, 0),   # red
+    (1, 0, 0),  # red
     (0.5, 0, 0)  # darker red
 ]
 
 custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
-class DiagnosticBoard:
-    def __init__(self, parent):
+
+class FocusViewApp:
+    def __init__(self):
         self.cam = None
         self.roi = None
         self.wavelength = 1030e-9
@@ -52,10 +51,6 @@ class DiagnosticBoard:
         self.default_zoom_green = (0, 720, 0, 540)
         self.default_zoom_red = (0, 720, 0, 540)
 
-        self.parent = parent
-        self.lens_green = self.parent.phase_refs_green[1]
-        self.lens_red = self.parent.phase_refs_red[1]
-
         self.C = None
 
         self.abort = 0
@@ -63,7 +58,7 @@ class DiagnosticBoard:
         self.win = tk.Toplevel()
         vcmd = self.win.register(self.is_number_input)
 
-        title = 'D-Lab Controller - Diagnostic Board'
+        title = 'D-Lab Controller - Focus View'
 
         self.win.title(title)
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -207,7 +202,7 @@ class DiagnosticBoard:
         self.frm_param = False
 
         lbl_cam_ind = ttk.Label(frm_cam_but_set, text='Camera index:')
-        self.strvar_cam_ind = tk.StringVar(self.win, '3')
+        self.strvar_cam_ind = tk.StringVar(self.win, '1')
         self.ent_cam_ind = ttk.Entry(frm_cam_but_set, width=8,
                                      textvariable=self.strvar_cam_ind, validate='key',
                                      validatecommand=(vcmd, '%P'))
@@ -472,14 +467,6 @@ class DiagnosticBoard:
         self.phase_retrieval_thread.start()
 
     def open_phase_retrieval(self):
-        print(int(self.var_max_zn_coef.get()))
-        F = self.image_array
-        if self.image_array is not None:
-            nlopt = NLOptimizer(int(self.var_max_zn_coef.get()), F)
-            nlopt.phase_retrieval()
-        else:
-            message = 'There is no beam profile loaded'
-            self.insert_message(message)
         print('done')
 
     def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
@@ -573,6 +560,7 @@ class DiagnosticBoard:
             self.insert_message(message)
 
     def process_images_dict(self):
+        N=128
         processed_images = {}
         dz = self.images.shape[2]
         message = f'Number of steps: {dz}'
@@ -581,7 +569,7 @@ class DiagnosticBoard:
         som_y = np.zeros(dz, dtype=float)
 
         for i in range(dz):
-            processed_image, som_x[i], som_y[i] = process_image_new(self.images[:, :, i])
+            processed_image, som_x[i], som_y[i] = process_image(self.images[:, :, i],N=N)
             processed_images[f'processed_image_{i}'] = processed_image
 
         som_y *= 3.45e-6
@@ -762,7 +750,7 @@ class DiagnosticBoard:
             self.plot_daheng(im)
 
             res[:, :, ind] = self.relevant_image
-            imtest, temx, temy = process_image_new(self.relevant_image)
+            imtest, temx, temy = process_image(self.relevant_image)
             self.ax1r.scatter(pos, temx, color="blue")
             self.ax1r.scatter(pos, temy, color="red")
             self.ax1r.set_ylabel(r'$w$ (2nd order moment, μm)')
@@ -906,10 +894,10 @@ class DiagnosticBoard:
             else:
                 self.frm_cam.config(text="Camera display, max: {}".format(int(np.max(self.relevant_image))))
 
-
-
-            colored_image_array = self.apply_colormap(cropped_im, colormap_name=custom_cmap)
+            colored_image_array = self.apply_colormap(cropped_im, colormap_name='turbo')
             colored_image = Image.fromarray(colored_image_array)
+
+
             image_resized = colored_image.resize((720, 540), resample=Image.NEAREST)
             photo = ImageTk.PhotoImage(image_resized)
             self.img_canvas.itemconfig(self.image, image=photo)
@@ -917,8 +905,6 @@ class DiagnosticBoard:
         except ValueError as e:
             message = f"Error processing the image: {e}"
             self.insert_message(message)
-
-
 
     def apply_colormap(self, image_array, colormap_name='viridis'):
         colormap = cm.get_cmap(colormap_name)
@@ -1014,3 +1000,5 @@ class DiagnosticBoard:
             self.close_daheng()
         self.disable_motors()
         self.win.destroy()
+
+

@@ -25,7 +25,7 @@ from pylablib.devices import Andor
 from simple_pid import PID
 import drivers.zaber_binary.zaber_binary as zb
 
-from diagnostic_board.beam_treatment_functions import process_image
+from diagnostic_board.diagnostics_helpers import process_image
 import drivers.avaspec_driver._avs_py as avs
 import drivers.jena_piezo.jena_piezo_V3 as jena
 import drivers.santec_driver._slm_py as slm
