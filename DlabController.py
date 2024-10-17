@@ -1,4 +1,5 @@
 print('Importing the libraries...')
+
 import json
 import tkinter as tk
 from tkinter import ttk
@@ -8,571 +9,303 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
+from model import phase_settings
 import drivers.santec_driver._slm_py as slm
-from model import phase_settings, feedbacker
 from ressources.slm_infos import slm_size, bit_depth
-from diagnostic_board.GasDensity import GasDensity_app
 
-print('Done')
+print('Done!')
+
+class SpatialLightModulator:
+    def __init__(self, color):
+        self.color = color
+        self.phase_map = np.zeros(slm_size)
+        self.background_phase = np.zeros(slm_size)
+        self.publish_win = None
+
+    def publish(self, phase_map, screen_num):
+        phase_map = (phase_map % (bit_depth + 1)).astype(np.uint16)
+        self.publish_win = screen_num
+        slm.SLM_Disp_Open(screen_num)
+        slm.SLM_Disp_Data(screen_num, phase_map, slm_size[1], slm_size[0])
+
+    def close(self, screen_num):
+        slm.SLM_Disp_Close(screen_num)
+
+
 
 
 class DLabController:
-    """
-    A class for controlling the Dlab hardware
-    """
-
     def __init__(self, parent):
-        """
-        Initializes the DLabController.
-        """
-        print('Initialisation of the interface..')
-
+        print('Initialisation of the interface...')
         self.main_win = parent
+        self.HHGView_win = None
+        self.FocusView_win = None
+        self.configure_main_window()
+        self.style = ttk.Style()
+        self.style.configure('lefttab.TNotebook', tabposition=tk.W + tk.N, tabplacement=tk.N + tk.EW)
+        self.slm_green = SpatialLightModulator('green')
+        self.slm_red = SpatialLightModulator('red')
+        self.phase_maps = {"green": np.zeros(slm_size), "red": np.zeros(slm_size)}
+        self.setup_slm_window('green')
+        self.setup_slm_window('red')
+        self.create_side_panel()
+        self.frm_green_visible = False
+        print("Loading the default parameters...")
+        print("Done! Welcome to the D-Lab Controller")
+
+    def configure_main_window(self):
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
         self.main_win.title('D-Lab Controller - Main Interface')
         self.main_win.resizable(False, False)
 
-        self.style = ttk.Style()
-        self.style.configure('lefttab.TNotebook', tabposition=tk.W + tk.N, tabplacement=tk.N + tk.EW)
+    def setup_slm_window(self, color):
+        self.setup_frames(color)
+        self.setup_save_load_buttons(color)
+        self.setup_phase_tabs(color)
+        self.setup_phase_display(color)
+        self.setup_publish_button(color)
 
-        self.publish_window_green = None
-        self.publish_window_red = None
+        if color == 'red':
+            getattr(self, f"frm_top_{color}").grid(row=0, column=1, sticky='nsew')
+            getattr(self, f"frm_top_b_{color}").grid(row=1, column=1, sticky='nsew')
+            getattr(self, f"frm_mid_{color}").grid(row=2, column=1, sticky='nsew')
+            getattr(self, f"frm_bottom_{color}").grid(row=3, column=1, sticky='nsew')
 
-        self.feedback_win = None
-        self.GasDensity_app_win = None
+    def setup_publish_button(self, color):
+        publish_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Publish {color}',
+                                    command=lambda: self.open_publish_win(color))
+        publish_button.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        self.phase_map_green = np.zeros(slm_size)
-        self.phase_map_red = np.zeros(slm_size)
+    def open_publish_win(self, color):
+        slm = self.slm_green if color == 'green' else self.slm_red
+        ent_scr = self.ent_scr_green if color == 'green' else self.ent_scr_red
 
-        self.frm_top_green = ttk.LabelFrame(self.main_win, text='Green SLM interface')
-        self.frm_top_b_green = ttk.LabelFrame(self.frm_top_green, text='Green SLM - Phase display')
-        self.frm_mid_green = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
-        self.frm_bottom_green = ttk.LabelFrame(self.main_win, text='Green SLM - Options')
+        ent_scr.config(state='disabled')
+        phase_map = self.get_phase(color)
 
-        self.frm_top_red = ttk.LabelFrame(self.main_win, text='Red SLM interface')
-        self.frm_top_b_red = ttk.LabelFrame(self.frm_top_red, text='Red SLM - Phase display')
-        self.frm_mid_red = ttk.Notebook(self.main_win, style='lefttab.TNotebook')
-        self.frm_bottom_red = ttk.LabelFrame(self.main_win, text='Red SLM - Options')
+        self.update_phase_plot(phase_map - slm.background_phase, color)
+        screen_num = int(ent_scr.get())
+        slm.publish(phase_map, screen_num)
 
+    def close_publish_win(self):
+        self.ent_scr_green.config(state='normal')
+        self.slm_green.close(int(self.ent_scr_green.get()))
+
+        self.ent_scr_red.config(state='normal')
+        self.slm_red.close(int(self.ent_scr_red.get()))
+
+    def setup_frames(self, color):
+        setattr(self, f"frm_top_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM interface'))
+        setattr(self, f"frm_top_b_{color}", ttk.LabelFrame(getattr(self, f"frm_top_{color}"), text=f'{color.capitalize()} SLM - Phase display'))
+        setattr(self, f"frm_mid_{color}", ttk.Notebook(self.main_win, style='lefttab.TNotebook'))
+        setattr(self, f"frm_bottom_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM - Options'))
+
+    def create_side_panel(self):
         self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Side Panel')
-
-        but_save_green = ttk.Button(self.frm_top_b_green, text='Save green settings', command=self.save_green)
-        but_load_green = ttk.Button(self.frm_top_b_green, text='Load green settings', command=self.load_green)
-        but_save_green.grid(row=0, sticky='ew')
-        but_load_green.grid(row=1, sticky='ew')
-
-        but_save_red = ttk.Button(self.frm_top_b_red, text='Save red settings', command=self.save_red)
-        but_load_red = ttk.Button(self.frm_top_b_red, text='Load red settings', command=self.load_red)
-        but_save_red.grid(row=0, sticky='ew')
-        but_load_red.grid(row=1, sticky='ew')
-
-        lbl_screen_green = ttk.Label(self.frm_top_green, text='Display number :')
-        self.strvar_green = tk.StringVar(value='2')
-        self.ent_scr_green = ttk.Spinbox(self.frm_top_green, width=8, from_=1, to=5, textvariable=self.strvar_green)
-        self.ent_scr_green.grid(row=0, column=1, sticky='w')
-
-        lbl_screen_red = ttk.Label(self.frm_top_red, text='Display number :')
-        self.strvar_red = tk.StringVar(value='1')
-        self.ent_scr_red = ttk.Spinbox(self.frm_top_red, width=8, from_=1, to=5, textvariable=self.strvar_red)
-        self.ent_scr_red.grid(row=0, column=1, sticky='w')
-
-        self.setup_box_green(self.frm_top_green)
-        self.setup_box_red(self.frm_top_red)
-
-        self.frm_top_red.grid(row=0, column=1, sticky='nsew')
-        self.frm_top_b_red.grid(row=1, column=1, sticky='nsew')
-        self.frm_mid_red.grid(row=2, column=1, sticky='nsew')
-        self.frm_bottom_red.grid(row=3, column=1, sticky='nsew')
-
         self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
 
-        lbl_screen_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-        lbl_screen_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        buttons = [
+            ('HHG View', self.open_HHGView_win),
+            ('Gas Density', self.open_GasDensity_win),
+            ('Focus View', self.open_FocusView_win),
+            ('Hide/Show Green', self.hide_show_green_panel)
+        ]
+        for row, (label, cmd) in enumerate(buttons):
+            button = ttk.Button(self.frm_side_panel, text=label, command=cmd)
+            button.grid(row=row, column=0, sticky='nsew')
 
-        self.fig_green = Figure(figsize=(3, 2))
-        self.ax_green = self.fig_green.add_subplot(111)
-        self.ax_green.figure.tight_layout()
+    def setup_save_load_buttons(self, color):
+        button_frame = getattr(self, f"frm_top_b_{color}")
 
-        self.fig_red = Figure(figsize=(3, 2))
-        self.ax_red = self.fig_red.add_subplot(111)
-        self.ax_red.figure.tight_layout()
+        save_button = ttk.Button(button_frame, text=f'Save {color} settings', command=lambda: self.save_settings(color))
+        load_button = ttk.Button(button_frame, text=f'Load {color} settings', command=lambda: self.load_settings(color))
+        save_button.grid(row=0, sticky='ew')
+        load_button.grid(row=1, sticky='ew')
 
-        self.img_green = FigureCanvasTkAgg(self.fig_green, self.frm_top_b_green)
-        self.tk_widget_fig_green = self.img_green.get_tk_widget()
-        self.tk_widget_fig_green.grid(row=2, sticky='ew')
+        label_screen = ttk.Label(getattr(self, f"frm_top_{color}"), text='Display number:')
+        setattr(self, f"strvar_{color}", tk.StringVar(value='2' if color == 'green' else '1'))
+        spinbox_screen = ttk.Spinbox(getattr(self, f"frm_top_{color}"), width=8, from_=1, to=5,
+                                     textvariable=getattr(self, f"strvar_{color}"))
+        spinbox_screen.grid(row=0, column=1, sticky='w')
+        label_screen.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-        self.img_red = FigureCanvasTkAgg(self.fig_red, self.frm_top_b_red)
-        self.tk_widget_fig_red = self.img_red.get_tk_widget()
-        self.tk_widget_fig_red.grid(row=2, sticky='ew')
+        if color == 'green' or color == 'red':
+            setattr(self, f'ent_scr_{color}', spinbox_screen)
 
-        but_feedback = ttk.Button(self.frm_side_panel, text='Feedbacker', command=self.open_feedback_window)
-        but_feedback.grid(row=0, column=0, sticky='nsew')
+    def setup_phase_tabs(self, color):
+        self.setup_box(getattr(self, f"frm_top_{color}"), color)
 
-        but_GasDensity_app = ttk.Button(self.frm_side_panel, text='Gas Density',
-                                          command=self.open_GasDensity_app)
-        but_GasDensity_app.grid(row=1, column=0, sticky='nsew')
+    def setup_box(self, frm_, color):
+        frm_box = ttk.LabelFrame(frm_, text='Phases enabled')
+        frm_box.grid(column=0)
 
-        but_green_panel = ttk.Button(self.frm_side_panel, text='Hide/Show Green',
-                                     command=self.hide_show_green_panel)
-        but_green_panel.grid(row=3, column=0, sticky='nsew')
-        self.frm_green_visible = False
+        types_attr = f"types_{color}"
+        vars_attr = f"vars_{color}"
+        phase_refs_attr = f"phase_refs_{color}"
+        tabs_attr = f"tabs_{color}"
+        frm_mid_attr = f"frm_mid_{color}"
 
-        but_publish_green = ttk.Button(self.frm_bottom_green, text='Publish green', command=self.open_pub_green)
-        but_publish_green.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        setattr(self, types_attr, phase_settings.types)
+        setattr(self, vars_attr, [])
+        setattr(self, phase_refs_attr, [])
+        setattr(self, tabs_attr, [])
 
-        but_publish_red = ttk.Button(self.frm_bottom_red, text='Publish red', command=self.open_pub_red)
-        but_publish_red.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+        types = getattr(self, types_attr)
+        vars_list = getattr(self, vars_attr)
+        phase_refs_list = getattr(self, phase_refs_attr)
+        tabs_list = getattr(self, tabs_attr)
+        frm_mid = getattr(self, frm_mid_attr)
 
-        print("Done !")
-        print("Loading the default parameters..")
-        # self.load_red_default()
-        # self.load_green_default() #When the green SLM comes back, adapt load_green_default
-        print("Done !")
-        print("-----------")
-        print("Welcome to the D-Lab Controller !")
-        print("-----------")
+        for ind, typ in enumerate(types):
+            var = tk.IntVar()
+            vars_list.append(var)
+            tab = ttk.Frame(frm_mid)
+            tabs_list.append(tab)
+            frm_mid.add(tab, text=typ)
+            phase_refs_list.append(phase_settings.new_type(tab, typ))
+            box = ttk.Checkbutton(frm_box, text=typ,
+                                  variable=vars_list[ind],
+                                  onvalue=1, offvalue=0)
+            box.grid(row=ind, sticky='w')
 
-    def hide_show_green_panel(self):
-        if self.frm_green_visible:
-            self.frm_top_green.grid_remove()
-            self.frm_top_b_green.grid_remove()
-            self.frm_mid_green.grid_remove()
-            self.frm_bottom_green.grid_remove()
-        else:
-            self.frm_top_green.grid(row=0, column=0, sticky='nsew')
-            self.frm_top_b_green.grid(row=1, column=1, sticky='nsew')
-            self.frm_mid_green.grid(row=2, column=0, sticky='nsew')
-            self.frm_bottom_green.grid(row=3, column=0, sticky='nsew')
-        self.frm_green_visible = not self.frm_green_visible
+    def open_HHGView_win(self):
+        from model import HHGView
+        self.HHGView_win = HHGView.HHGView(self)
 
-    def open_feedback_window(self):
-        """
-        Open the feedback window.
+    def open_GasDensity_win(self):
+        from diagnostic_board.GasDensity import GasDensity
+        self.GasDensity_win = GasDensity.GasDensity()
 
-        Returns
-        -------
-        None
-        """
-        self.feedback_win = feedbacker.Feedbacker(self)
+    def open_FocusView_win(self):
+        from diagnostic_board.FocusView import FocusView
+        self.FocusView_win = FocusView.FocusViewy()
 
-    def open_GasDensity_app(self):
-        """
-        Opens the diagnostic board.
+    def setup_phase_display(self, color):
+        figure = Figure(figsize=(3, 2))
+        ax = figure.add_subplot(111)
+        ax.figure.tight_layout()
 
-        Returns
-        -------
-        None
-        """
-        self.GasDensity_app_win = GasDensity_app.GasDensityApp()
+        setattr(self, f"fig_{color}", figure)
+        setattr(self, f"ax_{color}", ax)
 
-    def open_pub_green(self):
-        """
-        Open the publish display window and display the phase map.
+        canvas = FigureCanvasTkAgg(figure, getattr(self, f"frm_top_b_{color}"))
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.grid(row=2, sticky='ew')
 
-        Returns
-        -------
-        None
-        """
-        self.ent_scr_green.config(state='disabled')
-        self.phase_map_green = self.get_phase_green()
+        setattr(self, f"img_{color}", canvas)
 
-        self.phase_map_green = (self.phase_map_green % (bit_depth + 1)).astype(np.uint16)
-        self.update_phase_plot_green(self.phase_map_green)
+    def get_phase(self, color):
 
-        self.publish_window_green = int(self.ent_scr_green.get())
-        slm.SLM_Disp_Open(int(self.ent_scr_green.get()))
-        slm.SLM_Disp_Data(int(self.ent_scr_green.get()), self.phase_map_green, slm_size[1], slm_size[0])
+        if color not in ['green', 'red']:
+            raise ValueError("Color must be 'green' or 'red'")
 
-    def open_pub_red(self):
-        """
-        Open the publish display window and display the phase map.
-
-        Returns
-        -------
-        None
-        """
-        self.ent_scr_red.config(state='disabled')
-        self.phase_map_red = self.get_phase_red()
-
-        self.update_phase_plot_red(self.phase_map_red - self.background_phase)
-        self.phase_map_red = (self.phase_map_red % (bit_depth + 1)).astype(np.uint16)
-
-        self.publish_window_red = int(self.ent_scr_red.get())
-        slm.SLM_Disp_Open(int(self.ent_scr_red.get()))
-        slm.SLM_Disp_Data(int(self.ent_scr_red.get()), self.phase_map_red, slm_size[1], slm_size[0])
-
-    def setup_box_green(self, frm_):
-        """
-        Set up a label frame containing check-buttons for enabling different types of phase.
-
-        Parameters:
-        -----------
-        frm_: tkinter.Frame
-            The parent frame in which the label frame and check-buttons are to be placed.
-        """
-        frm_box_green = ttk.LabelFrame(frm_, text='Phases enabled')
-        frm_box_green.grid(column=0)
-        self.types_green = phase_settings.types  # reads in different phase types
-        self.vars_green = []  # init a list holding the variables from the boxes
-        self.phase_refs_green = []  # init a list to hold the references to types
-        self.tabs_green = []  # init a list to hold the tabs
-        for ind, typ in enumerate(self.types_green):
-            self.var_green_ = (tk.IntVar())
-            self.vars_green.append(self.var_green_)
-            self.tabs_green.append(ttk.Frame(self.frm_mid_green))
-            self.frm_mid_green.add(self.tabs_green[ind], text=typ)
-            self.phase_refs_green.append(phase_settings.new_type(self.tabs_green[ind],
-                                                                 typ))
-            self.box_green_ = ttk.Checkbutton(frm_box_green, text=typ,
-                                              variable=self.vars_green[ind],
-                                              onvalue=1, offvalue=0)
-            self.box_green_.grid(row=ind, sticky='w')
-
-    def setup_box_red(self, frm_):
-        """
-        Set up a label frame containing check-buttons for enabling different types of phase.
-
-        Parameters:
-        -----------
-        frm_: tkinter.Frame
-            The parent frame in which the label frame and check-buttons are to be placed.
-        """
-        frm_box_red = ttk.LabelFrame(frm_, text='Phases enabled')
-        frm_box_red.grid(column=0)
-        self.types_red = phase_settings.types  # reads in different phase types
-        self.vars_red = []  # init a list holding the variables from the boxes
-        self.phase_refs_red = []  # init a list to hold the references to types
-        self.tabs_red = []  # init a list to hold the tabs
-        for ind, typ in enumerate(self.types_red):
-            self.var_red_ = (tk.IntVar())
-            self.vars_red.append(self.var_red_)
-            self.tabs_red.append(ttk.Frame(self.frm_mid_red))
-            self.frm_mid_red.add(self.tabs_red[ind], text=typ)
-            self.phase_refs_red.append(phase_settings.new_type(self.tabs_red[ind], typ))
-            self.box_red_ = ttk.Checkbutton(frm_box_red, text=typ,
-                                            variable=self.vars_red[ind],
-                                            onvalue=1, offvalue=0)
-            self.box_red_.grid(row=ind, sticky='w')
-
-    def get_phase_green(self):
-        """
-        Gets the phase from the active phase types.
-
-        Returns:
-        --------
-        phase: numpy.ndarray
-            A 2D numpy array containing the phase values of the active phase types.
-        """
-        phase_green = np.zeros(slm_size)
+        phase = np.zeros(slm_size)
         active_phase_types = []
-        for ind, phase_types_green in enumerate(self.phase_refs_green):
-            if self.vars_green[ind].get() == 1:
-                active_phase_types.append(phase_types_green.__class__.__name__)
-                phase_green += phase_types_green.phase()
-        print("Active phase(s) on the green SLM :", ', '.join(active_phase_types))
-        return phase_green
 
-    def get_phase_red(self):
-        """
-        Gets the phase from the active phase types.
+        phase_refs = self.phase_refs_green if color == 'green' else self.phase_refs_red
+        vars_color = self.vars_green if color == 'green' else self.vars_red
 
-        Returns:
-        --------
-        phase: numpy.ndarray
-            A 2D numpy array containing the phase values of the active phase types.
-        """
-        phase_red = np.zeros(slm_size)
-        active_phase_types = []
         self.background_phase = np.zeros(slm_size)
 
-        for ind, phase_types_red in enumerate(self.phase_refs_red):
-            if self.vars_red[ind].get() == 1:
-                active_phase_types.append(phase_types_red.__class__.__name__)
-                phase_red += phase_types_red.phase()
-                if phase_types_red.__class__.__name__ == 'TypeBackground':
-                    self.background_phase = phase_types_red.phase()
+        for ind, phase_type in enumerate(phase_refs):
+            if vars_color[ind].get() == 1:
+                active_phase_types.append(phase_type.__class__.__name__)
+                phase += phase_type.phase()
+                if color == 'red' and phase_type.__class__.__name__ == 'TypeBackground':
+                    self.background_phase = phase_type.phase()
+                if color == 'green' and phase_type.__class__.__name__ == 'TypeBackground':
+                    self.background_phase = phase_type.phase()
 
-        print("Active phase(s) on the red SLM :", ', '.join(active_phase_types))
+        print(f"Active phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
+        return phase
 
-        return phase_red
+    def update_phase_plot(self, phase, color):
 
-    def update_phase_plot_green(self, phase):
-        """
-        Update the phase plot of the SLM.
-
-        This function clears the ax1, updates the phase with new values, and draws
-        the img1.
-
-        Parameters
-        ----------
-        phase : np.ndarray
-            The new phase values to update.
-
-        Returns
-        -------
-        None
-        """
-        self.ax_green.clear()
-        self.ax_green.imshow(phase, cmap='bwr', interpolation='None', extent=(
-            -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
-            slm_size[0] * 8e-3 / 4 / 2))
-        self.ax_green.set_xlabel('y (wL)')
-        self.ax_green.set_ylabel('x (wL)')
-        self.ax_green.figure.tight_layout()
-        self.img_green.draw()
-
-    def update_phase_plot_red(self, phase):
-        """
-        Update the phase plot of the SLM.
-
-        This function clears the ax1, updates the phase with new values, and draws
-        the img1.
-
-        Parameters
-        ----------
-        phase : np.ndarray
-            The new phase values to update.
-
-        Returns
-        -------
-        None
-        """
-        self.ax_red.clear()
-        self.ax_red.imshow(phase, cmap='twilight', interpolation='None', extent=(
-            -slm_size[1] * 8e-3 / 4 / 2, slm_size[1] * 8e-3 / 4 / 2, -slm_size[0] * 8e-3 / 4 / 2,
-            slm_size[0] * 8e-3 / 4 / 2))
-        self.ax_red.figure.tight_layout()
-        self.img_red.draw()
-
-    def callback(self, action, P, text):
-        """
-        Check if the given input text is valid for insertion in an Entry widget.
-
-        Parameters
-        ----------
-        action : str
-            The type of action being performed on the Entry widget.
-            Must be either '1' for insertion or '0' for deletion.
-        P : str
-            The proposed insertion position.
-        text : str
-            The text to be inserted.
-
-        Returns
-        -------
-        bool
-            True if the input text is valid for insertion, False otherwise.
-        """
-        if action == '1':
-            if text in '0123456789.-+:':
-                return True
-            else:
-                return False
+        if color == 'green':
+            ax = self.ax_green
+            img = self.img_green
+        elif color == 'red':
+            ax = self.ax_red
+            img = self.img_red
         else:
-            return True
+            raise ValueError("Unsupported color: choose 'green' or 'red'")
 
-    def save_green(self, filepath=None):
-        """
-        Save the current settings to a file.
+        ax.clear()
+        ax.imshow(phase, cmap='hsv', interpolation='None', extent=(
+            -slm_size[1]  / 2, slm_size[1]  / 2,
+            -slm_size[0]  / 2, slm_size[0]  / 2))
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.figure.tight_layout()
+        img.draw()
 
-        Parameters
-        ----------
-        filepath : str, optional
-            The path to the file to save. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
+    def save_settings(self, color, filepath=None):
 
-        Notes
-        -----
-        The settings will be saved as a JSON-encoded dictionary to the specified
-        file. The dictionary will contain the enabled status and parameters for
-        each phase type
-        """
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
                                          defaultextension='txt',
-                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-                                         )
+                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
             if not filepath:
                 return
+
         dict = {}
+        phase_refs = getattr(self, f"phase_refs_{color}")
+        vars_ = getattr(self, f"vars_{color}")
+        ent_scr = getattr(self, f"ent_scr_{color}")
+
         with open(filepath, 'w') as f:
-            for num, phase in enumerate(self.phase_refs_green):
-                dict[phase.name_()] = {'Enabled': self.vars_green[num].get(),
-                                       'Params': phase.save_()}
-            dict['screen_pos'] = self.ent_scr_green.get()
+            for num, phase in enumerate(phase_refs):
+                dict[phase.name_()] = {'Enabled': vars_[num].get(), 'Params': phase.save_()}
+            dict['screen_pos'] = ent_scr.get()
             f.write(json.dumps(dict))
 
-    def load_green(self, filepath=None):
-        """
-        Load settings from a file.
+    def load_settings(self, color, filepath=None):
 
-        Parameters
-        ----------
-        filepath : str, optional
-            The path to the file to load. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
-
-        Notes
-        -----
-        The settings will be loaded from a JSON-encoded dictionary in the specified
-        file. The dictionary should contain the enabled status and parameters for
-        each phase type.
-        """
-        if filepath is None:
-            initial_directory = './ressources/saved_settings'
-            filepath = asksaveasfilename(initialdir=initial_directory,
-                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-                                         )
-            if not filepath:
-                return
-        try:
-            with open(filepath, 'r') as f:
-                dics = json.loads(f.read())
-            try:
-                for num, phase in enumerate(self.phase_refs_green):
-                    phase.load_(dics[phase.name_()]['Params'])
-                    self.vars_green[num].set(dics[phase.name_()]['Enabled'])
-                self.ent_scr_green.delete(0, tk.END)
-                self.ent_scr_green.insert(0, dics['screen_pos'])
-                print("Green settings loaded successfully")
-            except ValueError:
-                print('Not able to load green settings')
-        except FileNotFoundError:
-            print(f'No green settings file found at {filepath}')
-
-    def save_red(self, filepath=None):
-        """
-        Save the current settings to a file.
-
-        Parameters
-        ----------
-        filepath : str, optional
-            The path to the file to save. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
-
-        Notes
-        -----
-        The settings will be saved as a JSON-encoded dictionary to the specified
-        file. The dictionary will contain the enabled status and parameters for
-        each phase type
-        """
-        if filepath is None:
-            initial_directory = './ressources/saved_settings'
-            filepath = asksaveasfilename(initialdir=initial_directory,
-                                         defaultextension='txt',
-                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-                                         )
-            if not filepath:
-                return
-        dict = {}
-        with open(filepath, 'w') as f:
-            for num, phase in enumerate(self.phase_refs_red):
-                dict[phase.name_()] = {'Enabled': self.vars_red[num].get(),
-                                       'Params': phase.save_()}
-            dict['screen_pos'] = self.ent_scr_red.get()
-            f.write(json.dumps(dict))
-
-    def load_red(self, filepath=None):
-        """
-        Load settings from a file.
-
-        Parameters
-        ----------
-        filepath : str, optional
-            The path to the file to load. If not specified, a dialog box will be
-            displayed to prompt the user to choose a file.
-
-        Notes
-        -----
-        The settings will be loaded from a JSON-encoded dictionary in the specified
-        file. The dictionary should contain the enabled status and parameters for
-        each phase type.
-        """
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = askopenfilename(initialdir=initial_directory,
-                                       filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')]
-                                       )
+                                       filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
             if not filepath:
                 return
+
         try:
             with open(filepath, 'r') as f:
                 dics = json.loads(f.read())
+
+            phase_refs = getattr(self, f"phase_refs_{color}")
+            vars_ = getattr(self, f"vars_{color}")
+            ent_scr = getattr(self, f"ent_scr_{color}")
+
             try:
-                for num, phase in enumerate(self.phase_refs_red):
+                for num, phase in enumerate(phase_refs):
                     phase.load_(dics[phase.name_()]['Params'])
-                    self.vars_red[num].set(dics[phase.name_()]['Enabled'])
-                self.ent_scr_red.delete(0, tk.END)
-                self.ent_scr_red.insert(0, dics['screen_pos'])
-                print("Red settings loaded successfully")
+                    vars_[num].set(dics[phase.name_()]['Enabled'])
+                ent_scr.delete(0, tk.END)
+                ent_scr.insert(0, dics['screen_pos'])
+                print(f"{color.capitalize()} settings loaded successfully")
             except ValueError:
-                print('Not able to load red settings')
+                print(f'Not able to load {color} settings')
         except FileNotFoundError:
-            print(f'No red settings file found at {filepath}')
+            print(f'No {color} settings file found at {filepath}')
 
-    def load_red_default(self):
-        filepath = './ressources/saved_settings/default_red_settings.txt'
-        try:
-            with open(filepath, 'r') as f:
-                dics = json.loads(f.read())
-            try:
-                for num, phase in enumerate(self.phase_refs_red):
-                    phase.load_(dics[phase.name_()]['Params'])
-                    self.vars_red[num].set(dics[phase.name_()]['Enabled'])
-                self.ent_scr_red.delete(0, tk.END)
-                self.ent_scr_red.insert(0, dics['screen_pos'])
-                print("Red settings loaded successfully")
-                self.open_pub_red()
-            except ValueError:
-                print('Not able to load red settings')
-        except FileNotFoundError:
-            print(f'No red settings file found at {filepath}')
+    def hide_show_green_panel(self):
+        panels = ['frm_top_green', 'frm_top_b_green', 'frm_mid_green', 'frm_bottom_green']
 
-    def load_green_default(self):
-        filepath = './ressources/saved_settings/default_green_settings.txt'
-        try:
-            with open(filepath, 'r') as f:
-                dics = json.loads(f.read())
-            try:
-                for num, phase in enumerate(self.phase_refs_green):
-                    phase.load_(dics[phase.name_()]['Params'])
-                    self.vars_green[num].set(dics[phase.name_()]['Enabled'])
-                self.ent_scr_green.delete(0, tk.END)
-                self.ent_scr_green.insert(0, dics['screen_pos'])
-                print("Green settings loaded successfully")
-            except ValueError:
-                print('Not able to load green settings')
-        except FileNotFoundError:
-            print(f'No green settings file found at {filepath}')
+        if self.frm_green_visible:
+            for panel in panels:
+                getattr(self, panel).grid_remove()
+        else:
+            getattr(self, 'frm_top_green').grid(row=0, column=0, sticky='nsew')
+            getattr(self, 'frm_top_b_green').grid(row=1, column=1, sticky='nsew')
+            getattr(self, 'frm_mid_green').grid(row=2, column=0, sticky='nsew')
+            getattr(self, 'frm_bottom_green').grid(row=3, column=0, sticky='nsew')
 
-    def publish_window_closed(self):
-        """
-        Handle the event of the publish display window being closed.
-
-        Returns
-        -------
-        None
-        """
-        self.ent_scr_green.config(state='normal')
-        slm.SLM_Disp_Close(int(self.ent_scr_green.get()))
-
-        self.ent_scr_red.config(state='normal')
-        slm.SLM_Disp_Close(int(self.ent_scr_red.get()))
+        self.frm_green_visible = not self.frm_green_visible
 
     def exit_prog(self):
-        """
-        Exit the program.
-
-        Returns
-        -------
-        None
-        """
-        self.publish_window_closed()
-        self.feedback_win = None
-        self.GasDensity_app_win = None
+        self.close_publish_win()
         self.main_win.destroy()
-
 
 root = tk.Tk()
 main = DLabController(root)

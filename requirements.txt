@@ -9,3 +9,4 @@ pyserial~=3.5
 pygame~=2.6.1
 prysm~=0.21.1
 pandas~=2.2.3
+zaber_motion~=7.0.0

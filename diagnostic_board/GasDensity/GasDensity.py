@@ -10,7 +10,7 @@ import diagnostic_board.daheng_camera as dh
 from drivers import gxipy_driver as gx
 
 
-class GasDensityApp:
+class GasDensity:
     def __init__(self):
 
         self.initial_roi = (0, 540, 0, 720)  # x1 x2 y1 y2

@@ -37,7 +37,7 @@ colors = [
 custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
 
-class FocusViewApp:
+class FocusView:
     def __init__(self):
         self.cam = None
         self.roi = None

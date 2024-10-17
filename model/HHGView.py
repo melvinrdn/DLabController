@@ -51,7 +51,7 @@ custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
 
 
-class Feedbacker(object):
+class HHGView(object):
     """
     A class for controlling the overlap between the green and the red, using spectral fringes.
     """
