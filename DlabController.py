@@ -1,9 +1,8 @@
 print('Importing the libraries...')
-
 import json
 import tkinter as tk
 from tkinter import ttk
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+import os
 
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -12,7 +11,6 @@ from matplotlib.figure import Figure
 from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator
 from hardware.SLM_driver import phase_settings
 
-print('Done!')
 """
 Welcome to the D-lab Controller. If you are reading this this is maybe because you want to modify something is the code.
 - If you want to add a button that opens a new window, directly go to setup_side_panel and add the name of your button 
@@ -20,6 +18,7 @@ and the associated function.
 - If you want to add a new phase pattern, you to go to hardware>SLM_driver>phase_settings and
 add a new Type. 
 """
+
 class DLabController:
     """
     A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
@@ -49,7 +48,9 @@ class DLabController:
 
         self.frm_green_visible = False
         print("Loading the default parameters...")
-        print("Done! Welcome to the D-Lab Controller")
+        #self.load_default_parameters('green')
+        #self.load_default_parameters('red')
+        print("Welcome to the D-Lab Controller")
 
     ## Setting up the interface
     def create_main_window(self):
@@ -404,6 +405,7 @@ class DLabController:
         filepath : str, optional
             The path where the settings file is saved. If not provided, a dialog is opened.
         """
+        from tkinter.filedialog import asksaveasfilename
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
@@ -434,6 +436,7 @@ class DLabController:
         filepath : str, optional
             The path to the settings file. If not provided, a dialog is opened.
         """
+        from tkinter.filedialog import askopenfilename
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = askopenfilename(initialdir=initial_directory,
@@ -460,6 +463,23 @@ class DLabController:
                 print(f'Not able to load {color} settings')
         except FileNotFoundError:
             print(f'No {color} settings file found at {filepath}')
+
+    def load_default_parameters(self, color):
+        """
+        Loads the default parameters for the specified color SLM from the corresponding default settings file.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        filepath = f'./ressources/saved_settings/default_{color}_settings.txt'
+
+        if os.path.exists(filepath):
+            print(f"Loading default {color} settings from {filepath}...")
+            self.load_settings(color, filepath)
+        else:
+            print(f"Default {color} settings file not found.")
 
     ## Closing and exit commands
     def close_publish_win(self,color):
