@@ -260,8 +260,7 @@ class DLabController:
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.grid(row=2, sticky='ew')
 
-        setattr(self, f"canvas_{color}", canvas)
-        setattr(self, f"img_{color}", None)
+        setattr(self, f"img_{color}", canvas)
 
     def hide_show_green_panel(self):
         """
@@ -333,19 +332,21 @@ class DLabController:
         color : str
             The color of the SLM ('green' or 'red').
         """
-        ax = getattr(self, f"ax_{color}")
-        img = getattr(self, f"img_{color}")
+        if color == 'green':
+            ax = self.ax_green
+            img = self.img_green
+        elif color == 'red':
+            ax = self.ax_red
+            img = self.img_red
 
-        if img is None:
-            ax.imshow(slm.phase - slm.background_phase, cmap='hsv', interpolation='None', extent=(
-                -slm.slm_size[1] / 2, slm.slm_size[1] / 2,
-                -slm.slm_size[0] / 2, slm.slm_size[0] / 2))
-            img = ax.images[0]
-            setattr(self, f"img_{color}", img)
-        else:
-            img.set_data(slm.phase - slm.background_phase)
-
-        ax.figure.canvas.draw()
+        ax.clear()
+        ax.imshow(slm.phase-slm.background_phase, cmap='hsv', interpolation='None', extent=(
+            -slm.slm_size[1] / 2, slm.slm_size[1] / 2,
+            -slm.slm_size[0] / 2, slm.slm_size[0] / 2))
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
+        ax.figure.tight_layout()
+        img.draw()
 
     ##  Opening other windows
     def open_publish_win(self, color):
