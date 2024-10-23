@@ -1,4 +1,4 @@
-from drivers import gxipy_driver as gx
+from hardware import gxipy_driver as gx
 import numpy as np
 
 

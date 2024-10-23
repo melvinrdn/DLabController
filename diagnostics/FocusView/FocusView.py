@@ -17,10 +17,10 @@ from scipy.optimize import curve_fit
 from scipy import interpolate
 import pandas as pd
 
-import diagnostic_board.daheng_camera as dh
-from diagnostic_board.diagnostics_helpers import process_image
-from drivers.thorlabs_apt_driver import core as apt
-from drivers import gxipy_driver as gx
+import hardware.gxipy_driver.daheng_camera as dh
+from diagnostics.diagnostics_helpers import process_image
+from hardware.thorlabs_apt_driver import core as apt
+from hardware import gxipy_driver as gx
 
 colors = [
     (1, 1, 1),  # white

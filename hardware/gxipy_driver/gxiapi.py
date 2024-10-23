@@ -3,9 +3,9 @@
 # -*-mode:python ; tab-width:4 -*- ex:set tabstop=4 shiftwidth=4 expandtab: -*-
 
 import numpy
-from drivers.gxipy_driver.gxwrapper import *
-from drivers.gxipy_driver.dxwrapper import *
-from drivers.gxipy_driver.gxidef import *
+from hardware.gxipy_driver.gxwrapper import *
+from hardware.gxipy_driver.dxwrapper import *
+from hardware.gxipy_driver.gxidef import *
 import types
 
 

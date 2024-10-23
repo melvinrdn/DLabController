@@ -2,7 +2,7 @@
 #  This script is on fire!!! 
 
 try:
-    import drivers.avaspec_driver._avs_win as dll
+    import hardware.avaspec_driver._avs_win as dll
 except ModuleNotFoundError:
     import _avs_win as dll
 import numpy as np

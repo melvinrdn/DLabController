@@ -6,8 +6,8 @@ from tkinter.scrolledtext import ScrolledText
 import matplotlib.cm as cm
 import numpy as np
 from PIL import Image, ImageTk
-import diagnostic_board.daheng_camera as dh
-from drivers import gxipy_driver as gx
+import hardware.gxipy_driver.daheng_camera as dh
+from hardware import gxipy_driver as gx
 
 
 class GasDensity:

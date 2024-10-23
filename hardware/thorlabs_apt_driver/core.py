@@ -1,5 +1,5 @@
-from drivers.thorlabs_apt_driver import _APTAPI
-from drivers.thorlabs_apt_driver import _error_codes
+from hardware.thorlabs_apt_driver import _APTAPI
+from hardware.thorlabs_apt_driver import _error_codes
 
 import ctypes
 import ctypes.util

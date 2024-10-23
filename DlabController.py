@@ -9,100 +9,67 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from model import phase_settings
-import drivers.santec_driver._slm_py as slm_driver
-from ressources.slm_infos import slm_size, bit_depth,chip_width,chip_height
+from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator
+from hardware.SLM_driver import phase_settings
 
 print('Done!')
-
-
-class SpatialLightModulator:
-    def __init__(self, color):
-        self.color = color
-        self.phase_map = np.zeros(slm_size)
-        self.background_phase = np.zeros(slm_size)
-        self.screen_num = None
-
-    def publish(self, screen_num):
-        self.screen_num = screen_num
-        phase_map = (self.phase_map % (bit_depth + 1)).astype(np.uint16)
-        slm_driver.SLM_Disp_Open(self.screen_num)
-        slm_driver.SLM_Disp_Data(self.screen_num, phase_map, slm_size[1], slm_size[0])
-
-    def close(self):
-        if self.screen_num is not None:
-            slm_driver.SLM_Disp_Close(self.screen_num)
-            self.screen_num = None
-
-
+"""
+Welcome to the D-lab Controller. If you are reading this this is maybe because you want to modify something is the code.
+- If you want to add a button that opens a new window, directly go to setup_side_panel and add the name of your button 
+and the associated function.
+- If you want to add a new phase pattern, you to go to hardware>SLM_driver>phase_settings and
+add a new Type. 
+"""
 class DLabController:
+    """
+    A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
+    in the D-lab.
+    """
     def __init__(self, parent):
+        """
+        Initializes the D-Lab Controller interface and sets up the main window components.
+
+        Parameters
+        ----------
+        parent : tkinter.Tk
+            The root tkinter window for the application.
+        """
         print('Initialisation of the interface...')
         self.main_win = parent
         self.style = ttk.Style()
 
-        self.publish_win = None
         self.HHGView_win = None
         self.GasDensity_win = None
         self.FocusView_win = None
 
-        self.configure_main_window()
-
         self.SLM_green = SpatialLightModulator('green')
         self.SLM_red = SpatialLightModulator('red')
+
+        self.create_main_window()
 
         self.frm_green_visible = False
         print("Loading the default parameters...")
         print("Done! Welcome to the D-Lab Controller")
 
-    def configure_main_window(self):
+    ## Setting up the interface
+    def create_main_window(self):
+        """
+        Configures the main window by setting up its properties and initiating the setup
+        for the SLM windows and side panels.
+        """
         self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
         self.main_win.title('D-Lab Controller - Main Interface')
         self.main_win.resizable(False, False)
         self.style.configure('lefttab.TNotebook', tabposition=tk.W + tk.N, tabplacement=tk.N + tk.EW)
         self.setup_slm_window('green')
         self.setup_slm_window('red')
-        self.create_side_panel()
+        self.setup_side_panel()
 
-    def setup_slm_window(self, color):
-        self.setup_frames(color)
-        self.setup_save_load_buttons(color)
-        self.setup_phase_tabs(color)
-        self.setup_phase_display(color)
-        self.setup_publish_button(color)
-
-        if color == 'red':
-            getattr(self, f"frm_top_{color}").grid(row=0, column=1, sticky='nsew')
-            getattr(self, f"frm_top_b_{color}").grid(row=1, column=1, sticky='nsew')
-            getattr(self, f"frm_mid_{color}").grid(row=2, column=1, sticky='nsew')
-            getattr(self, f"frm_bottom_{color}").grid(row=3, column=1, sticky='nsew')
-
-    def setup_publish_button(self, color):
-        publish_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Publish {color}',
-                                    command=lambda: self.open_publish_win(color))
-        publish_button.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-
-    def open_publish_win(self, color):
-        slm = getattr(self, f'SLM_{color}')
-        ent_scr = getattr(self, f'ent_scr_{color}')
-        screen_num = int(ent_scr.get())
-        slm.phase_map = self.get_phase(color)
-        self.update_phase_plot(slm.phase_map - slm.background_phase, color)
-        slm.publish(screen_num)
-
-    def close_publish_win(self):
-        for color in ['green', 'red']:
-            slm = getattr(self, f'SLM_{color}')
-            slm.close()
-
-    def setup_frames(self, color):
-        setattr(self, f"frm_top_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM interface'))
-        setattr(self, f"frm_top_b_{color}",
-                ttk.LabelFrame(getattr(self, f"frm_top_{color}"), text=f'{color.capitalize()} SLM - Phase display'))
-        setattr(self, f"frm_mid_{color}", ttk.Notebook(self.main_win, style='lefttab.TNotebook'))
-        setattr(self, f"frm_bottom_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM - Options'))
-
-    def create_side_panel(self):
+    def setup_side_panel(self):
+        """
+        Creates the side panel that includes buttons for various functionalities.
+        To add a panel, just add the name of button and the name of the function
+        """
         self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Side Panel')
         self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
 
@@ -116,7 +83,92 @@ class DLabController:
             button = ttk.Button(self.frm_side_panel, text=label, command=cmd)
             button.grid(row=row, column=0, sticky='nsew')
 
+    def setup_slm_window(self, color):
+        """
+        Sets up the SLM window for the specified color.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        self.setup_frames(color)
+        self.setup_save_load_buttons(color)
+        self.setup_phase_tabs(color)
+        self.setup_phase_display(color)
+        self.setup_publish_button(color)
+        self.setup_preview_button(color)
+        self.setup_close_button(color)
+
+        if color == 'red':
+            getattr(self, f"frm_top_{color}").grid(row=0, column=1, sticky='nsew')
+            getattr(self, f"frm_top_b_{color}").grid(row=1, column=1, sticky='nsew')
+            getattr(self, f"frm_mid_{color}").grid(row=2, column=1, sticky='nsew')
+            getattr(self, f"frm_bottom_{color}").grid(row=3, column=1, sticky='nsew')
+
+    def setup_preview_button(self, color):
+        """
+        Sets up the preview button for the specified color.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        preview_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Preview {color}',
+                                    command=lambda: self.get_phase(color))
+        preview_button.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+
+    def setup_publish_button(self, color):
+        """
+        Sets up the publish button for the specified color.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        publish_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Publish {color}',
+                                    command=lambda: self.open_publish_win(color))
+        publish_button.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
+
+    def setup_close_button(self, color):
+        """
+        Sets up the preview button for the specified color.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        close_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Close {color}',
+                                    command=lambda: self.close_publish_win(color))
+        close_button.grid(row=0, column=2, sticky='nsew', padx=5, pady=5)
+
+    def setup_frames(self, color):
+        """
+        Sets up the frames for the interface of the specified color SLM.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        setattr(self, f"frm_top_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM interface'))
+        setattr(self, f"frm_top_b_{color}",
+                ttk.LabelFrame(getattr(self, f"frm_top_{color}"), text=f'{color.capitalize()} SLM - Phase display'))
+        setattr(self, f"frm_mid_{color}", ttk.Notebook(self.main_win, style='lefttab.TNotebook'))
+        setattr(self, f"frm_bottom_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM - Options'))
+
     def setup_save_load_buttons(self, color):
+        """
+        Sets up the save and load buttons for the specified SLM.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
         button_frame = getattr(self, f"frm_top_b_{color}")
 
         save_button = ttk.Button(button_frame, text=f'Save {color} settings', command=lambda: self.save_settings(color))
@@ -135,9 +187,27 @@ class DLabController:
             setattr(self, f'ent_scr_{color}', spinbox_screen)
 
     def setup_phase_tabs(self, color):
+        """
+        Sets up the phase tabs for the specified SLM.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
         self.setup_box(getattr(self, f"frm_top_{color}"), color)
 
     def setup_box(self, frm_, color):
+        """
+        Sets up the box with checkboxes for enabling or disabling phase types.
+
+        Parameters
+        ----------
+        frm_ : tkinter.Frame
+            The parent frame where the box is placed.
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
         frm_box = ttk.LabelFrame(frm_, text='Phases enabled')
         frm_box.grid(column=0)
 
@@ -170,19 +240,15 @@ class DLabController:
                                   onvalue=1, offvalue=0)
             box.grid(row=ind, sticky='w')
 
-    def open_hhg_view_win(self):
-        from model import HHGView
-        self.HHGView_win = HHGView.HHGView(self)
-
-    def open_gas_density_win(self):
-        from diagnostic_board.GasDensity import GasDensity
-        self.GasDensity_win = GasDensity.GasDensity()
-
-    def open_focus_view_win(self):
-        from diagnostic_board.FocusView import FocusView
-        self.FocusView_win = FocusView.FocusView()
-
     def setup_phase_display(self, color):
+        """
+        Sets up the phase display using matplotlib for the specified color.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
         figure = Figure(figsize=(3, 2))
         ax = figure.add_subplot(111)
         ax.figure.tight_layout()
@@ -196,27 +262,76 @@ class DLabController:
 
         setattr(self, f"img_{color}", canvas)
 
-    def get_phase(self, color):
-        slm = getattr(self, f'SLM_{color}')
-        phase = np.zeros(slm_size)
-        active_phase_types = []
+    def hide_show_green_panel(self):
+        """
+        Toggles the visibility of the green SLM interface panel.
+        """
+        panels = ['frm_top_green', 'frm_top_b_green', 'frm_mid_green', 'frm_bottom_green']
 
+        if self.frm_green_visible:
+            for panel in panels:
+                getattr(self, panel).grid_remove()
+        else:
+            getattr(self, 'frm_top_green').grid(row=0, column=0, sticky='nsew')
+            getattr(self, 'frm_top_b_green').grid(row=1, column=1, sticky='nsew')
+            getattr(self, 'frm_mid_green').grid(row=2, column=0, sticky='nsew')
+            getattr(self, 'frm_bottom_green').grid(row=3, column=0, sticky='nsew')
+
+        self.frm_green_visible = not self.frm_green_visible
+
+    ## Phase pattern commands
+    def get_phase(self, color):
+        """
+        Retrieves and calculates the phase for the specified SLM based on the active phase types.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+
+        Returns
+        -------
+        numpy.ndarray
+            The phase array for the selected SLM.
+        """
+        slm = getattr(self, f'SLM_{color}')
         phase_refs = getattr(self, f'phase_refs_{color}')
         vars_color = getattr(self, f'vars_{color}')
 
+        phase = np.zeros(slm.slm_size)
+        slm.phase = np.zeros(slm.slm_size)
+        slm.background_phase = np.zeros(slm.slm_size)
+
+        active_phase_types = []
         for ind, phase_type in enumerate(phase_refs):
             if vars_color[ind].get() == 1:
                 active_phase_types.append(phase_type.__class__.__name__)
-                phase += phase_type.phase()
+                phase += phase_type.phase()                   # Add each phase type to the phase variable
 
                 if phase_type.__class__.__name__ == 'TypeBackground':
-                    slm.background_phase = phase_type.phase()
+                    slm.background_phase = phase_type.phase()  # Send the new background on the SLM class
 
-        print(f"Active phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
+        if np.all(slm.background_phase == 0):
+            print(f"Warning: The background phase of the {color} SLM is an array of 0.")
+
+        print(f"Phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
+
+        slm.phase = phase                       # Send the new phase on the SLM class
+        self.update_phase_plot(slm, color)      # Update the plot on the main interface
         return phase
 
-    def update_phase_plot(self, phase, color):
+    def update_phase_plot(self, slm, color):
+        """
+        Updates the phase plot for the specified SLM. No need to specify the phase, since the get_phase function is
+        logging the new phase into the slm class. One just have to call this function after setting the phase.
 
+        Parameters
+        ----------
+        slm : SpatialLightModulator
+            The SLM object for which the phase plot is updated.
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
         if color == 'green':
             ax = self.ax_green
             img = self.img_green
@@ -225,16 +340,70 @@ class DLabController:
             img = self.img_red
 
         ax.clear()
-        cax = ax.imshow(phase, cmap='hsv', interpolation='None', extent=(
-            -chip_width *1e3/ 2, chip_width*1e3 / 2,
-            -chip_height*1e3 / 2, chip_width *1e3/ 2))
-        ax.set_xlabel('y (mm)')
-        ax.set_ylabel('x (mm)')
+        ax.imshow(slm.phase-slm.background_phase, cmap='hsv', interpolation='None', extent=(
+            -slm.slm_size[1] / 2, slm.slm_size[1] / 2,
+            -slm.slm_size[0] / 2, slm.slm_size[0] / 2))
+        ax.set_xlabel('y')
+        ax.set_ylabel('x')
         ax.figure.tight_layout()
         img.draw()
 
-    def save_settings(self, color, filepath=None):
+    ##  Opening other windows
+    def open_publish_win(self, color):
+        """
+        Publishes the current phase configuration to the specified SLM screen.
 
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        slm = getattr(self, f'SLM_{color}')
+        ent_scr = getattr(self, f'ent_scr_{color}')
+        screen_num = int(ent_scr.get())
+        phase = self.get_phase(color)
+
+        # Check if all elements of background_phase are zero and raise an error
+        if np.all(slm.background_phase == 0):
+            raise ValueError(
+                f"Error: The background phase of the {color} SLM is all zeros. "
+                f"Please adjust the background phase before publishing.")
+
+        slm.publish(phase, screen_num)
+
+    def open_hhg_view_win(self):
+        """
+        Opens the HHG view window.
+        """
+        from diagnostics.HHGView import HHGView
+        self.HHGView_win = HHGView.HHGView(self)
+
+    def open_gas_density_win(self):
+        """
+        Opens the gas density view window.
+        """
+        from diagnostics.GasDensity import GasDensity
+        self.GasDensity_win = GasDensity.GasDensity()
+
+    def open_focus_view_win(self):
+        """
+        Opens the focus view window.
+        """
+        from diagnostics.FocusView import FocusView
+        self.FocusView_win = FocusView.FocusView()
+
+    ## Saving and laoding settings
+    def save_settings(self, color, filepath=None):
+        """
+        Saves the current phase settings for the specified SLM to a file.
+
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        filepath : str, optional
+            The path where the settings file is saved. If not provided, a dialog is opened.
+        """
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = asksaveasfilename(initialdir=initial_directory,
@@ -255,7 +424,16 @@ class DLabController:
             f.write(json.dumps(dict))
 
     def load_settings(self, color, filepath=None):
+        """
+        Loads the phase settings for the specified SLM from a file.
 
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        filepath : str, optional
+            The path to the settings file. If not provided, a dialog is opened.
+        """
         if filepath is None:
             initial_directory = './ressources/saved_settings'
             filepath = askopenfilename(initialdir=initial_directory,
@@ -283,22 +461,26 @@ class DLabController:
         except FileNotFoundError:
             print(f'No {color} settings file found at {filepath}')
 
-    def hide_show_green_panel(self):
-        panels = ['frm_top_green', 'frm_top_b_green', 'frm_mid_green', 'frm_bottom_green']
+    ## Closing and exit commands
+    def close_publish_win(self,color):
+        """
+        Close the connection to the SLM
 
-        if self.frm_green_visible:
-            for panel in panels:
-                getattr(self, panel).grid_remove()
-        else:
-            getattr(self, 'frm_top_green').grid(row=0, column=0, sticky='nsew')
-            getattr(self, 'frm_top_b_green').grid(row=1, column=1, sticky='nsew')
-            getattr(self, 'frm_mid_green').grid(row=2, column=0, sticky='nsew')
-            getattr(self, 'frm_bottom_green').grid(row=3, column=0, sticky='nsew')
+        Parameters
+        ----------
+        color : str
+            The color of the SLM ('green' or 'red').
+        """
+        slm = getattr(self, f'SLM_{color}')
+        slm.close()
 
-        self.frm_green_visible = not self.frm_green_visible
 
     def exit_prog(self):
-        self.close_publish_win()
+        """
+        Closes the application and ensures the SLM connections are closed.
+        """
+        self.close_publish_win('red')
+        self.close_publish_win('green')
         self.main_win.destroy()
 
 

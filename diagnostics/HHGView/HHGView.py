@@ -23,15 +23,15 @@ from matplotlib.figure import Figure
 from matplotlib.colors import LogNorm
 from pylablib.devices import Andor
 from simple_pid import PID
-import drivers.zaber_binary.zaber_binary as zb
+import hardware.zaber_binary.zaber_binary as zb
 
-from diagnostic_board.diagnostics_helpers import process_image
-import drivers.avaspec_driver._avs_py as avs
-import drivers.jena_piezo.jena_piezo_V3 as jena
-import drivers.santec_driver._slm_py as slm
-import model.helpers as help
-from drivers.thorlabs_apt_driver import core as apt
-from drivers.vimba_driver import *
+from diagnostics.diagnostics_helpers import process_image
+import hardware.avaspec_driver._avs_py as avs
+import hardware.jena_piezo.jena_piezo_V3 as jena
+import hardware.SLM_driver._slm_py as slm
+import diagnostics.HHGView.helpers as help
+from hardware.thorlabs_apt_driver import core as apt
+from hardware.vimba_driver import *
 from ressources.calibration import waveplate_calibrator as cal
 from ressources.slm_infos import slm_size, bit_depth
 
@@ -87,7 +87,7 @@ class HHGView(object):
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
         self.rect_id = 0
 
-        pll.par["devices/dlls/andor_sdk2"] = "drivers/andor_driver/"
+        pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
 
         self.WPG = None
         self.WPR = None

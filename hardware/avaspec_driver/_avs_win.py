@@ -36,7 +36,7 @@ else: # Windows will have 'win32' or 'cygwin'
     if (ctypes.sizeof(ctypes.c_voidp) == 8): # 64 bit
         WM_MEAS_READY = 0x8001
         try:
-            lib = ctypes.WinDLL("./drivers/avaspec_driver/avaspecx64.dll")
+            lib = ctypes.WinDLL("./hardware/avaspec_driver/avaspecx64.dll")
         except FileNotFoundError:
             lib = ctypes.WinDLL("./avaspecx64.dll")
         func = ctypes.WINFUNCTYPE

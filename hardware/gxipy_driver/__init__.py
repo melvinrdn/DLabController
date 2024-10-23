@@ -2,8 +2,8 @@
 # -*- coding:utf-8 -*-
 # -*-mode:python ; tab-width:4 -*- ex:set tabstop=4 shiftwidth=4 expandtab: -*-
 
-from drivers.gxipy_driver.gxiapi import *
-from drivers.gxipy_driver.gxidef import *
+from hardware.gxipy_driver.gxiapi import *
+from hardware.gxipy_driver.gxidef import *
 
 __all__ = ["gxwrapper", "dxwrapper", "gxiapi", "gxidef"]
 

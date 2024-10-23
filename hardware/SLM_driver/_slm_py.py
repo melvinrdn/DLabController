@@ -1,19 +1,15 @@
-# -*- coding: utf-8 -*-
 import ctypes as ct
-import drivers.santec_driver._slm_win as dll
+import hardware.SLM_driver._slm_win as dll
 import numpy as np
 import warnings
 from os.path import exists
 
-
 flags = 0x20000000   # Rate 120 Hz SLM
 
-
-
 def SLM_STATUS(slm_status):
-    '''Used to check the return value of every call of the SLM driver,
+    """Used to check the return value of every call of the SLM driver,
         should be equal to SLM_OK = 0.
-        If that is not the case, error is raised with given error code.'''
+        If that is not the case, error is raised with given error code."""
     
     error_dict = {1: 'SLM_NG', 2: 'SLM_BS', 3: 'SLM_ER',
                   -1: 'SLM_INVALID_MONITOR', -2: 'SLM_NOT_OPEN_MONITOR',
@@ -35,7 +31,7 @@ def SLM_STATUS(slm_status):
 
 
 def SLM_Disp_Info(display_number):
-    '''
+    """
     Read width and height of the display.
 
     Parameters
@@ -49,7 +45,7 @@ def SLM_Disp_Info(display_number):
         Width of the Display (Pixels).
     int
         Height of the Display (Pixels).
-    '''
+    """
     
     width = ct.c_ushort(0)
     height = ct.c_ushort(0)
@@ -62,7 +58,7 @@ def SLM_Disp_Info(display_number):
 
 
 def SLM_Disp_Info2(display_number):
-    '''
+    """
     Read width and height, DisplayName of display.
 
     Parameters
@@ -78,7 +74,7 @@ def SLM_Disp_Info2(display_number):
         Height of the Display (Pixels).
     str
         DisplayName: DisplayName format is “UserFriendlyName,ManufactreName,ProductCodeID,SerialNumberID”
-    '''
+    """
     
     width = ct.c_ushort(0)
     height = ct.c_ushort(0)
@@ -92,7 +88,7 @@ def SLM_Disp_Info2(display_number):
 
 
 def SLM_Disp_Open(display_number):
-    '''
+    """
     SLM display initializing.
 
     Parameters
@@ -103,7 +99,7 @@ def SLM_Disp_Open(display_number):
     Returns
     -------
     None.
-    '''
+    """
     
     ret = dll.SLM_Disp_Open(display_number)
     SLM_STATUS(ret)
@@ -113,7 +109,7 @@ def SLM_Disp_Open(display_number):
 
 
 def SLM_Disp_Close(display_number):
-    '''
+    """
     SLM display finalizing.
 
     Parameters
@@ -124,7 +120,7 @@ def SLM_Disp_Close(display_number):
     Returns
     -------
     None.
-    '''
+    """
     
     ret = dll.SLM_Disp_Close(display_number)
     
@@ -138,8 +134,8 @@ def SLM_Disp_Close(display_number):
 
 
 def SLM_Disp_GrayScale(display_number, gray_scale):
-    '''
-    
+    """
+
 
     Parameters
     ----------
@@ -151,7 +147,7 @@ def SLM_Disp_GrayScale(display_number, gray_scale):
     Returns
     -------
     None.
-    '''
+    """
     
     ret = dll.SLM_Disp_GrayScale(display_number, flags, gray_scale)
     SLM_STATUS(ret)
@@ -161,7 +157,7 @@ def SLM_Disp_GrayScale(display_number, gray_scale):
 
 
 def SLM_Disp_Data(display_number, data_array, width, height):
-    '''
+    """
     Display array data on the SLM.
 
     Parameters
@@ -169,7 +165,7 @@ def SLM_Disp_Data(display_number, data_array, width, height):
     display_number : int
         Specify display number (1, 2, 3…).
     data_array : np.array of int
-        Data to be displayed. 
+        Data to be displayed.
         Must be 2d array of size (height * width).
         Contains pixel data from 0 to 1023.
     int
@@ -180,7 +176,7 @@ def SLM_Disp_Data(display_number, data_array, width, height):
     Returns
     -------
     None.
-    '''
+    """
     
     # check dimensions
     if np.shape(data_array) != (height, width):
@@ -200,7 +196,7 @@ def SLM_Disp_Data(display_number, data_array, width, height):
 
 
 def SLM_Disp_ReadBMP(display_number, path):
-    '''
+    """
     Display .bmp-file data on the SLM.
     Encoding is Unicode.
 
@@ -215,7 +211,7 @@ def SLM_Disp_ReadBMP(display_number, path):
     Returns
     -------
     None.
-    '''
+    """
     
     if exists(path):
         ret = dll.SLM_Disp_ReadBMP(display_number, flags, path)
@@ -228,7 +224,7 @@ def SLM_Disp_ReadBMP(display_number, path):
 
 
 def SLM_Disp_ReadCSV(display_number, path):
-    '''
+    """
     Display .csv-file data on the SLM.
     Encoding is Unicode.
 
@@ -243,7 +239,7 @@ def SLM_Disp_ReadCSV(display_number, path):
     Returns
     -------
     None.
-    '''
+    """
     
     if exists(path):
         ret = dll.SLM_Disp_ReadCSV(display_number, flags, path)
@@ -254,11 +250,8 @@ def SLM_Disp_ReadCSV(display_number, path):
     return
 
 
-
-
-
 def SLM_Ctrl_Open(slm_number):
-    '''
+    """
     Open USB interface.
 
     Parameters
@@ -269,7 +262,7 @@ def SLM_Ctrl_Open(slm_number):
     Returns
     -------
     None.
-    '''
+    """
     
     ret = dll.SLM_Ctrl_Open(slm_number)
     
@@ -283,7 +276,7 @@ def SLM_Ctrl_Open(slm_number):
 
 
 def SLM_Ctrl_Close(slm_number):
-    '''
+    """
     Close USB interface.
 
     Parameters
@@ -294,7 +287,7 @@ def SLM_Ctrl_Close(slm_number):
     Returns
     -------
     None.
-    '''
+    """
     
     ret = dll.SLM_Ctrl_Close(slm_number)
     
@@ -308,7 +301,7 @@ def SLM_Ctrl_Close(slm_number):
 
 
 def SLM_Ctrl_ReadSU(slm_number):   #1
-    '''
+    """
     Read status of SLM. Busy or Ready.
 
     Parameters
@@ -321,7 +314,7 @@ def SLM_Ctrl_ReadSU(slm_number):   #1
     bool
         True: SLM ready
         False: SLM busy
-    '''
+    """
     
     ret = dll.SLM_Ctrl_ReadSU(slm_number)
     
@@ -332,7 +325,7 @@ def SLM_Ctrl_ReadSU(slm_number):   #1
 
 
 def SLM_Ctrl_WriteVI(slm_number, mode=1):   #2
-    '''
+    """
     Write video mode: DVI or Memory mode.
 
 
@@ -343,13 +336,13 @@ def SLM_Ctrl_WriteVI(slm_number, mode=1):   #2
 
     mode : int or str
         Specify mode value.
-        0: Memory mode (Memory, USB, mem), 
-        1: DVI mode (DVI), 
+        0: Memory mode (Memory, USB, mem),
+        1: DVI mode (DVI),
         Default: 1
 
     -------
     None.
-    '''
+    """
     
     # read eventual text input
     if mode in [0, 'Memory', 'memory', 'USB', 'usb', 'mem', 'Memory mode', 'M', 'm']:
@@ -368,7 +361,7 @@ def SLM_Ctrl_WriteVI(slm_number, mode=1):   #2
 
 
 def SLM_Ctrl_ReadVI(slm_number):   #3
-    '''
+    """
     Write video mode: DVI or Memory mode.
 
 
@@ -380,9 +373,9 @@ def SLM_Ctrl_ReadVI(slm_number):   #3
     -------
     int
         Current operating mode mode.
-        0: Memory mode, 
-        1: DVI mode. 
-    '''
+        0: Memory mode,
+        1: DVI mode.
+    """
 
     mode = ct.c_uint32(0)
 
@@ -417,7 +410,7 @@ def SLM_Ctrl_ReadWL(slm_number):
 
 
 def SLM_Ctrl_ReadT(slm_number):   #35
-    '''
+    """
     Read drive board and option board Celsius temperatures.
 
     Parameters
@@ -431,7 +424,7 @@ def SLM_Ctrl_ReadT(slm_number):   #35
         Driveboard temperature in °C.
     float
         Optionboard temperature in °C.
-    '''
+    """
     
     T1 = ct.c_ulong(0)
     T2 = ct.c_ulong(0)
