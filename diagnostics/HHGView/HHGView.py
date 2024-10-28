@@ -1,6 +1,5 @@
 import datetime
 import threading
-import time
 import tkinter as tk
 from collections import deque
 from datetime import date
@@ -8,8 +7,6 @@ from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
 from tkinter.scrolledtext import ScrolledText
 import pygame
-from scipy.optimize import curve_fit
-
 
 import cv2
 import h5py
@@ -25,7 +22,6 @@ from pylablib.devices import Andor
 from simple_pid import PID
 import hardware.zaber_binary.zaber_binary as zb
 
-from diagnostics.diagnostics_helpers import process_image
 import hardware.avaspec_driver._avs_py as avs
 import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
@@ -33,8 +29,6 @@ import diagnostics.diagnostics_helpers as help
 #from hardware.thorlabs_apt_driver import core as apt
 from ressources.calibration import waveplate_calibrator as cal
 from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator, slm_size, bit_depth
-
-
 
 class HHGView(object):
 
@@ -46,23 +40,9 @@ class HHGView(object):
         self.initialize_window()
         self.initialize_variables()
         self.initialize_frames()
-        self.initialize_mcp_frame()
-        self.initialize_spectrometer()
-        self.initialize_measurement_frame()
-        self.initialize_panel_1()
-        self.initialize_panel_2()
-
-
-        pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
-        self.scan_is_done_threading = threading.Event()
-
-        self.output_console = ScrolledText(self.win, height=10, state='disabled')
-        self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
 
         if self.ANDOR_cam is True:
             self.name_cam = 'ANDOR_cam'
-
-
 
         #self.open_calibrator_on_start()
 
@@ -72,33 +52,18 @@ class HHGView(object):
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def initialize_variables(self):
+        pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
+        self.scan_is_done_threading = threading.Event()
         self.pid = PID(0, 0, 0, setpoint=0)
         self.cam = None
         self.lens_green = self.parent.phase_refs_green[1]
         self.lens_red = self.parent.phase_refs_red[1]
         self.slm_lib = slm
         self.set_point = 0
-        self.WPG = None
-        self.WPR = None
-        self.cam_stage = None
-        self.delay_stage = None
-        self.lens_stage = None
-        self.MPC_wp = None
-        self.MPC_grating = None
         self.abort = 0
-        self.pid_stage = None
         self.pid_stage_initialized = False
         self.meas_has_started = False
         self.scan_is_done = True
-        self.ymin_harmonics = None
-        self.ymax_harmonics = None
-        self.ymin_harmonics_calibrate = None
-        self.ymax_harmonics_calibrate = None
-        self.current_harmonics_profile_max = None
-        self.current_harmonics_profile_min = None
-        self.current_harmonics_profile_max_calibrate = None
-        self.current_harmonics_profile_min_calibrate = None
-        self.background = None
         self.calibration_image = np.zeros([512, 512])
         self.calibration_image_update = np.zeros([512, 512])
         self.calibration_image_update_energy = np.zeros([512, 512])
@@ -107,29 +72,8 @@ class HHGView(object):
         self.roix = [0, 512]
         self.roiy = [0, 512]
         self.live_is_pressed = False
-        self.measurement_array = None
-        self.measurement_array_flat = None
-        self.measurement_treated_array = None
-        self.measurement_treated_array_flat = None
-        self.focus_image_array = None
-        self.focus_image_array_flat = None
         self.measurement_counter = 0
         self.measurement_running = 0
-        self.phase_array = None
-        self.phase_meas_array = None
-        self.phase_meas_array_flat = None
-        self.phase_std_array = None
-        self.phase_std_array_flat = None
-        self.ratio_array = None
-        self.pi_radius_array = None
-        self.red_power_array = None
-        self.green_power_array = None
-        self.mcp_voltage = None
-        self.time_stamps_array = None
-        self.time_stamps_array_flat = None
-        self.aquisition_time = None
-        self.averages = None
-        self.calibrator = None
         self.im_phase = np.zeros(1000)
         self.im_voltage = np.zeros(1000)
         self.stop_acquire = 0
@@ -141,425 +85,96 @@ class HHGView(object):
         #self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
         #self.autolog = self.saving_folder + '-' + 'auto-log.txt'
         self.autolog = './ressources/dummy_log'
-
         self.f = open(self.autolog, "a+")
 
     def initialize_frames(self):
-        self.frm_mid = ttk.Frame(self.win)
-        self.frm_bot = ttk.Frame(self.win)
-        self.frm_scans = ttk.Frame(self.win)
-        self.frm_mcp_all = ttk.Frame(self.win)
-        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
 
-        self.frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.frm_control = ttk.Frame(self.win)
+        self.frm_control.grid(row=0, column=1)
 
+        self.frm_mcpview = ttk.Frame(self.win)
+        self.frm_mcpview.grid(row=0, column=2)
 
-    def initialize_mcp_frame(self):
+        self.frm_spcview = ttk.Frame(self.win)
 
-        self.frm_notebook_mcp = ttk.Notebook(self.frm_mcp_all)
-        frm_mcp_image = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_calibrate = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_calibrate_energy = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_treated = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_analysis = ttk.Frame(self.frm_mcp_all)
+        self.initialize_control_panel_1()
+        self.initialize_control_panel_2()
+        self.initialize_control_panel_3()
 
-        self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
-        self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
-        self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
-        self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
-        self.frm_notebook_mcp.add(frm_mcp_analysis, text='Analysis')
-        self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.initialize_mcp_frame()
+        self.initialize_spc_frame()
 
-        frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
-        frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
-        frm_mcp_calibrate_options_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Options')
-        frm_mcp_calibrate_image_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Image')
-        frm_mcp_treated_options = ttk.LabelFrame(frm_mcp_treated, text='Options')
-        frm_mcp_treated_image = ttk.LabelFrame(frm_mcp_treated, text='Images')
-        frm_mcp_analysis_options = ttk.LabelFrame(frm_mcp_analysis, text='Options')
-        frm_mcp_analysis_results = ttk.LabelFrame(frm_mcp_analysis, text='Results')
+        self.output_console = ScrolledText(self.win, height=10, state='disabled')
+        self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
 
-        frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_calibrate_options_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_calibrate_image_energy.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_treated_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_treated_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_analysis_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        frm_mcp_analysis_results.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+    def initialize_control_panel_1(self):
+        frm_control_panel_1 = ttk.Frame(self.frm_control)
 
-        self.figrMCP = Figure(figsize=(5, 6), dpi=100)
-        self.axMCP = self.figrMCP.add_subplot(211)
-        self.axHarmonics = self.figrMCP.add_subplot(212)
-        self.axMCP.set_xlim(0, 1600)
-        self.axMCP.set_ylim(0, 1000)
-        self.axHarmonics.set_xlim(0, 1600)
-        self.figrMCP.tight_layout()
-        self.figrMCP.canvas.draw()
-        self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
-        self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
-        self.tk_widget_figrMCP.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.imgMCP.draw()
+        # Create buttons
+        self.but_mcp_single_image = tk.Button(frm_control_panel_1, text='Single Image', command=self.enabl_mcp_simple)
+        self.but_mcp_phase_scan = tk.Button(frm_control_panel_1, text='Phase Scan', command=self.enabl_mcp)
+        self.but_mcp_measurement_series = tk.Button(frm_control_panel_1, text='Measurement Series', command=self.enabl_mcp_all)
+        self.but_mcp_liveview = tk.Button(frm_control_panel_1, text='Live View', command=self.enabl_mcp_live)
+        self.but_hide_spcview = tk.Button(frm_control_panel_1, text='Hide/Show Spectrometer',
+                                          command=self.hide_show_spectrometer)
 
-        self.figrMCP_calibrate = Figure(figsize=(5, 4), dpi=100)
-        self.axMCP_calibrate = self.figrMCP_calibrate.add_subplot(211)
-        self.axHarmonics_calibrate = self.figrMCP_calibrate.add_subplot(212)
-        self.axMCP_calibrate.set_xlim(0, 515)
-        self.axMCP_calibrate.set_ylim(0, 515)
-        self.axHarmonics_calibrate.set_xlim(0, 515)
-        self.figrMCP_calibrate.tight_layout()
-        self.figrMCP_calibrate.canvas.draw()
-        self.imgMCP_calibrate = FigureCanvasTkAgg(self.figrMCP_calibrate, frm_mcp_calibrate_image)
-        self.tk_widget_figrMCP_calibrate = self.imgMCP_calibrate.get_tk_widget()
-        self.tk_widget_figrMCP_calibrate.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.imgMCP_calibrate.draw()
-
-        self.but_mcp_calibration = tk.Button(frm_mcp_calibrate_options, text="Load Test Image",
-                                             command=self.load_test_calibration_image_thread)
-        self.but_mcp_calibration.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_mcp_calibration_take = tk.Button(frm_mcp_calibrate_options, text="Take Image",
-                                                  command=self.load_test_calibration_image_take_thread)
-        self.but_mcp_calibration_take.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
-        self.var_mcp_calibration_shear_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calibration_shear_val.trace_add("write", self.update_calibration)
-        self.ent_mcp_calibration_shear_val = tk.Entry(frm_mcp_calibrate_options,
-                                                      textvariable=self.var_mcp_calibration_shear_val,
-                                                      width=4, validate='all')
-        lbl_mcp_calibration_shear_val.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_shear_val.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_ROIX_val = tk.Label(frm_mcp_calibrate_options, text="ROIX:")
-        self.var_mcp_calibration_ROIX1_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calibration_ROIX1_val.trace_add("write", self.update_calibration)
-        self.var_mcp_calibration_ROIX2_val = tk.StringVar(self.win, "512")
-        self.var_mcp_calibration_ROIX2_val.trace_add("write", self.update_calibration)
-        self.ent_mcp_calibration_ROIX1_val = tk.Entry(frm_mcp_calibrate_options,
-                                                      textvariable=self.var_mcp_calibration_ROIX1_val,
-                                                      width=4, validate='all')
-        self.ent_mcp_calibration_ROIX2_val = tk.Entry(frm_mcp_calibrate_options,
-                                                      textvariable=self.var_mcp_calibration_ROIX2_val,
-                                                      width=4, validate='all')
-        lbl_mcp_calibration_ROIX_val.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_ROIX1_val.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_ROIX2_val.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_ROIY_val = tk.Label(frm_mcp_calibrate_options, text="ROIY:")
-        self.var_mcp_calibration_ROIY1_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calibration_ROIY1_val.trace_add("write", self.update_calibration)
-        self.var_mcp_calibration_ROIY2_val = tk.StringVar(self.win, "512")
-        self.var_mcp_calibration_ROIY2_val.trace_add("write", self.update_calibration)
-        self.ent_mcp_calibration_ROIY1_val = tk.Entry(frm_mcp_calibrate_options,
-                                                      textvariable=self.var_mcp_calibration_ROIY1_val,
-                                                      width=4, validate='all')
-        self.ent_mcp_calibration_ROIY2_val = tk.Entry(frm_mcp_calibrate_options,
-                                                      textvariable=self.var_mcp_calibration_ROIY2_val,
-                                                      width=4, validate='all')
-        lbl_mcp_calibration_ROIY_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_ROIY1_val.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_ROIY2_val.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_background_val = tk.Label(frm_mcp_calibrate_options, text="Background:")
-        self.var_mcp_calibration_background_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calibration_background_val.trace_add("write", self.update_calibration)
-        self.ent_mcp_calibration_background_val = tk.Entry(frm_mcp_calibrate_options,
-                                                           textvariable=self.var_mcp_calibration_background_val,
-                                                           width=6, validate='all')
-        lbl_mcp_calibration_background_val.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_background_val.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
-
-        self.figrMCP_calibrate_energy = Figure(figsize=(5, 4), dpi=100)
-        self.axHarmonics_calibrate_energy1 = self.figrMCP_calibrate_energy.add_subplot(211)
-        self.axHarmonics_calibrate_energy2 = self.figrMCP_calibrate_energy.add_subplot(212)
-        self.axHarmonics_calibrate_energy1.set_xlim(0, 515)
-        self.axHarmonics_calibrate_energy2.set_xlim(0, 515)
-        self.figrMCP_calibrate_energy.tight_layout()
-        self.figrMCP_calibrate_energy.canvas.draw()
-        self.imgMCP_calibrate_energy = FigureCanvasTkAgg(self.figrMCP_calibrate_energy,
-                                                         frm_mcp_calibrate_image_energy)
-        self.tk_widget_figrMCP_calibrate_energy = self.imgMCP_calibrate_energy.get_tk_widget()
-        self.tk_widget_figrMCP_calibrate_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.imgMCP_calibrate_energy.draw()
-
-        lbl_mcp_calibration_energy_smooth = tk.Label(frm_mcp_calibrate_options_energy, text="Smooth:")
-        self.var_mcp_calibration_energy_smooth = tk.StringVar(self.win, "5")
-        self.var_mcp_calibration_energy_smooth.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_smooth = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                          textvariable=self.var_mcp_calibration_energy_smooth,
-                                                          width=4, validate='all')
-        lbl_mcp_calibration_energy_smooth.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_smooth.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_energy_prom = tk.Label(frm_mcp_calibrate_options_energy, text="Peak prominence:")
-        self.var_mcp_calibration_energy_prom = tk.StringVar(self.win, "20")
-        self.var_mcp_calibration_energy_prom.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_prom = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                        textvariable=self.var_mcp_calibration_energy_prom,
-                                                        width=6, validate='all')
-        lbl_mcp_calibration_energy_prom.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_prom.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_energy_ignore = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks from/to:")
-        self.var_mcp_calibration_energy_ignore1 = tk.StringVar(self.win, "0")
-        self.var_mcp_calibration_energy_ignore1.trace_add("write", self.update_calibration_energy)
-        self.var_mcp_calibration_energy_ignore2 = tk.StringVar(self.win, "512")
-        self.var_mcp_calibration_energy_ignore2.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_ignore1 = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                           textvariable=self.var_mcp_calibration_energy_ignore1,
-                                                           width=4, validate='all')
-        self.ent_mcp_calibration_energy_ignore2 = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                           textvariable=self.var_mcp_calibration_energy_ignore2,
-                                                           width=4, validate='all')
-        lbl_mcp_calibration_energy_ignore.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_energy_ignore_list = tk.Label(frm_mcp_calibrate_options_energy,
-                                                          text="Ignore peaks around:")
-        self.var_mcp_calibration_energy_ignore_list = tk.StringVar(self.win, "")
-        self.var_mcp_calibration_energy_ignore_list.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_ignore_list = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                               textvariable=self.var_mcp_calibration_energy_ignore_list,
-                                                               width=10)
-        lbl_mcp_calibration_energy_ignore_list.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_ignore_list.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_energy_firstharmonic = tk.Label(frm_mcp_calibrate_options_energy, text="First Harmonic")
-        self.var_mcp_calibration_energy_firstharmonic = tk.StringVar(self.win, "17")
-        self.var_mcp_calibration_energy_firstharmonic.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_firstharmonic = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                                 textvariable=self.var_mcp_calibration_energy_firstharmonic,
-                                                                 width=4, validate='all')
-        lbl_mcp_calibration_energy_firstharmonic.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_firstharmonic.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_calibration_energy_order = tk.Label(frm_mcp_calibrate_options_energy, text="Harmonic Spacing")
-        self.var_mcp_calibration_energy_order = tk.StringVar(self.win, "2")
-        self.var_mcp_calibration_energy_order.trace_add("write", self.update_calibration_energy)
-        self.ent_mcp_calibration_energy_order = tk.Entry(frm_mcp_calibrate_options_energy,
-                                                         textvariable=self.var_mcp_calibration_energy_order,
-                                                         width=4, validate='all')
-        lbl_mcp_calibration_energy_order.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp_calibration_energy_order.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-
-        self.figrMCP_treated = Figure(figsize=(5, 4), dpi=100)
-        self.axMCP_treated = self.figrMCP_treated.add_subplot(211)
-        self.axHarmonics_treated = self.figrMCP_treated.add_subplot(212)
-        # self.axMCP_treated.set_xlim(0, 515)
-        # self.axMCP_treated.set_ylim(0, 515)
-        # self.axHarmonics_treated.set_xlim(0, 515)
-        self.figrMCP_treated.tight_layout()
-        self.figrMCP_treated.canvas.draw()
-        self.imgMCP_treated = FigureCanvasTkAgg(self.figrMCP_treated, frm_mcp_treated_image)
-        self.tk_widget_figrMCP_treated = self.imgMCP_treated.get_tk_widget()
-        self.tk_widget_figrMCP_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.imgMCP_treated.draw()
-
-        self.var_show_treated = tk.IntVar()
-        self.cb_show_treated = tk.Checkbutton(frm_mcp_treated_options, text='Show Treated Image Live',
-                                              variable=self.var_show_treated, onvalue=1,
-                                              offvalue=0,
-                                              command=None)
-        self.cb_show_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.but_show_treated_image = tk.Button(frm_mcp_treated_options, text="Show Treated Image",
-                                                command=self.treat_image_test)
-
-        self.but_export_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
-                                                               text="Export treatment parameters",
-                                                               command=self.export_mcp_treatment_parameters)
-        self.but_import_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
-                                                               text="Import treatment parameters",
-                                                               command=self.import_mcp_treatment_parameters)
-        self.but_show_treated_image.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_export_image_treatment_parameters.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.but_import_image_treatment_parameters.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-
-        # analysis frame options
-        self.open_h5_file_analysis = tk.Button(frm_mcp_analysis_options, text='Open h5 file',
-                                               command=self.open_h5_file_analysis)
-        self.lbl_mcp_analysis_info = tk.Label(frm_mcp_analysis_options, text=" ")
-        self.var_log_scale = tk.IntVar()
-        self.cb_log_scale = tk.Checkbutton(frm_mcp_analysis_options, text='Log Scale',
-                                           variable=self.var_log_scale, onvalue=1,
-                                           offvalue=0)
-        self.var_log_scale.trace_add("write", self.update_mcp_analysis)
-
-        lbl_mcp_analysis_harmonic_order = tk.Label(frm_mcp_analysis_options, text="Look at Harmonic Order: ")
-        lbl_mcp_analysis_energy_lim = tk.Label(frm_mcp_analysis_options, text="Energy Axis (eV): ")
-        self.var_mcp_analysis_harmonic_order = tk.StringVar(self.win, "21")
-        self.var_mcp_analysis_harmonic_order.trace_add("write", self.update_mcp_analysis)
-        self.ent_mcp_analysis_harmonic_order = tk.Entry(frm_mcp_analysis_options,
-                                                        textvariable=self.var_mcp_analysis_harmonic_order,
-                                                        width=4, validate='all')
-
-        self.var_mcp_analysis_emin = tk.StringVar(self.win, "20")
-        self.var_mcp_analysis_emin.trace_add("write", self.update_mcp_analysis)
-        self.var_mcp_analysis_emax = tk.StringVar(self.win, "40")
-        self.var_mcp_analysis_emax.trace_add("write", self.update_mcp_analysis)
-
-        self.ent_mcp_analysis_emax = tk.Entry(frm_mcp_analysis_options,
-                                              textvariable=self.var_mcp_analysis_emax,
-                                              width=4, validate='all')
-
-        self.ent_mcp_analysis_emin = tk.Entry(frm_mcp_analysis_options,
-                                              textvariable=self.var_mcp_analysis_emin,
-                                              width=4, validate='all')
-
-        self.open_h5_file_analysis.grid(row=0, column=0)
-        lbl_mcp_analysis_harmonic_order.grid(row=0, column=1)
-        self.lbl_mcp_analysis_info.grid(row=1, column=0)
-        self.ent_mcp_analysis_harmonic_order.grid(row=0, column=2)
-        self.cb_log_scale.grid(row=1, column=2)
-        lbl_mcp_analysis_energy_lim.grid(row=2, column=0)
-        self.ent_mcp_analysis_emin.grid(row=2, column=1)
-        self.ent_mcp_analysis_emax.grid(row=2, column=2)
-
-        # analysis frame
-        self.figrAnalysis = Figure(figsize=(5, 4), dpi=100)
-        self.axAnalysis_1 = self.figrAnalysis.add_subplot(221)
-        self.axAnalysis_2 = self.figrAnalysis.add_subplot(222)
-        self.axAnalysis_3 = self.figrAnalysis.add_subplot(223)
-        self.axAnalysis_4 = self.figrAnalysis.add_subplot(224)
-        self.figrAnalysis.tight_layout()
-        self.figrAnalysis.canvas.draw()
-        self.canvas_results = FigureCanvasTkAgg(self.figrAnalysis, frm_mcp_analysis_results)
-        self.canvas_widget = self.canvas_results.get_tk_widget()
-        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
-
-        # Draw canvas
-        self.canvas_results.draw()
-
-        frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
-        # setting up frm_mcp_options
-        self.but_fixyaxis = tk.Button(frm_mcp_options, text='Update Y Axis!', command=self.fixyaxis)
-        self.var_fixyaxis = tk.IntVar()
-        self.cb_fixyaxis = tk.Checkbutton(frm_mcp_options, text='Fix Y axis', variable=self.var_fixyaxis, onvalue=1,
-                                          offvalue=0,
-                                          command=None)
-
-        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
-        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
-                                               command=self.remove_background)
-
-        frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_fixyaxis.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
-    def initialize_measurement_frame(self):
-        frm_measure = ttk.LabelFrame(self.frm_scans, text='Measurement')
-        self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
-        self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
-        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
-        self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
-
-        self.but_hide_twocolor = tk.Button(frm_measure, text='Hide/Show Spectrometer',
-                                           command=self.hide_show_spectrometer)
-        self.frm_plt_visible = False
-
+        # Initialize others commands
         self.var_background = tk.IntVar()
-        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
-                                            offvalue=0,
-                                            command=None)
+        self.cb_background = tk.Checkbutton(frm_control_panel_1, text='Background', variable=self.var_background)
+
         self.var_saveh5 = tk.IntVar()
-        self.cb_saveh5 = tk.Checkbutton(frm_measure, text='Save as h5', variable=self.var_saveh5, onvalue=1,
-                                        offvalue=0,
-                                        command=None)
+        self.cb_saveh5 = tk.Checkbutton(frm_control_panel_1, text='Save as h5', variable=self.var_saveh5)
 
         self.var_export_treated_image = tk.IntVar()
-        self.cb_export_treated_image = tk.Checkbutton(frm_measure, text='Export Treated Image',
-                                                      variable=self.var_export_treated_image, onvalue=1,
-                                                      offvalue=0,
-                                                      command=None)
+        self.cb_export_treated_image = tk.Checkbutton(frm_control_panel_1, text='Export Treated Image',
+                                                      variable=self.var_export_treated_image)
 
-        lbl_avgs = tk.Label(frm_measure, text='Averages:')
-        self.strvar_avgs = tk.StringVar(self.win, '1')
-        self.ent_avgs = tk.Entry(
-            frm_measure, width=5, validate='all',
-            textvariable=self.strvar_avgs)
+        # Dictionary to hold StringVars, Entries, and Labels
+        self.mcp_controls = {
+            'mcp_voltage': {'label': 'Neg. MCP value (V):', 'default': '-1400'},
+            'mcp_cam_choice': {'label': 'MCP Camera selected :', 'default': '', 'widget': 'combobox'},
+            'mcp_avgs': {'label': 'Averages:', 'default': '1'},
+            'mcp_exposure_time': {'label': 'Exposure (us):', 'default': '100000'},
+            'comment': {'label': 'Comment:', 'default': ''}
+        }
 
-        lbl_mcp_cam_choice = tk.Label(frm_measure, text='MCP Camera selected :')
-        self.strvar_mcp_cam_choice = tk.StringVar(self.win, '')
-        self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
-        self.cbox_mcp_cam_choice['values'] = ('Andor')
+        for i, (key, properties) in enumerate(self.mcp_controls.items()):
+            self.mcp_controls[key]['var'] = tk.StringVar(self.win, properties['default'])
 
-        lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
-        self.strvar_exposure_time = tk.StringVar(self.win, '100000')
-        self.ent_exposure_time = tk.Entry(
-            frm_measure, width=25, validate='all',
-            textvariable=self.strvar_exposure_time)
+            label = tk.Label(frm_control_panel_1, text=properties['label'])
+            if properties.get('widget') == 'combobox':
+                self.mcp_controls[key]['entry'] = ttk.Combobox(frm_control_panel_1, textvariable=self.mcp_controls[key]['var'])
+                self.mcp_controls[key]['entry']['values'] = ('Andor',)
+                self.mcp_controls[key]['entry'].bind("<<ComboboxSelected>>", self.change_mcp_cam)
+            else:
+                self.mcp_controls[key]['entry'] = tk.Entry(frm_control_panel_1, textvariable=self.mcp_controls[key]['var'])
 
-        lbl_temperature = tk.Label(frm_measure, text='Temp (C):')
-        lbl_temperature_status = tk.Label(frm_measure, text='Status:')
+            label.grid(row=i, column=0, padx=2, pady=2, sticky='nsew')
+            self.mcp_controls[key]['entry'].grid(row=i, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_temperature = tk.StringVar(self.win, 'none')
-        self.strvar_temperature_status = tk.StringVar(self.win, 'none')
-        lbl_actual_temperature = tk.Label(frm_measure, textvariable=self.strvar_temperature)
-        lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
+        frm_control_panel_1.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
-        lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
-        self.strvar_mcp = tk.StringVar(self.win, '-1400')
-        self.ent_mcp = tk.Entry(
-            frm_measure, width=25, validate='none',
-            textvariable=self.strvar_mcp)
+        # Place buttons
+        self.but_mcp_single_image.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_mcp_phase_scan.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_mcp_measurement_series.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_mcp_liveview.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_hide_spcview.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
-        lbl_comment = tk.Label(frm_measure, text='Comment:')
-        self.strvar_comment = tk.StringVar(self.win, '')
-        self.ent_comment = tk.Entry(
-            frm_measure, width=25, validate='none',
-            textvariable=self.strvar_comment)
-
-        frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_cam_choice.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.cbox_mcp_cam_choice.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_avgs.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_avgs.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_exposure_time.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_exposure_time.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_temperature.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_temperature_status.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_actual_temperature.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        lbl_actual_temperature_status.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-
-        lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
-
+        # Place checkbuttons
         self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
         self.cb_saveh5.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
         self.cb_export_treated_image.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
 
-        self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_hide_twocolor.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+    def initialize_control_panel_2(self):
 
-        self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
+        self.frm_control_panel_2 = ttk.Notebook(self.frm_control)
+        self.frm_stage = ttk.Frame(self.frm_control)
+        frm_wp_power_cal = ttk.Frame(self.frm_control)
 
-    def initialize_panel_1(self):
-
-        self.frm_notebook_waveplate = ttk.Notebook(self.frm_scans)
-        self.frm_stage = ttk.Frame(self.frm_scans)
-        frm_wp_power_cal = ttk.Frame(self.frm_scans)
-        frm_calculator = ttk.Frame(self.frm_scans)
-
-        self.frm_notebook_waveplate.add(self.frm_stage, text="Stage control")
-        self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
-        self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
-        self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_control_panel_2.add(self.frm_stage, text="Stage control")
+        self.frm_control_panel_2.add(frm_wp_power_cal, text="Power calibration")
+        self.frm_control_panel_2.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
 
         lbl_Stage = tk.Label(self.frm_stage, text='Stage')
@@ -729,54 +344,6 @@ class HHGView(object):
             frm_wp_power_cal, width=8, validate='all',
             textvariable=self.strvar_green_current_power)
 
-        # calcualtor
-        lbl_pulse_length = tk.Label(frm_calculator, text='Pulse length (fs):')
-        self.strvar_pulse_length = tk.StringVar(self.win, '180')
-        self.ent_pulse_length = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_pulse_length)
-
-        lbl_rep_rate = tk.Label(frm_calculator, text='Repetition rate (kHz):')
-        self.strvar_rep_rate = tk.StringVar(self.win, '10')
-        self.ent_rep_rate = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_rep_rate)
-
-        lbl_power = tk.Label(frm_calculator, text='Power (W):')
-        self.strvar_power = tk.StringVar(self.win, '1')
-        self.ent_power = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_power)
-
-        lbl_beam_radius = tk.Label(frm_calculator, text='Beam radius (µm):')
-        self.strvar_beam_radius = tk.StringVar(self.win, '30')
-        self.ent_beam_radius = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_beam_radius)
-
-        lbl_pulse_energy = tk.Label(frm_calculator, text='Pulse energy (µJ):')
-        self.strvar_pulse_energy = tk.StringVar(self.win, '')
-        self.ent_pulse_energy = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_pulse_energy)
-
-        lbl_peak_intensity = tk.Label(frm_calculator, text='Peak intensity (1e14 W/cm2):')
-        self.strvar_peak_intensity = tk.StringVar(self.win, '')
-        self.ent_peak_intensity = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_peak_intensity)
-
-        lbl_hhg_cutoff = tk.Label(frm_calculator, text='HHG cutoff (eV, q):')
-        self.strvar_hhg_cutoff = tk.StringVar(self.win, '')
-        self.ent_hhg_cutoff = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_hhg_cutoff)
-
-        self.strvar_hhg_cutoff_q = tk.StringVar(self.win, '')
-        self.ent_hhg_cutoff_q = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_hhg_cutoff_q)
-
         self.but_lens_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_lens_stage)
         self.but_lens_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_lens_stage)
         self.but_lens_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_lens_stage)
@@ -860,43 +427,18 @@ class HHGView(object):
         lbl_green_current_power.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
         self.ent_green_current_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        # setting up frm_calculator
+    def initialize_control_panel_3(self):
 
-        lbl_pulse_length.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_pulse_length.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_rep_rate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_rep_rate.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_power.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_power.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_beam_radius.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_beam_radius.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        self.but_calculate = tk.Button(frm_calculator, text='Calculate',
-                                       command=self.calculate_energy_and_peak_intensity)
-        self.but_calculate.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_pulse_energy.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_pulse_energy.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_peak_intensity.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_peak_intensity.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_hhg_cutoff.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_hhg_cutoff.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_hhg_cutoff_q.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-
-
-
-    def initialize_panel_2(self):
-
-        self.frm_notebook_scans = ttk.Notebook(self.frm_scans)
-        frm_wp_scans = ttk.Frame(self.frm_scans)
-        frm_phase_scan = ttk.Frame(self.frm_scans)
-        frm_mpc_campaign = ttk.Frame(self.frm_scans)
-        frm_beam_shaping = ttk.Frame(self.frm_scans)
-        self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
-        self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
-        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
-        self.frm_notebook_scans.add(frm_beam_shaping, text="Beam Shaping scan")
-        self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_control_panel_3 = ttk.Notebook(self.frm_control)
+        frm_wp_scans = ttk.Frame(self.frm_control)
+        frm_phase_scan = ttk.Frame(self.frm_control)
+        frm_mpc_campaign = ttk.Frame(self.frm_control)
+        frm_beam_shaping = ttk.Frame(self.frm_control)
+        self.frm_control_panel_3.add(frm_wp_scans, text="Power scan")
+        self.frm_control_panel_3.add(frm_phase_scan, text="Two-color phase scan")
+        self.frm_control_panel_3.add(frm_mpc_campaign, text="MPC")
+        self.frm_control_panel_3.add(frm_beam_shaping, text="Beam Shaping scan")
+        self.frm_control_panel_3.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
         frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
         frm_mpc_campaign_stages.grid(row=0, column=0)
@@ -1407,7 +949,302 @@ class HHGView(object):
         self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
         self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
-    def initialize_spectrometer(self):
+    def initialize_mcp_frame(self):
+
+        self.frm_notebook_mcp = ttk.Notebook(self.frm_mcpview)
+        frm_mcp_image = ttk.Frame(self.frm_mcpview)
+        frm_mcp_calibrate = ttk.Frame(self.frm_mcpview)
+        frm_mcp_calibrate_energy = ttk.Frame(self.frm_mcpview)
+        frm_mcp_treated = ttk.Frame(self.frm_mcpview)
+        frm_mcp_analysis = ttk.Frame(self.frm_mcpview)
+
+        self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
+        self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
+        self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
+        self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
+        self.frm_notebook_mcp.add(frm_mcp_analysis, text='Analysis')
+        self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+        frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
+        frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
+        frm_mcp_calibrate_options_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Options')
+        frm_mcp_calibrate_image_energy = ttk.LabelFrame(frm_mcp_calibrate_energy, text='Calibration Image')
+        frm_mcp_treated_options = ttk.LabelFrame(frm_mcp_treated, text='Options')
+        frm_mcp_treated_image = ttk.LabelFrame(frm_mcp_treated, text='Images')
+        frm_mcp_analysis_options = ttk.LabelFrame(frm_mcp_analysis, text='Options')
+        frm_mcp_analysis_results = ttk.LabelFrame(frm_mcp_analysis, text='Results')
+
+        frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_options_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_calibrate_image_energy.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_treated_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_treated_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_analysis_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        frm_mcp_analysis_results.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.figrMCP = Figure(figsize=(5, 6), dpi=100)
+        self.axMCP = self.figrMCP.add_subplot(211)
+        self.axHarmonics = self.figrMCP.add_subplot(212)
+        self.axMCP.set_xlim(0, 1600)
+        self.axMCP.set_ylim(0, 1000)
+        self.axHarmonics.set_xlim(0, 1600)
+        self.figrMCP.tight_layout()
+        self.figrMCP.canvas.draw()
+        self.imgMCP = FigureCanvasTkAgg(self.figrMCP, frm_mcp_image)
+        self.tk_widget_figrMCP = self.imgMCP.get_tk_widget()
+        self.tk_widget_figrMCP.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP.draw()
+
+        self.figrMCP_calibrate = Figure(figsize=(5, 4), dpi=100)
+        self.axMCP_calibrate = self.figrMCP_calibrate.add_subplot(211)
+        self.axHarmonics_calibrate = self.figrMCP_calibrate.add_subplot(212)
+        self.axMCP_calibrate.set_xlim(0, 515)
+        self.axMCP_calibrate.set_ylim(0, 515)
+        self.axHarmonics_calibrate.set_xlim(0, 515)
+        self.figrMCP_calibrate.tight_layout()
+        self.figrMCP_calibrate.canvas.draw()
+        self.imgMCP_calibrate = FigureCanvasTkAgg(self.figrMCP_calibrate, frm_mcp_calibrate_image)
+        self.tk_widget_figrMCP_calibrate = self.imgMCP_calibrate.get_tk_widget()
+        self.tk_widget_figrMCP_calibrate.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_calibrate.draw()
+
+        self.but_mcp_calibration = tk.Button(frm_mcp_calibrate_options, text="Load Test Image",
+                                             command=self.load_test_calibration_image_thread)
+        self.but_mcp_calibration.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_mcp_calibration_take = tk.Button(frm_mcp_calibrate_options, text="Take Image",
+                                                  command=self.load_test_calibration_image_take_thread)
+        self.but_mcp_calibration_take.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
+        self.var_mcp_calibration_shear_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_shear_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_shear_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_shear_val,
+                                                      width=4, validate='all')
+        lbl_mcp_calibration_shear_val.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_shear_val.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_ROIX_val = tk.Label(frm_mcp_calibrate_options, text="ROIX:")
+        self.var_mcp_calibration_ROIX1_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_ROIX1_val.trace_add("write", self.update_calibration)
+        self.var_mcp_calibration_ROIX2_val = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_ROIX2_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_ROIX1_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIX1_val,
+                                                      width=4, validate='all')
+        self.ent_mcp_calibration_ROIX2_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIX2_val,
+                                                      width=4, validate='all')
+        lbl_mcp_calibration_ROIX_val.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIX1_val.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIX2_val.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_ROIY_val = tk.Label(frm_mcp_calibrate_options, text="ROIY:")
+        self.var_mcp_calibration_ROIY1_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_ROIY1_val.trace_add("write", self.update_calibration)
+        self.var_mcp_calibration_ROIY2_val = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_ROIY2_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_ROIY1_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIY1_val,
+                                                      width=4, validate='all')
+        self.ent_mcp_calibration_ROIY2_val = tk.Entry(frm_mcp_calibrate_options,
+                                                      textvariable=self.var_mcp_calibration_ROIY2_val,
+                                                      width=4, validate='all')
+        lbl_mcp_calibration_ROIY_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIY1_val.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_ROIY2_val.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_background_val = tk.Label(frm_mcp_calibrate_options, text="Background:")
+        self.var_mcp_calibration_background_val = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_background_val.trace_add("write", self.update_calibration)
+        self.ent_mcp_calibration_background_val = tk.Entry(frm_mcp_calibrate_options,
+                                                           textvariable=self.var_mcp_calibration_background_val,
+                                                           width=6, validate='all')
+        lbl_mcp_calibration_background_val.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_background_val.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.figrMCP_calibrate_energy = Figure(figsize=(5, 4), dpi=100)
+        self.axHarmonics_calibrate_energy1 = self.figrMCP_calibrate_energy.add_subplot(211)
+        self.axHarmonics_calibrate_energy2 = self.figrMCP_calibrate_energy.add_subplot(212)
+        self.axHarmonics_calibrate_energy1.set_xlim(0, 515)
+        self.axHarmonics_calibrate_energy2.set_xlim(0, 515)
+        self.figrMCP_calibrate_energy.tight_layout()
+        self.figrMCP_calibrate_energy.canvas.draw()
+        self.imgMCP_calibrate_energy = FigureCanvasTkAgg(self.figrMCP_calibrate_energy,
+                                                         frm_mcp_calibrate_image_energy)
+        self.tk_widget_figrMCP_calibrate_energy = self.imgMCP_calibrate_energy.get_tk_widget()
+        self.tk_widget_figrMCP_calibrate_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_calibrate_energy.draw()
+
+        lbl_mcp_calibration_energy_smooth = tk.Label(frm_mcp_calibrate_options_energy, text="Smooth:")
+        self.var_mcp_calibration_energy_smooth = tk.StringVar(self.win, "5")
+        self.var_mcp_calibration_energy_smooth.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_smooth = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                          textvariable=self.var_mcp_calibration_energy_smooth,
+                                                          width=4, validate='all')
+        lbl_mcp_calibration_energy_smooth.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_smooth.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_prom = tk.Label(frm_mcp_calibrate_options_energy, text="Peak prominence:")
+        self.var_mcp_calibration_energy_prom = tk.StringVar(self.win, "20")
+        self.var_mcp_calibration_energy_prom.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_prom = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                        textvariable=self.var_mcp_calibration_energy_prom,
+                                                        width=6, validate='all')
+        lbl_mcp_calibration_energy_prom.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_prom.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_ignore = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks from/to:")
+        self.var_mcp_calibration_energy_ignore1 = tk.StringVar(self.win, "0")
+        self.var_mcp_calibration_energy_ignore1.trace_add("write", self.update_calibration_energy)
+        self.var_mcp_calibration_energy_ignore2 = tk.StringVar(self.win, "512")
+        self.var_mcp_calibration_energy_ignore2.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_ignore1 = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                           textvariable=self.var_mcp_calibration_energy_ignore1,
+                                                           width=4, validate='all')
+        self.ent_mcp_calibration_energy_ignore2 = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                           textvariable=self.var_mcp_calibration_energy_ignore2,
+                                                           width=4, validate='all')
+        lbl_mcp_calibration_energy_ignore.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_ignore_list = tk.Label(frm_mcp_calibrate_options_energy,
+                                                          text="Ignore peaks around:")
+        self.var_mcp_calibration_energy_ignore_list = tk.StringVar(self.win, "")
+        self.var_mcp_calibration_energy_ignore_list.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_ignore_list = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                               textvariable=self.var_mcp_calibration_energy_ignore_list,
+                                                               width=10)
+        lbl_mcp_calibration_energy_ignore_list.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_ignore_list.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_firstharmonic = tk.Label(frm_mcp_calibrate_options_energy, text="First Harmonic")
+        self.var_mcp_calibration_energy_firstharmonic = tk.StringVar(self.win, "17")
+        self.var_mcp_calibration_energy_firstharmonic.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_firstharmonic = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                                 textvariable=self.var_mcp_calibration_energy_firstharmonic,
+                                                                 width=4, validate='all')
+        lbl_mcp_calibration_energy_firstharmonic.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_firstharmonic.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_calibration_energy_order = tk.Label(frm_mcp_calibrate_options_energy, text="Harmonic Spacing")
+        self.var_mcp_calibration_energy_order = tk.StringVar(self.win, "2")
+        self.var_mcp_calibration_energy_order.trace_add("write", self.update_calibration_energy)
+        self.ent_mcp_calibration_energy_order = tk.Entry(frm_mcp_calibrate_options_energy,
+                                                         textvariable=self.var_mcp_calibration_energy_order,
+                                                         width=4, validate='all')
+        lbl_mcp_calibration_energy_order.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp_calibration_energy_order.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.figrMCP_treated = Figure(figsize=(5, 4), dpi=100)
+        self.axMCP_treated = self.figrMCP_treated.add_subplot(211)
+        self.axHarmonics_treated = self.figrMCP_treated.add_subplot(212)
+        # self.axMCP_treated.set_xlim(0, 515)
+        # self.axMCP_treated.set_ylim(0, 515)
+        # self.axHarmonics_treated.set_xlim(0, 515)
+        self.figrMCP_treated.tight_layout()
+        self.figrMCP_treated.canvas.draw()
+        self.imgMCP_treated = FigureCanvasTkAgg(self.figrMCP_treated, frm_mcp_treated_image)
+        self.tk_widget_figrMCP_treated = self.imgMCP_treated.get_tk_widget()
+        self.tk_widget_figrMCP_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.imgMCP_treated.draw()
+
+        self.var_show_treated = tk.IntVar()
+        self.cb_show_treated = tk.Checkbutton(frm_mcp_treated_options, text='Show Treated Image Live',
+                                              variable=self.var_show_treated, onvalue=1,
+                                              offvalue=0,
+                                              command=None)
+        self.cb_show_treated.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.but_show_treated_image = tk.Button(frm_mcp_treated_options, text="Show Treated Image",
+                                                command=self.treat_image_test)
+
+        self.but_export_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
+                                                               text="Export treatment parameters",
+                                                               command=self.export_mcp_treatment_parameters)
+        self.but_import_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
+                                                               text="Import treatment parameters",
+                                                               command=self.import_mcp_treatment_parameters)
+        self.but_show_treated_image.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_export_image_treatment_parameters.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.but_import_image_treatment_parameters.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+
+        # analysis frame options
+        self.open_h5_file_analysis = tk.Button(frm_mcp_analysis_options, text='Open h5 file',
+                                               command=self.open_h5_file_analysis)
+        self.lbl_mcp_analysis_info = tk.Label(frm_mcp_analysis_options, text=" ")
+        self.var_log_scale = tk.IntVar()
+        self.cb_log_scale = tk.Checkbutton(frm_mcp_analysis_options, text='Log Scale',
+                                           variable=self.var_log_scale, onvalue=1,
+                                           offvalue=0)
+        self.var_log_scale.trace_add("write", self.update_mcp_analysis)
+
+        lbl_mcp_analysis_harmonic_order = tk.Label(frm_mcp_analysis_options, text="Look at Harmonic Order: ")
+        lbl_mcp_analysis_energy_lim = tk.Label(frm_mcp_analysis_options, text="Energy Axis (eV): ")
+        self.var_mcp_analysis_harmonic_order = tk.StringVar(self.win, "21")
+        self.var_mcp_analysis_harmonic_order.trace_add("write", self.update_mcp_analysis)
+        self.ent_mcp_analysis_harmonic_order = tk.Entry(frm_mcp_analysis_options,
+                                                        textvariable=self.var_mcp_analysis_harmonic_order,
+                                                        width=4, validate='all')
+
+        self.var_mcp_analysis_emin = tk.StringVar(self.win, "20")
+        self.var_mcp_analysis_emin.trace_add("write", self.update_mcp_analysis)
+        self.var_mcp_analysis_emax = tk.StringVar(self.win, "40")
+        self.var_mcp_analysis_emax.trace_add("write", self.update_mcp_analysis)
+
+        self.ent_mcp_analysis_emax = tk.Entry(frm_mcp_analysis_options,
+                                              textvariable=self.var_mcp_analysis_emax,
+                                              width=4, validate='all')
+
+        self.ent_mcp_analysis_emin = tk.Entry(frm_mcp_analysis_options,
+                                              textvariable=self.var_mcp_analysis_emin,
+                                              width=4, validate='all')
+
+        self.open_h5_file_analysis.grid(row=0, column=0)
+        lbl_mcp_analysis_harmonic_order.grid(row=0, column=1)
+        self.lbl_mcp_analysis_info.grid(row=1, column=0)
+        self.ent_mcp_analysis_harmonic_order.grid(row=0, column=2)
+        self.cb_log_scale.grid(row=1, column=2)
+        lbl_mcp_analysis_energy_lim.grid(row=2, column=0)
+        self.ent_mcp_analysis_emin.grid(row=2, column=1)
+        self.ent_mcp_analysis_emax.grid(row=2, column=2)
+
+        # analysis frame
+        self.figrAnalysis = Figure(figsize=(5, 4), dpi=100)
+        self.axAnalysis_1 = self.figrAnalysis.add_subplot(221)
+        self.axAnalysis_2 = self.figrAnalysis.add_subplot(222)
+        self.axAnalysis_3 = self.figrAnalysis.add_subplot(223)
+        self.axAnalysis_4 = self.figrAnalysis.add_subplot(224)
+        self.figrAnalysis.tight_layout()
+        self.figrAnalysis.canvas.draw()
+        self.canvas_results = FigureCanvasTkAgg(self.figrAnalysis, frm_mcp_analysis_results)
+        self.canvas_widget = self.canvas_results.get_tk_widget()
+        self.canvas_widget.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Draw canvas
+        self.canvas_results.draw()
+
+        frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
+        # setting up frm_mcp_options
+        self.but_fixyaxis = tk.Button(frm_mcp_options, text='Update Y Axis!', command=self.fixyaxis)
+        self.var_fixyaxis = tk.IntVar()
+        self.cb_fixyaxis = tk.Checkbutton(frm_mcp_options, text='Fix Y axis', variable=self.var_fixyaxis, onvalue=1,
+                                          offvalue=0,
+                                          command=None)
+
+        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
+        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
+                                               command=self.remove_background)
+
+        frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_fixyaxis.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+
+    def initialize_spc_frame(self):
         self.frm_notebook_param_spc = ttk.Notebook(self.win)
         frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
         frm_spc_export = ttk.Frame(self.frm_notebook_param_spc)
@@ -1622,7 +1459,7 @@ class HHGView(object):
         self.ax2r.set_ylim(0, .6)
         self.figr.tight_layout()
         self.figr.canvas.draw()
-        self.img1r = FigureCanvasTkAgg(self.figr, self.frm_plt)
+        self.img1r = FigureCanvasTkAgg(self.figr, self.frm_spcview)
         self.tk_widget_figr = self.img1r.get_tk_widget()
         self.tk_widget_figr.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.img1r.draw()
@@ -1638,7 +1475,7 @@ class HHGView(object):
         self.ax1p.grid()
         self.figp.tight_layout()
         self.figp.canvas.draw()
-        self.img1p = FigureCanvasTkAgg(self.figp, self.frm_plt)
+        self.img1p = FigureCanvasTkAgg(self.figp, self.frm_spcview)
         self.tk_widget_figp = self.img1p.get_tk_widget()
         self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.img1p.draw()
@@ -1652,20 +1489,35 @@ class HHGView(object):
         self.ax1V.grid()
         self.figV.tight_layout()
         self.figV.canvas.draw()
-        self.img1V = FigureCanvasTkAgg(self.figV, self.frm_plt)
+        self.img1V = FigureCanvasTkAgg(self.figV, self.frm_spcview)
         self.tk_widget_figV = self.img1V.get_tk_widget()
         self.tk_widget_figV.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
         self.img1V.draw()
         self.ax1V_blit = self.figV.canvas.copy_from_bbox(self.ax1V.bbox)
 
+    def create_label(self, parent, text, row, column):
+        label = tk.Label(parent, text=text)
+        label.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
+        return label
+
+    def create_entry(self, parent, text_var, row, column):
+        entry = tk.Entry(parent, width=5, textvariable=text_var)
+        entry.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
+        return entry
+
+    def create_button(self, parent, text, command, row, column):
+        button = tk.Button(parent, text=text, command=command)
+        button.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
+        return button
+
     def hide_show_spectrometer(self):
-        if self.frm_plt_visible:
-            self.frm_plt.grid_remove()
+        if self.frm_spcview_visible:
+            self.frm_spcview.grid_remove()
             self.frm_notebook_param_spc.grid_remove()
         else:
-            self.frm_plt.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+            self.frm_spcview.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
             self.frm_notebook_param_spc.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_plt_visible = not self.frm_plt_visible
+        self.frm_spcview_visible = not self.frm_spcview_visible
 
     def insert_message(self, message):
         self.output_console.configure(state='normal')
@@ -1711,98 +1563,6 @@ class HHGView(object):
         zmax = (self.positions[-1] - zero_position) * 1e-3
         self.z_range = np.linspace(zmin, zmax, len(self.positions))
         self.params_m2_x, self.params_m2_y = self.get_M_sq(som_x, som_y, self.z_range, 1030e-9, 3.45e-6)
-
-    def set_target_intensity(self):
-
-        def beam_quality_factor_fit(z, w0, M2, z0):
-            return w0 * np.sqrt(1 + (z - z0) ** 2 * (M2 * 1030e-9 / (np.pi * w0 ** 2)) ** 2)
-
-        z_fit = np.linspace(self.z_range[0], self.z_range[-1], int(self.ent_p_steps.get()))
-
-        C = 2 * 0.94 / (
-                (float(self.ent_pulse_length_m2.get()) * 1e-15 * np.pi) * (float(self.ent_rep_rate_m2.get()) * 1e3))
-        self.power_x_list = float(self.ent_target_intensity.get()) * 1e18 / C * beam_quality_factor_fit(z_fit,
-                                                                                                        self.params_m2_x[
-                                                                                                            0],
-                                                                                                        self.params_m2_x[
-                                                                                                            1],
-                                                                                                        self.params_m2_x[
-                                                                                                            2]) ** 2  # W/m2
-        self.power_y_list = float(self.ent_target_intensity.get()) * 1e18 / C * beam_quality_factor_fit(z_fit,
-                                                                                                        self.params_m2_y[
-                                                                                                            0],
-                                                                                                        self.params_m2_y[
-                                                                                                            1],
-                                                                                                        self.params_m2_y[
-                                                                                                            2]) ** 2
-
-        # I_test_x = C * Px / beam_quality_factor_fit(z_fit, self.params_m2_x[0], self.params_m2_x[1], self.params_m2_x[2]) ** 2
-        # I_test_y = C * Py / beam_quality_factor_fit(z_fit, self.params_m2_y[0], self.params_m2_y[1], self.params_m2_y[2]) ** 2
-
-        self.ax2r_m2.clear()
-        self.ax2r_m2.grid(True)
-
-        self.ax2r_m2.plot(z_fit, self.power_x_list, linestyle='None', marker='o', color='blue')
-        self.ax2r_m2.plot(z_fit, self.power_y_list, linestyle='None', marker='x', color='red')
-
-        self.ax2r_m2.set_ylabel('P (W)')
-        self.ax2r_m2.set_xlabel('x [mm]')
-        self.ax2r_m2.legend()
-        self.figr_m2.tight_layout()
-        self.img1r_m2.draw()
-
-    def get_M_sq(self, som_x, som_y, z, lambda_0, dx):
-        def beam_quality_factor_fit(z, w0, M2, z0):
-            return w0 * np.sqrt(1 + (z - z0) ** 2 * (M2 * lambda_0 / (np.pi * w0 ** 2)) ** 2)
-
-        p0 = [dx, 1, 0]
-
-        params_x, _ = curve_fit(beam_quality_factor_fit, z, som_x, p0=p0)
-        w0_x_fit, M_sq_x_fit, z0_x_fit = params_x
-        print(f'M_sq_x: {abs(M_sq_x_fit):.4f},w0_x: {w0_x_fit * 1e6:.4f} µm, z0_x: {z0_x_fit * 1e3:.4f} mm')
-
-        params_y, _ = curve_fit(beam_quality_factor_fit, z, som_y, p0=p0)
-        w0_y_fit, M_sq_y_fit, z0_y_fit = params_y
-        print(f'M_sq_y: {abs(M_sq_y_fit):.4f},w0_y: {w0_y_fit * 1e6:.4f} µm, z0_y: {z0_y_fit * 1e3:.4f} mm')
-
-        z_fit = np.linspace(z[0], z[-1], 100)
-
-        self.ax1r_m2.clear()
-        self.ax1r_m2.grid(True)
-
-        self.ax1r_m2.plot(z, som_x, linestyle='None', marker='x', color='blue')
-        self.ax1r_m2.plot(z, som_y, linestyle='None', marker='x', color='red')
-        self.ax1r_m2.plot(z_fit, beam_quality_factor_fit(z_fit, w0_y_fit, M_sq_y_fit, z0_y_fit),
-                          label=f'M_sq_y: {abs(params_y[1]):.2f}, '
-                                f'w0_y: {params_y[0] * 1e6:.2f} µm, '
-                                f'z0_y: {params_y[2] * 1e3:.2f} mm', color='red')
-        self.ax1r_m2.plot(z_fit, beam_quality_factor_fit(z_fit, w0_x_fit, M_sq_x_fit, z0_x_fit),
-                          label=f'M_sq_x: {abs(params_x[1]):.2f}, '
-                                f'w0_x: {params_x[0] * 1e6:.2f} µm, '
-                                f'z0_x: {params_x[2] * 1e3:.2f} mm', color='blue')
-
-        self.ax1r_m2.set_ylabel('z [m]')
-        self.ax1r_m2.set_xlabel('x [mm]')
-        self.ax1r_m2.legend()
-        self.figr_m2.tight_layout()
-        self.img1r_m2.draw()
-
-        return params_x, params_y
-
-    def process_images_dict(self):
-        processed_images = {}
-        dz = self.images.shape[2]
-        print(f'Number of steps: {dz}')
-        som_x = np.zeros(dz, dtype=float)
-        som_y = np.zeros(dz, dtype=float)
-
-        for i in range(dz):
-            processed_image, som_x[i], som_y[i] = process_image(self.images[:, :, i])
-            processed_images[f'processed_image_{i}'] = processed_image
-
-        som_y *= 3.45e-6
-        som_x *= 3.45e-6
-        return processed_images, som_x, som_y
 
     def init_pid_piezo(self):
         try:
@@ -2030,7 +1790,7 @@ class HHGView(object):
         self.load_calib_thread.start()
 
     def load_test_calibration_image_take(self):
-        im_temp = self.take_image(int(self.ent_avgs.get()))
+        im_temp = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
         self.calibration_image = im_temp
         self.plot_calibration_image(self.calibration_image)
 
@@ -2060,7 +1820,7 @@ class HHGView(object):
         return center_x, center_y
 
     def get_background(self):
-        im = self.take_image(int(self.ent_avgs.get()))
+        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
         self.background = im
 
     def remove_background(self):
@@ -2077,14 +1837,14 @@ class HHGView(object):
                     self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate)
 
     def change_mcp_cam(self, event):
-        selected_value = self.strvar_mcp_cam_choice.get()
+        selected_value = self.mcp_controls['mcp_cam_choice']['var'].get()
+        print(selected_value)
         if selected_value == 'Andor':
             self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
             self.background = np.zeros([512, 512])
-            # self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
-            # self.strvar_temperature.set(str(self.cam.get_temperature()))
+
             self.update_camera_status_thread()
         print(f"ANDOR_cam: {self.ANDOR_cam}")
 
@@ -2182,518 +1942,154 @@ class HHGView(object):
         message = f'This feature is desactivated'
         self.insert_message(message)
 
-    def init_WPR(self):
-        """
-        Initializes the red waveplate motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to initialize.
-
-        Returns
-        -------
-        None
-        """
+    def initialize_motor(self, motor_attr, entry_widget, button_widget, motor_name):
         try:
-            self.WPR = apt.Motor(int(self.ent_WPR_Nr.get()))
-            self.but_WPR_Ini.config(fg='green')
-            message = f'WPR connected'
-            self.insert_message(message)
+            setattr(self, motor_attr, apt.Motor(int(entry_widget.get())))
+            button_widget.config(fg='green')
+            message = f"{motor_name} connected"
         except:
-            self.but_WPR_Ini.config(fg='red')
-            message = f'Not able to initalize WPR'
+            button_widget.config(fg='red')
+            message = f"Not able to initialize {motor_name}"
+        self.insert_message(message)
+
+    def home_motor(self, motor_attr, button_widget, motor_name):
+        try:
+            motor = getattr(self, motor_attr)
+            motor.move_home(blocking=True)
+            button_widget.config(fg='green')
+            message = f"{motor_name} homed"
             self.insert_message(message)
+            self.read_position(motor_attr, f"read_{motor_name.lower()}")
+        except:
+            button_widget.config(fg='red')
+            message = f"Not able to home {motor_name}"
+            self.insert_message(message)
+
+    def read_position(self, motor_attr, position_var, power_var=None, max_power=None):
+        try:
+            motor = getattr(self, motor_attr)
+            pos = motor.position
+            getattr(self, position_var).set(pos)
+            if power_var:
+                power = np.round(self.angle_to_power(pos), 3)
+                power = min(power, max_power) if max_power else power
+                getattr(self, power_var).set(power)
+        except:
+            message = f"Impossible to read {motor_attr} position"
+            self.insert_message(message)
+
+    def move_motor(self, motor_attr, target_var, power_var=None, max_power=None):
+        try:
+            pos = float(getattr(self, target_var).get())
+            if power_var:
+                desired_power = float(getattr(self, power_var).get())
+                if max_power and desired_power > max_power:
+                    desired_power = max_power
+                    self.insert_message(f"Value above maximum, desired power set to maximum instead")
+                pos = self.power_to_angle(desired_power)
+            motor = getattr(self, motor_attr)
+            self.insert_message(f"{motor_attr} is moving...")
+            motor.move_to(pos, True)
+            self.insert_message(f"{motor_attr} moved to {motor.position}")
+            self.read_position(motor_attr, target_var)
+        except:
+            self.insert_message(f"Impossible to move {motor_attr}")
+
+    # WPR motor
+    def init_WPR(self):
+        self.initialize_motor('WPR', self.ent_WPR_Nr, self.but_WPR_Ini, 'WPR')
 
     def home_WPR(self):
-        """
-        Homes the red waveplate motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to home.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            self.WPR.move_home(blocking=True)
-            self.but_WPR_Home.config(fg='green')
-            message = f'WPR homed'
-            self.insert_message(message)
-            self.read_WPR()
-        except:
-            self.but_WPR_Home.config(fg='red')
-            message = f'Not able to home WPR'
-            self.insert_message(message)
+        self.home_motor('WPR', self.but_WPR_Home, 'WPR')
 
     def read_WPR(self):
-        """
-        Reads the current position of the red waveplate motor.
-
-        Raises
-        ------
-        Exception
-            If the position cannot be read.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = self.WPR.position
-            self.strvar_WPR_is.set(pos)
-            self.strvar_red_current_power.set(
-                np.round(self.angle_to_power(pos, float(self.ent_red_power.get()), float(self.ent_red_phase.get())), 3))
-        except:
-            message = f'Impossible to read WPR position'
-            self.insert_message(message)
+        self.read_position('WPR', 'strvar_WPR_is', 'strvar_red_current_power',
+                           max_power=float(self.ent_red_power.get()))
 
     def move_WPR(self):
-        """
-        Moves the red waveplate motor to the desired position.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to move to the desired position.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            if self.var_wprpower.get() == 1:
-                power = float(self.strvar_WPR_should.get())
-                if power > float(self.ent_red_power.get()):
-                    power = float(self.ent_red_power.get())
-                    message = f'Value above maximum! Desired power set to maximum instead'
-                    self.insert_message(message)
-                pos = self.power_to_angle(power, float(self.ent_red_power.get()), float(self.ent_red_phase.get())) + 90
-            else:
-                pos = float(self.strvar_WPR_should.get())
-
-            message = f'WPR is moving...'
-            self.insert_message(message)
-            self.WPR.move_to(pos, True)
-            message = f"WPR moved to {str(self.WPR.position)}"
-            self.insert_message(message)
-            self.read_WPR()
-        except Exception as e:
-            message = f'Impossible to move WPR'
-            self.insert_message(message)
+        self.move_motor('WPR', 'strvar_WPR_should', 'strvar_WPR_should', max_power=float(self.ent_red_power.get()))
 
     def init_WPG(self):
-        """
-        Initializes the green waveplate motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to initialize.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            self.WPG = apt.Motor(int(self.ent_WPG_Nr.get()))
-            self.but_WPG_Ini.config(fg='green')
-            message = f'WPG connected'
-            self.insert_message(message)
-        except:
-            self.but_WPG_Ini.config(fg='red')
-            message = f'Not able to initialize WPG'
-            self.insert_message(message)
+        self.initialize_motor('WPG', self.ent_WPG_Nr, self.but_WPG_Ini, 'WPG')
 
     def home_WPG(self):
-        """
-        Homes the green waveplate motor object.
-        Raises
-        ------
-        Exception
-            If the motor fails to home.
-
-        Returns
-        -------
-        None
-        """
-
-        message = f'This feature is currently desactivated'
+        message = "This feature is currently deactivated"
         self.insert_message(message)
 
     def read_WPG(self):
-        """
-        Reads the current position of the green waveplate motor.
-
-        Raises
-        ------
-        Exception
-            If the position cannot be read.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = self.WPG.position
-            self.strvar_WPG_is.set(pos)
-            self.strvar_green_current_power.set(
-                np.round(self.angle_to_power(pos, float(self.ent_green_power.get()), float(self.ent_green_phase.get())),
-                         3))
-
-        except:
-            message = 'Impossible to read WPR position'
-            self.insert_message(message)
+        self.read_position('WPG', 'strvar_WPG_is', 'strvar_green_current_power',
+                           max_power=float(self.ent_green_power.get()))
 
     def move_WPG(self):
-        """
-        Moves the green waveplate motor to the desired position.
+        self.move_motor('WPG', 'strvar_WPG_should', 'strvar_WPG_should', max_power=float(self.ent_green_power.get()))
 
-        Raises
-        ------
-        Exception
-            If the motor fails to move to the desired position.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            if self.var_wpgpower.get() == 1:
-                power = float(self.strvar_WPG_should.get())
-                if power > float(self.ent_green_power.get()):
-                    power = float(self.ent_green_power.get())
-                    message = f'Value above maximum! Desired power set to maximum instead'
-                    self.insert_message(message)
-                pos = self.power_to_angle(power, float(self.ent_green_power.get()),
-                                          float(self.ent_green_phase.get())) + 90
-            else:
-                pos = float(self.strvar_WPG_should.get())
-
-            message = f'WPG is moving...'
-            self.insert_message(message)
-            self.WPG.move_to(pos, True)
-            message = f"WPG moved to {str(self.WPG.position)}"
-            self.insert_message(message)
-            self.read_WPG()
-
-        except Exception as e:
-            message = f'Impossible to move WPG'
-            self.insert_message(message)
-
+    # cam_stage Motor
     def init_cam_stage(self):
-        """
-        Initializes the Dummy waveplate motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to initialize.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            self.cam_stage = apt.Motor(int(self.ent_cam_stage_Nr.get()))
-            self.but_cam_stage_Ini.config(fg='green')
-            message = f'cam_stage connected'
-            self.insert_message(message)
-        except:
-            self.but_cam_stage_Ini.config(fg='red')
-            message = f'Not able to initialize cam_stage'
-            self.insert_message(message)
+        self.initialize_motor('cam_stage', self.ent_cam_stage_Nr, self.but_cam_stage_Ini, 'cam_stage')
 
     def home_cam_stage(self):
-        """
-        Homes the Dummy waveplate motor object.
-        Raises
-        ------
-        Exception
-            If the motor fails to home.
-
-        Returns
-        -------
-        None
-        """
-
-        try:
-            self.cam_stage.move_home(blocking=True)
-            self.but_cam_stage_Home.config(fg='green')
-            message = f'cam_stage homed'
-            self.insert_message(message)
-            self.read_cam_stage()
-        except:
-            self.but_cam_stage_Home.config(fg='red')
-            message = f'Not able to home cam_stage'
-            self.insert_message(message)
+        self.home_motor('cam_stage', self.but_cam_stage_Home, 'cam_stage')
 
     def read_cam_stage(self):
-        """
-        Reads the current position of the green waveplate motor.
-
-        Raises
-        ------
-        Exception
-            If the position cannot be read.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = self.cam_stage.position
-            self.strvar_cam_stage_is.set(pos)
-
-        except:
-            message = f'Impossible to read cam_stage position'
-            self.insert_message(message)
+        self.read_position('cam_stage', 'strvar_cam_stage_is')
 
     def move_cam_stage(self):
-        """
-        Moves the Dummy waveplate motor to the desired position.
+        self.move_motor('cam_stage', 'strvar_cam_stage_should')
 
-        Raises
-        ------
-        Exception
-            If the motor fails to move to the desired position.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = float(self.strvar_cam_stage_should.get())
-            message = "cam_stage is moving ..."
-            self.insert_message(message)
-            self.cam_stage.move_to(pos, True)
-            message = f"cam_stage moved to {str(self.cam_stage.position)}"
-            self.insert_message(message)
-            self.read_cam_stage()
-        except Exception as e:
-            message = f'Impossible to move cam_stage'
-            self.insert_message(message)
-
+    # delay_stage Motor
     def init_delay_stage(self):
-        """
-        Initializes the Delay motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to initialize.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            self.delay_stage = apt.Motor(int(self.ent_delay_stage_Nr.get()))
-            message = "delay_stage connected"
-            self.insert_message(message)
-            self.but_delay_stage_Ini.config(fg='green')
-        except:
-            self.but_delay_stage_Ini.config(fg='red')
-            message = "Not able to initialize the delay_stage"
-            self.insert_message(message)
+        self.initialize_motor('delay_stage', self.ent_delay_stage_Nr, self.but_delay_stage_Ini, 'delay_stage')
 
     def home_delay_stage(self):
-        """
-        Homes the delay waveplate motor object.
-
-        Raises
-        ------
-        Exception
-            If the motor fails to home.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            self.delay_stage.move_home(blocking=True)
-            self.but_delay_stage_Home.config(fg='green')
-            message = "delay_stage stage homed"
-            self.insert_message(message)
-            self.read_delay_stage()
-        except:
-            self.but_delay_stage_Home.config(fg='red')
-            message = "Not able to home the delay_stage"
-            self.insert_message(message)
+        self.home_motor('delay_stage', self.but_delay_stage_Home, 'delay_stage')
 
     def read_delay_stage(self):
-        """
-        Reads the current position of the Delay motor.
-
-        Raises
-        ------
-        Exception
-            If the position cannot be read.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = self.delay_stage.position
-            self.strvar_delay_stage_is.set(pos)
-        except:
-            message = "Not able to red the Delay stage position"
-            self.insert_message(message)
+        self.read_position('delay_stage', 'strvar_delay_stage_is')
 
     def move_delay_stage(self):
-        """
-        Moves the Delay motor to the desired position.
+        self.move_motor('delay_stage', 'strvar_delay_stage_should')
 
-        Raises
-        ------
-        Exception
-            If the motor fails to move to the desired position.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            pos = float(self.strvar_delay_stage_should.get())
-            message = "delay_stage is moving.."
-            self.insert_message(message)
-            self.delay_stage.move_to(pos, True)
-            message = f"delay_stage moved to {str(self.delay_stage.position)}"
-            self.insert_message(message)
-            self.read_delay_stage()
-        except:
-            message = "Impossible to move delay_stage"
-            self.insert_message(message)
-
+    # lens_stage Motor
     def init_lens_stage(self):
-        try:
-            self.lens_stage = apt.Motor(int(self.ent_mpc_lens_nr.get()))
-            message = "lens_stage connected"
-            self.insert_message(message)
-            self.but_lens_stage_Ini.config(fg='green')
-        except:
-            self.but_lens_stage_Ini.config(fg='red')
-            message = "Not able to initialize lens_stage"
-            self.insert_message(message)
-
-    def read_lens_stage(self):
-        try:
-            pos = self.lens_stage.position
-            self.strvar_mpc_lens_is.set(pos)
-        except:
-            message = "Not able to read lens_stage position"
-            self.insert_message(message)
-
-    def move_lens_stage(self):
-        try:
-            pos = float(self.strvar_mpc_lens_should.get())
-            message = "lens_stage is moving"
-            self.insert_message(message)
-            self.lens_stage.move_to(pos, True)
-            message = f"lens_stage moved to {str(self.lens_stage.position)}"
-            self.insert_message(message)
-            self.read_lens_stage()
-        except:
-            message = f"Impossible to move lens_stage"
-            self.insert_message(message)
+        self.initialize_motor('lens_stage', self.ent_mpc_lens_nr, self.but_lens_stage_Ini, 'lens_stage')
 
     def home_lens_stage(self):
-        try:
-            self.lens_stage.move_home(blocking=True)
-            self.but_lens_stage_Home.config(fg='green')
-            message = "lens_stage homed"
-            self.insert_message(message)
-            self.read_lens_stage()
-        except:
-            self.but_lens_stage_Home.config(fg='red')
-            message = "Not able to home lens_stage"
-            self.insert_message(message)
+        self.home_motor('lens_stage', self.but_lens_stage_Home, 'lens_stage')
 
+    def read_lens_stage(self):
+        self.read_position('lens_stage', 'strvar_mpc_lens_is')
+
+    def move_lens_stage(self):
+        self.move_motor('lens_stage', 'strvar_mpc_lens_should')
+
+    # MPC_wp Motor
     def init_MPC_wp(self):
-        try:
-            self.MPC_wp = apt.Motor(int(self.ent_mpc_wp_nr.get()))
-            message = "MPC_WP connected"
-            self.insert_message(message)
-            self.but_MPC_wp_Ini.config(fg='green')
-        except:
-            self.but_MPC_wp_Ini.config(fg='red')
-            message = "Not able to initialize MPC_WP"
-            self.insert_message(message)
-
-    def read_MPC_wp(self):
-        try:
-            pos = self.MPC_wp.position
-            self.strvar_mpc_wp_is.set(pos)
-            self.strvar_mpc_currentpower.set(
-                np.round(
-                    self.angle_to_power_new(pos, float(self.ent_MPC_fitA.get()), float(self.ent_MPC_fitf.get()),float(self.ent_MPC_fitph.get()), float(self.ent_MPC_fito.get())),
-                    3))
-        except:
-            message = "Not able to read MPC_WP position"
-            self.insert_message(message)
-
-    def move_MPC_wp(self):
-        try:
-            if self.var_mpc_wp_power.get() == 1:
-                power = float(self.strvar_mpc_wp_should.get())
-                maxp = float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get())
-                if power > maxp:
-                    power = maxp
-                    message = "Value above maximum! Desired power set to maximum instead"
-                    self.insert_message(message)
-                pos = self.power_to_angle_new(power, float(self.ent_MPC_fitA.get()), float(self.ent_MPC_fitf.get()),float(self.ent_MPC_fitph.get()), float(self.ent_MPC_fito.get()))
-            else:
-                pos = float(self.strvar_mpc_wp_should.get())
-            message = "MPC_WP is moving..."
-            self.insert_message(message)
-            self.MPC_wp.move_to(pos, True)
-            message = f"WP moved to {str(self.MPC_wp.position)}"
-            self.insert_message(message)
-            self.read_MPC_wp()
-        except:
-            message = "Not able to move MPC_WP"
-            self.insert_message(message)
+        self.initialize_motor('MPC_wp', self.ent_mpc_wp_nr, self.but_MPC_wp_Ini, 'MPC_wp')
 
     def home_MPC_wp(self):
-        try:
-            self.MPC_wp.move_home(blocking=True)
-            self.but_MPC_wp_Home.config(fg='green')
-            message = "MPC_WP homed"
-            self.insert_message(message)
-            self.read_MPC_wp()
-        except:
-            self.but_MPC_wp_Home.config(fg='red')
-            message = "Not able to home MPC_WP"
-            self.insert_message(message)
+        self.home_motor('MPC_wp', self.but_MPC_wp_Home, 'MPC_wp')
+
+    def read_MPC_wp(self):
+        self.read_position('MPC_wp', 'strvar_mpc_wp_is', 'strvar_mpc_currentpower',
+                           max_power=float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get()))
+
+    def move_MPC_wp(self):
+        self.move_motor('MPC_wp', 'strvar_mpc_wp_should', 'strvar_mpc_wp_should',
+                        max_power=float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get()))
 
     def disable_motors(self):
-        """
-        Disconnect all the motors.
+        motor_names = ['WPR', 'WPG', 'cam_stage', 'delay_stage', 'lens_stage', 'MPC_wp', 'MPC_grating']
 
-        Returns
-        -------
-        None
-        """
-        if self.WPG is not None:
-            self.WPG.disable()
-        if self.WPR is not None:
-            self.WPR.disable()
-        if self.delay_stage is not None:
-            self.delay_stage.disable()
-        if self.lens_stage is not None:
-            self.lens_stage.disable()
-        if self.MPC_wp is not None:
-            self.MPC_wp.disable()
-        if self.MPC_grating is not None:
-            self.MPC_grating.close()
-            self.MPC_grating = None
+        for motor_name in motor_names:
+            motor = getattr(self, motor_name, None)
+            if motor:
+                try:
+                    motor.disable() if hasattr(motor, 'disable') else motor.close()
+                    setattr(self, motor_name, None)
+                except Exception as e:
+                    self.insert_message(f"Error disabling {motor_name}: {str(e)}")
 
-        message = 'Stages are disconnected'
-        self.insert_message(message)
+        self.insert_message("All stages are disconnected")
 
     def enable_calibrator(self):
         self.stop_calib = False
@@ -2778,7 +2174,7 @@ class HHGView(object):
 
         """
         if self.ANDOR_cam is True:
-            self.cam.set_exposure(float(self.ent_exposure_time.get()) * 1e-6)
+            self.cam.set_exposure(float(self.mcp_controls['mcp_exposure_time']['var'].get()) * 1e-6)
             self.cam.setup_shutter('open')
             self.d_phase = deque()
             self.meas_has_started = True
@@ -2870,8 +2266,8 @@ class HHGView(object):
             np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),
-                     2)) + '\t' + self.ent_mcp.get() + '\t' + str(
-            self.name_cam) + '\t' + self.ent_avgs.get() + '\t' + self.ent_exposure_time.get() + '\t' + str(
+                     2)) + '\t' + self.mcp_controls['mcp_voltage']['var'].get() + '\t' + str(
+            self.name_cam) + '\t' + self.mcp_controls['mcp_avgs']['var'].get() + '\t' + self.mcp_controls['mcp_exposure_time']['var'].get() + '\t' + str(
             gl) + '\t' + str(
             gl_pos) + '\t' + str(
             rl) + '\t' + str(
@@ -2936,11 +2332,11 @@ class HHGView(object):
 
     def update_live_button(self):
         if self.live_is_pressed:
-            self.but_view_live.config(relief="sunken")
-            self.but_view_live.config(fg='red')
+            self.but_mcp_liveview.config(relief="sunken")
+            self.but_mcp_liveview.config(fg='red')
         else:
-            self.but_view_live.config(relief="raised")
-            self.but_view_live.config(fg='green')
+            self.but_mcp_liveview.config(relief="raised")
+            self.but_mcp_liveview.config(fg='green')
 
     def enabl_mcp_all(self):
         self.stop_mcp = False
@@ -3006,7 +2402,7 @@ class HHGView(object):
             r = WPR_scan_list[i]
             self.strvar_WPR_should.set(str(r))
             self.move_WPR()
-            im = self.take_image(int(self.ent_avgs.get()))
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.save_im(im)
             self.plot_MCP(im)
 
@@ -3019,7 +2415,7 @@ class HHGView(object):
             g = WPG_scan_list[i]
             self.strvar_WPG_should.set(str(g))
             self.move_WPG()
-            im = self.take_image(int(self.ent_avgs.get()))
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.save_im(im)
             self.plot_MCP(im)
 
@@ -3049,7 +2445,7 @@ class HHGView(object):
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
-                im = self.take_image(int(self.ent_avgs.get()))
+                im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 self.save_im(im)
                 self.plot_MCP(im)
 
@@ -3077,7 +2473,7 @@ class HHGView(object):
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
-                im = self.take_image(int(self.ent_avgs.get()))
+                im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 self.save_im(im)
                 self.plot_MCP(im)
                 # self.cam_mono_acq()
@@ -3097,13 +2493,13 @@ class HHGView(object):
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
                 self.phase_scan()
             else:
-                im = self.take_image(int(self.ent_avgs.get()))
+                im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 self.save_im(im)
                 self.plot_MCP(im)
 
     def view_live(self):
         while self.live_is_pressed:
-            im = self.take_image(int(self.ent_avgs.get()))
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.plot_MCP(im)
 
     def phase_scan(self):
@@ -3116,7 +2512,7 @@ class HHGView(object):
             start_time = time.time()
             self.strvar_setp.set(phi)
             self.set_setpoint()
-            im = self.take_image(int(self.ent_avgs.get()))
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             if self.measurement_running and self.var_saveh5.get():
                 self.measurement_array_flat[self.measurement_counter, :, :] = im
                 if self.var_export_treated_image.get():
@@ -3186,7 +2582,7 @@ class HHGView(object):
                     self.strvar_zaber_grating_should.set(str(pos))
                     self.move_zaber_stage()
                     if self.ANDOR_cam == True:
-                        im = self.take_image(int(self.ent_avgs.get()))
+                        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                     else:
                         im = np.random.rand(512, 512)
                     self.plot_MCP(im)
@@ -3224,7 +2620,7 @@ class HHGView(object):
                     self.strvar_mpc_wp_should.set(str(power))
                     self.move_MPC_wp()
                     if self.ANDOR_cam == True:
-                        im = self.take_image(int(self.ent_avgs.get()))
+                        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                     else:
                         im = np.random.rand(512, 512)
                     self.plot_MCP(im)
@@ -3254,7 +2650,7 @@ class HHGView(object):
                 self.strvar_mpc_wp_should.set(str(power))
                 self.move_MPC_wp()
                 if self.ANDOR_cam == True:
-                    im = self.take_image(int(self.ent_avgs.get()))
+                    im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 else:
                     im = np.random.rand(512, 512)
                 self.plot_MCP(im)
@@ -3282,7 +2678,7 @@ class HHGView(object):
                 self.strvar_mpc_lens_should.set(str(pos))
                 self.move_lens_stage()
                 if self.ANDOR_cam == True:
-                    im = self.take_image(int(self.ent_avgs.get()))
+                    im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 else:
                     im = np.random.rand(512, 512)
                 self.plot_MCP(im)
@@ -3317,11 +2713,11 @@ class HHGView(object):
                     hf.create_dataset('treated_images', data=res_treated)
                     hf.create_dataset('e_axis', data=self.eaxis_correct)
 
-                hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
-                hf.create_dataset('averages', data=int(self.ent_avgs.get()))
-                hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
+                hf.create_dataset('exposure_time', data=int(self.mcp_controls['mcp_exposure_time']['var'].get()))
+                hf.create_dataset('averages', data=int(self.mcp_controls['mcp_avgs']['var'].get()))
+                hf.create_dataset('voltage', data=int(self.mcp_controls['mcp_voltage']['var'].get()))
 
-            log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
+            log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.mcp_controls['comment']['var'].get()) + '\n'
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
 
@@ -3348,7 +2744,7 @@ class HHGView(object):
                 self.strvar_mpc_lens_should.set(str(pos))
                 self.move_lens_stage()
                 if self.ANDOR_cam == True:
-                    im = self.take_image(int(self.ent_avgs.get()))
+                    im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                 else:
                     im = np.random.rand(512, 512)
                 self.plot_MCP(im)
@@ -3376,15 +2772,14 @@ class HHGView(object):
             with h5py.File(filename, 'w') as hf:
                 hf.create_dataset('raw_images', data=res)
                 hf.create_dataset('lens_position', data=lens_pos_array)
-                #hf.create_dataset('scan_type', data=self.scan_type)
                 if self.eaxis is not None:
                     hf.create_dataset('treated_images', data=res_treated)
                     hf.create_dataset('e_axis', data=self.eaxis_correct)
-                hf.create_dataset('exposure_time', data=int(self.ent_exposure_time.get()))
-                hf.create_dataset('averages', data=int(self.ent_avgs.get()))
-                hf.create_dataset('voltage', data=int(self.ent_mcp.get()))
+                hf.create_dataset('exposure_time', data=int(self.mcp_controls['mcp_exposure_time']['var'].get()))
+                hf.create_dataset('averages', data=int(self.mcp_controls['mcp_avgs']['var'].get()))
+                hf.create_dataset('voltage', data=int(self.mcp_controls['mcp_voltage']['var'].get()))
 
-            log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
+            log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.mcp_controls['comment']['var'].get()) + '\n'
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
 
@@ -3597,7 +2992,7 @@ class HHGView(object):
             cbar1.remove()
 
     def measure_all(self):
-        self.but_meas_all.config(fg='red')
+        self.but_mcp_measurement_series.config(fg='red')
 
         status = self.var_scan_wp_option.get()
         self.insert_message(status)
@@ -3605,50 +3000,50 @@ class HHGView(object):
         if status == "Green Focus":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
-                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_green()
                 else:
-                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_green()
             else:
                 message = "Are you sure you do not want to scan the phase for each focus position?"
                 self.insert_message(message)
                 if self.var_background.get() == 1:
-                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_green()
                 else:
-                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_green()
 
         if status == "Red Focus":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
-                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_red()
                 else:
-                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_red()
             else:
                 message = "Are you sure you do not want to scan the phase for each focus position?"
                 self.insert_message(message)
                 if self.var_background.get() == 1:
-                    self.f.write("# BACKGROUND FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# BACKGROUND FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_red()
                 else:
-                    self.f.write("# FocusPositionScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# FocusPositionScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.focus_position_scan_red()
 
         elif status == "Nothing":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
                     self.f.write(
-                        "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
-                    im = self.take_image(int(self.ent_avgs.get()))
+                        "# BACKGROUND PhaseScan, " + self.mcp_controls['comment']['var'].get() + "\n")
+                    im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
                     self.save_im(im)
                     self.plot_MCP(im)
                 else:
                     self.f.write(
-                        "# PhaseScan, " + self.ent_comment.get() + "\n")
+                        "# PhaseScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.phase_scan()
             else:
                 message = "Select something to scan"
@@ -3657,10 +3052,10 @@ class HHGView(object):
         elif status == "Red/Green Ratio":
             if self.var_phasescan.get() == 1:
                 if self.var_background.get() == 1:
-                    self.f.write("# BACKGROUND RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# BACKGROUND RedGreenRatioScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     self.red_green_ratio_scan()
                 else:
-                    self.f.write("# RedGreenRatioScan, " + self.ent_comment.get() + "\n")
+                    self.f.write("# RedGreenRatioScan, " + self.mcp_controls['comment']['var'].get() + "\n")
                     ratio_steps = int(self.ent_ratio_steps.get())
                     phase_steps = int(self.ent_steps.get())
                     self.measurement_counter = 0
@@ -3679,9 +3074,9 @@ class HHGView(object):
                     pr, pg = self.get_power_values_for_ratio_scan()
                     self.red_power_array = pr
                     self.green_power_array = pg
-                    self.aquisition_time = int(self.ent_exposure_time.get())
-                    self.averages = int(self.ent_avgs.get())
-                    self.mcp_voltage = float(self.ent_mcp.get())
+                    self.aquisition_time = int(self.mcp_controls['mcp_exposure_time']['var'].get())
+                    self.averages = int(self.mcp_controls['mcp_avgs']['var'].get())
+                    self.mcp_voltage = float(self.mcp_controls['mcp_voltage']['var'].get())
 
                     self.measurement_array_flat = self.measurement_array.flatten()
                     self.measurement_array_flat = np.zeros([self.measurement_array_flat.size, 512, 512]) * np.nan
@@ -3699,17 +3094,17 @@ class HHGView(object):
                 self.insert_message(message)
 
         elif status == "Only Red":
-            self.f.write("# RedOnlyScan, " + self.ent_comment.get() + "\n")
+            self.f.write("# RedOnlyScan, " + self.mcp_controls['comment']['var'].get() + "\n")
             self.red_only_scan()
             self.insert_message(status)
         elif status == "Only Green":
-            self.f.write("# GreenOnlyScan, " + self.ent_comment.get() + "\n")
+            self.f.write("# GreenOnlyScan, " + self.mcp_controls['comment']['var'].get() + "\n")
             self.green_only_scan()
             self.insert_message(status)
         else:
             self.insert_message("Bruh")
 
-        self.but_meas_all.config(fg='green')
+        self.but_mcp_measurement_series.config(fg='green')
         if self.measurement_running:
             self.measurement_running = 0
             self.measurement_counter = 0
@@ -3731,34 +3126,34 @@ class HHGView(object):
 
     def measure(self):
 
-        self.but_meas_scan.config(fg='red')
+        self.but_mcp_phase_scan.config(fg='red')
         if self.var_background.get() == 1:
             self.f.write(
-                "# BACKGROUND PhaseScan, " + self.ent_comment.get() + "\n")
-            im = self.take_image(int(self.ent_avgs.get()))
+                "# BACKGROUND PhaseScan, " + self.mcp_controls['comment']['var'].get() + "\n")
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.save_im(im)
             self.plot_MCP(im)
         else:
             self.f.write(
-                "# PhaseScan, " + self.ent_comment.get() + "\n")
+                "# PhaseScan, " + self.mcp_controls['comment']['var'].get() + "\n")
             self.phase_scan()
 
-        self.but_meas_scan.config(fg='green')
+        self.but_mcp_phase_scan.config(fg='green')
 
     def measure_simple(self):
 
-        self.but_meas_simple.config(fg='red')
+        self.but_mcp_single_image.config(fg='red')
 
 
         if self.var_background.get() == 1:
-            self.f.write("# BACKGROUND SingleImage, " + self.ent_comment.get() + '\n')
+            self.f.write("# BACKGROUND SingleImage, " + self.mcp_controls['comment']['var'].get() + '\n')
         else:
-            self.f.write("# SingleImage, " + self.ent_comment.get() + '\n')
+            self.f.write("# SingleImage, " + self.mcp_controls['comment']['var'].get() + '\n')
 
-        im = self.take_image(int(self.ent_avgs.get()))
+        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
         self.save_im(im)
         self.plot_MCP(im)
-        self.but_meas_simple.config(fg='green')
+        self.but_mcp_single_image.config(fg='green')
 
 
     def feedback(self):
@@ -4323,4 +3718,4 @@ class HHGView(object):
         avs.AVS_Done()
         self.win.destroy()
         self.parent.feedback_win = None
-        print('Feedbacker closed')
+        print('HHGView closed')
