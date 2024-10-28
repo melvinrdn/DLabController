@@ -109,7 +109,21 @@ from scipy.interpolate import interp1d
 import cv2
 from scipy.signal import find_peaks
 from scipy.optimize import curve_fit
+from matplotlib.colors import LinearSegmentedColormap
 
+colors = [
+    (1, 1, 1),  # white
+    (0, 0, 0.5),  # dark blue
+    (0, 0, 1),  # clearer blue
+    (0, 1, 1),  # turquoise
+    (0, 1, 0),  # green
+    (1, 1, 0),  # yellow
+    (1, 0.5, 0),  # orange
+    (1, 0, 0),   # red
+    (0.5, 0, 0)  # darker red
+]
+
+custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
 
 me = 9.1e-31

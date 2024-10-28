@@ -41,17 +41,101 @@ class HHGView(object):
 
     def __init__(self, parent):
 
-        self.parent = parent
         matplotlib.use("TkAgg")
+        self.cam = None
+        self.parent = parent
+        self.lens_green = self.parent.phase_refs_green[1]
+        self.lens_red = self.parent.phase_refs_red[1]
+        self.slm_lib = slm
+        self.win = tk.Toplevel()
+        self.set_point = 0
 
-        self.initialize_window()
-        self.initialize_variables()
-        self.initialize_frames()
+        title = 'D-Lab Controller - HHGView'
 
+        self.win.title(title)
+        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
 
         pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
+
+        self.WPG = None
+        self.WPR = None
+        self.cam_stage = None
+        self.delay_stage = None
+        self.lens_stage = None
+        self.MPC_wp = None
+        self.MPC_grating = None
+        self.abort = 0
+
+        self.pid_stage = None
+        self.pid_stage_initialized = False
+
+        self.meas_has_started = False
+
+        self.scan_is_done = True
+
         self.scan_is_done_threading = threading.Event()
 
+        self.ymin_harmonics = None
+        self.ymax_harmonics = None
+
+        self.ymin_harmonics_calibrate = None
+        self.ymax_harmonics_calibrate = None
+
+        self.current_harmonics_profile_max = None
+        self.current_harmonics_profile_min = None
+
+        self.current_harmonics_profile_max_calibrate = None
+        self.current_harmonics_profile_min_calibrate = None
+
+        self.background = None
+
+        self.calibration_image = np.zeros([512, 512])
+        self.calibration_image_update = np.zeros([512, 512])
+        self.calibration_image_update_energy = np.zeros([512, 512])
+        self.eaxis = None
+        self.eaxis_correct = None
+
+        self.roix = [0, 512]
+        self.roiy = [0, 512]
+
+        self.live_is_pressed = False
+
+        self.measurement_array = None
+        self.measurement_array_flat = None
+        self.measurement_treated_array = None
+        self.measurement_treated_array_flat = None
+        self.focus_image_array = None
+        self.focus_image_array_flat = None
+        self.measurement_counter = 0
+        self.measurement_running = 0
+        self.phase_array = None
+        self.phase_meas_array = None
+        self.phase_meas_array_flat = None
+        self.phase_std_array = None
+        self.phase_std_array_flat = None
+        self.ratio_array = None
+        self.pi_radius_array = None
+        self.red_power_array = None
+        self.green_power_array = None
+        self.mcp_voltage = None
+        self.time_stamps_array = None
+        self.time_stamps_array_flat = None
+        self.aquisition_time = None
+        self.averages = None
+
+        self.calibrator = None
+
+        self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
+
+        self.autolog = self.saving_folder + '-' + 'auto-log.txt'
+        self.f = open(self.autolog, "a+")
+
+        frm_mid = ttk.Frame(self.win)
+        frm_bot = ttk.Frame(self.win)
+        frm_scans = ttk.Frame(self.win)
+        frm_mcp_all = ttk.Frame(self.win)
+
+        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
 
         self.frm_notebook_param_spc = ttk.Notebook(self.win)
         frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
@@ -65,28 +149,13 @@ class HHGView(object):
         self.frm_notebook_param_spc.add(frm_spc_ratio, text="Phase extraction options")
         self.frm_notebook_param_spc.add(frm_spc_export, text="Export options")
 
-        frm_measure = ttk.LabelFrame(self.frm_scans, text='Measurement')
-        self.frm_notebook_scans = ttk.Notebook(self.frm_scans)
-        frm_wp_scans = ttk.Frame(self.frm_scans)
-        frm_phase_scan = ttk.Frame(self.frm_scans)
-        frm_mpc_campaign = ttk.Frame(self.frm_scans)
-        frm_beam_shaping = ttk.Frame(self.frm_scans)
+        frm_measure = ttk.LabelFrame(frm_scans, text='Measurement')
 
-
-        self.frm_notebook_waveplate = ttk.Notebook(self.frm_scans)
-        frm_stage = ttk.Frame(self.frm_scans)
-        frm_wp_power_cal = ttk.Frame(self.frm_scans)
-        frm_calculator = ttk.Frame(self.frm_scans)
-
-        self.frm_notebook_mcp = ttk.Notebook(self.frm_mcp_all)
-        frm_mcp_image = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_calibrate = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_calibrate_energy = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_treated = ttk.Frame(self.frm_mcp_all)
-        frm_mcp_analysis = ttk.Frame(self.frm_mcp_all)
-
-
-
+        self.frm_notebook_scans = ttk.Notebook(frm_scans)
+        frm_wp_scans = ttk.Frame(frm_scans)
+        frm_phase_scan = ttk.Frame(frm_scans)
+        frm_mpc_campaign = ttk.Frame(frm_scans)
+        frm_beam_shaping = ttk.Frame(frm_scans)
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
@@ -102,7 +171,10 @@ class HHGView(object):
         frm_beam_shaping_scans = ttk.LabelFrame(frm_beam_shaping, text='Scan')
         frm_beam_shaping_scans.grid(row=0, column=0)
 
-
+        self.frm_notebook_waveplate = ttk.Notebook(frm_scans)
+        frm_stage = ttk.Frame(frm_scans)
+        frm_wp_power_cal = ttk.Frame(frm_scans)
+        frm_calculator = ttk.Frame(frm_scans)
         self.frm_notebook_waveplate.add(frm_stage, text="Stage control")
         self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
         self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
@@ -110,7 +182,12 @@ class HHGView(object):
         self.output_console = ScrolledText(self.win, height=10, state='disabled')
         self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
 
-
+        self.frm_notebook_mcp = ttk.Notebook(frm_mcp_all)
+        frm_mcp_image = ttk.Frame(frm_mcp_all)
+        frm_mcp_calibrate = ttk.Frame(frm_mcp_all)
+        frm_mcp_calibrate_energy = ttk.Frame(frm_mcp_all)
+        frm_mcp_treated = ttk.Frame(frm_mcp_all)
+        frm_mcp_analysis = ttk.Frame(frm_mcp_all)
         self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
         self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
         self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
@@ -990,7 +1067,7 @@ class HHGView(object):
         self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
                                                command=self.remove_background)
 
-
+        frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_options_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1002,12 +1079,13 @@ class HHGView(object):
         self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-
+        frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
-
+        frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
         # setting up buttons frm_spc
 
@@ -1578,87 +1656,7 @@ class HHGView(object):
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
-        #self.open_calibrator_on_start()
-
-    def initialize_window(self):
-        self.win = tk.Toplevel()
-        self.win.title('D-Lab Controller - HHGView')
-        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
-
-    def initialize_variables(self):
-        self.cam = None
-        self.lens_green = self.parent.phase_refs_green[1]
-        self.lens_red = self.parent.phase_refs_red[1]
-        self.slm_lib = slm
-        self.set_point = 0
-        self.WPG = None
-        self.WPR = None
-        self.cam_stage = None
-        self.delay_stage = None
-        self.lens_stage = None
-        self.MPC_wp = None
-        self.MPC_grating = None
-        self.abort = 0
-        self.pid_stage = None
-        self.pid_stage_initialized = False
-        self.meas_has_started = False
-        self.scan_is_done = True
-        self.ymin_harmonics = None
-        self.ymax_harmonics = None
-        self.ymin_harmonics_calibrate = None
-        self.ymax_harmonics_calibrate = None
-        self.current_harmonics_profile_max = None
-        self.current_harmonics_profile_min = None
-        self.current_harmonics_profile_max_calibrate = None
-        self.current_harmonics_profile_min_calibrate = None
-        self.background = None
-        self.calibration_image = np.zeros([512, 512])
-        self.calibration_image_update = np.zeros([512, 512])
-        self.calibration_image_update_energy = np.zeros([512, 512])
-        self.eaxis = None
-        self.eaxis_correct = None
-        self.roix = [0, 512]
-        self.roiy = [0, 512]
-        self.live_is_pressed = False
-        self.measurement_array = None
-        self.measurement_array_flat = None
-        self.measurement_treated_array = None
-        self.measurement_treated_array_flat = None
-        self.focus_image_array = None
-        self.focus_image_array_flat = None
-        self.measurement_counter = 0
-        self.measurement_running = 0
-        self.phase_array = None
-        self.phase_meas_array = None
-        self.phase_meas_array_flat = None
-        self.phase_std_array = None
-        self.phase_std_array_flat = None
-        self.ratio_array = None
-        self.pi_radius_array = None
-        self.red_power_array = None
-        self.green_power_array = None
-        self.mcp_voltage = None
-        self.time_stamps_array = None
-        self.time_stamps_array_flat = None
-        self.aquisition_time = None
-        self.averages = None
-        self.calibrator = None
-
-        self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
-        self.autolog = self.saving_folder + '-' + 'auto-log.txt'
-        self.f = open(self.autolog, "a+")
-
-    def initialize_frames(self):
-        self.frm_mid = ttk.Frame(self.win)
-        self.frm_bot = ttk.Frame(self.win)
-        self.frm_scans = ttk.Frame(self.win)
-        self.frm_mcp_all = ttk.Frame(self.win)
-        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
-
-        self.frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.open_calibrator_on_start()
 
     def hide_show_spectrometer(self):
         if self.frm_plt_visible:
@@ -2571,6 +2569,8 @@ class HHGView(object):
             message = "Impossible to move delay_stage"
             self.insert_message(message)
 
+    # def scan(self):
+
     def init_lens_stage(self):
         try:
             self.lens_stage = apt.Motor(int(self.ent_mpc_lens_nr.get()))
@@ -3145,6 +3145,7 @@ class HHGView(object):
     def abort_beam_shaping_measurement(self):
         self.abort = 1
 
+
     def test_mpc_scan(self):
         grating_pos_array = np.linspace(float(self.ent_mpc_grating_from.get()), float(self.ent_mpc_grating_to.get()),
                                         int(self.ent_mpc_grating_steps.get()))
@@ -3326,6 +3327,9 @@ class HHGView(object):
             log_entry = str(int(nr)) + '\t' + str(self.scan_type) + '\t' + str(self.ent_comment.get()) + '\n'
             self.f.write(log_entry)
             self.but_MPC_measure.config(fg='green')
+
+
+
 
     def measure_beam_shaping(self):
         lens_pos_array = np.linspace(float(self.ent_beam_shaping_lens_from.get()), float(self.ent_beam_shaping_lens_to.get()),
@@ -3905,6 +3909,12 @@ class HHGView(object):
         self.imgMCP_treated.draw()
         cbar.remove()
 
+       # with h5py.File('data.h5', 'w') as hf:
+            #hf.create_dataset('e_axis', data=self.eaxis_correct)
+            #hf.create_dataset('y_axis', data=np.arange(0, 512))
+            #hf.create_dataset('image_T', data=image.T)
+            #print('done')
+
     def plot_calibration_image(self, image):
         image = np.flipud(image)
         self.axMCP_calibrate.clear()
@@ -4084,6 +4094,7 @@ class HHGView(object):
         self.figp.canvas.blit(self.ax1p.bbox)
         self.figp.canvas.flush_events()
         self.win.after(50, self.plot_phase)
+
 
     def plot_voltage(self):
         """

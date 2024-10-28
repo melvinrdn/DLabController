@@ -581,7 +581,7 @@ def _select_vimba_home(candidates: List[str]) -> str:
     candidates
 
     Arguments:
-        candidates - List of strings pointing to possible vimba_driver home directories
+        candidates - List of strings pointing to possible pike_driver home directories
 
     Return:
         Path that represents the most likely VIMBA_HOME directory
@@ -591,7 +591,7 @@ def _select_vimba_home(candidates: List[str]) -> str:
     """
     most_likely_candidates = []
     for candidate in candidates:
-        if 'vimba_driver' in candidate.lower():
+        if 'pike_driver' in candidate.lower():
             most_likely_candidates.append(candidate)
 
     if len(most_likely_candidates) == 0:

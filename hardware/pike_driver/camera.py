@@ -347,7 +347,7 @@ class Camera:
     @TraceEnable()
     @LeaveContextOnCall()
     def __init__(self, info: VmbCameraInfo):
-        """Do not call directly. Access Cameras via vimba_driver.Vimba instead."""
+        """Do not call directly. Access Cameras via pike_driver.Vimba instead."""
         self.__handle: VmbHandle = VmbHandle(0)
         self.__info: VmbCameraInfo = info
         self.__access_mode: AccessMode = AccessMode.Full
@@ -999,7 +999,7 @@ def _setup_network_discovery():
 
 @TraceEnable()
 def discover_cameras(network_discovery: bool) -> CamerasList:
-    """Do not call directly. Access Cameras via vimba_driver.Vimba instead."""
+    """Do not call directly. Access Cameras via pike_driver.Vimba instead."""
 
     if network_discovery:
         _setup_network_discovery()
@@ -1024,7 +1024,7 @@ def discover_cameras(network_discovery: bool) -> CamerasList:
 
 @TraceEnable()
 def discover_camera(id_: str) -> Camera:
-    """Do not call directly. Access Cameras via vimba_driver.Vimba instead."""
+    """Do not call directly. Access Cameras via pike_driver.Vimba instead."""
 
     info = VmbCameraInfo()
 
