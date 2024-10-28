@@ -46,23 +46,118 @@ class HHGView(object):
         self.initialize_window()
         self.initialize_variables()
         self.initialize_frames()
+        self.initialize_mcp_frame()
         self.initialize_spectrometer()
+        self.initialize_measurement_frame()
+        self.initialize_panel_1()
+        self.initialize_panel_2()
 
 
         pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
         self.scan_is_done_threading = threading.Event()
-        frm_measure = ttk.LabelFrame(self.frm_scans, text='Measurement')
-        self.frm_notebook_scans = ttk.Notebook(self.frm_scans)
-        frm_wp_scans = ttk.Frame(self.frm_scans)
-        frm_phase_scan = ttk.Frame(self.frm_scans)
-        frm_mpc_campaign = ttk.Frame(self.frm_scans)
-        frm_beam_shaping = ttk.Frame(self.frm_scans)
+
+        self.output_console = ScrolledText(self.win, height=10, state='disabled')
+        self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
+
+        if self.ANDOR_cam is True:
+            self.name_cam = 'ANDOR_cam'
 
 
-        self.frm_notebook_waveplate = ttk.Notebook(self.frm_scans)
-        frm_stage = ttk.Frame(self.frm_scans)
-        frm_wp_power_cal = ttk.Frame(self.frm_scans)
-        frm_calculator = ttk.Frame(self.frm_scans)
+
+        #self.open_calibrator_on_start()
+
+    def initialize_window(self):
+        self.win = tk.Toplevel()
+        self.win.title('D-Lab Controller - HHGView')
+        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def initialize_variables(self):
+        self.pid = PID(0, 0, 0, setpoint=0)
+        self.cam = None
+        self.lens_green = self.parent.phase_refs_green[1]
+        self.lens_red = self.parent.phase_refs_red[1]
+        self.slm_lib = slm
+        self.set_point = 0
+        self.WPG = None
+        self.WPR = None
+        self.cam_stage = None
+        self.delay_stage = None
+        self.lens_stage = None
+        self.MPC_wp = None
+        self.MPC_grating = None
+        self.abort = 0
+        self.pid_stage = None
+        self.pid_stage_initialized = False
+        self.meas_has_started = False
+        self.scan_is_done = True
+        self.ymin_harmonics = None
+        self.ymax_harmonics = None
+        self.ymin_harmonics_calibrate = None
+        self.ymax_harmonics_calibrate = None
+        self.current_harmonics_profile_max = None
+        self.current_harmonics_profile_min = None
+        self.current_harmonics_profile_max_calibrate = None
+        self.current_harmonics_profile_min_calibrate = None
+        self.background = None
+        self.calibration_image = np.zeros([512, 512])
+        self.calibration_image_update = np.zeros([512, 512])
+        self.calibration_image_update_energy = np.zeros([512, 512])
+        self.eaxis = None
+        self.eaxis_correct = None
+        self.roix = [0, 512]
+        self.roiy = [0, 512]
+        self.live_is_pressed = False
+        self.measurement_array = None
+        self.measurement_array_flat = None
+        self.measurement_treated_array = None
+        self.measurement_treated_array_flat = None
+        self.focus_image_array = None
+        self.focus_image_array_flat = None
+        self.measurement_counter = 0
+        self.measurement_running = 0
+        self.phase_array = None
+        self.phase_meas_array = None
+        self.phase_meas_array_flat = None
+        self.phase_std_array = None
+        self.phase_std_array_flat = None
+        self.ratio_array = None
+        self.pi_radius_array = None
+        self.red_power_array = None
+        self.green_power_array = None
+        self.mcp_voltage = None
+        self.time_stamps_array = None
+        self.time_stamps_array_flat = None
+        self.aquisition_time = None
+        self.averages = None
+        self.calibrator = None
+        self.im_phase = np.zeros(1000)
+        self.im_voltage = np.zeros(1000)
+        self.stop_acquire = 0
+        self.stop_pid = False
+        self.spec_interface_initialized = False
+        self.active_spec_handle = None
+        self.ANDOR_cam = False
+
+        #self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
+        #self.autolog = self.saving_folder + '-' + 'auto-log.txt'
+        self.autolog = './ressources/dummy_log'
+
+        self.f = open(self.autolog, "a+")
+
+    def initialize_frames(self):
+        self.frm_mid = ttk.Frame(self.win)
+        self.frm_bot = ttk.Frame(self.win)
+        self.frm_scans = ttk.Frame(self.win)
+        self.frm_mcp_all = ttk.Frame(self.win)
+        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
+
+        self.frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+
+    def initialize_mcp_frame(self):
 
         self.frm_notebook_mcp = ttk.Notebook(self.frm_mcp_all)
         frm_mcp_image = ttk.Frame(self.frm_mcp_all)
@@ -71,34 +166,12 @@ class HHGView(object):
         frm_mcp_treated = ttk.Frame(self.frm_mcp_all)
         frm_mcp_analysis = ttk.Frame(self.frm_mcp_all)
 
-
-        self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
-        self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
-        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
-        self.frm_notebook_scans.add(frm_beam_shaping, text="Beam Shaping scan")
-
-        frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
-        frm_mpc_campaign_stages.grid(row=0, column=0)
-        frm_mpc_campaign_scans = ttk.LabelFrame(frm_mpc_campaign, text='Scan')
-        frm_mpc_campaign_scans.grid(row=1, column=0)
-        frm_mpc_campaign_current = ttk.Frame(frm_mpc_campaign)
-        frm_mpc_campaign_current.grid(row=1, column=1)
-
-        frm_beam_shaping_scans = ttk.LabelFrame(frm_beam_shaping, text='Scan')
-        frm_beam_shaping_scans.grid(row=0, column=0)
-
-        self.frm_notebook_waveplate.add(frm_stage, text="Stage control")
-        self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
-        self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
-
-        self.output_console = ScrolledText(self.win, height=10, state='disabled')
-        self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
-
         self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
         self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
         self.frm_notebook_mcp.add(frm_mcp_calibrate_energy, text='Calibrate Energy')
         self.frm_notebook_mcp.add(frm_mcp_treated, text='MCP treated')
         self.frm_notebook_mcp.add(frm_mcp_analysis, text='Analysis')
+        self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
         frm_mcp_calibrate_options = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Options')
         frm_mcp_calibrate_image = ttk.LabelFrame(frm_mcp_calibrate, text='Calibration Image')
@@ -108,748 +181,6 @@ class HHGView(object):
         frm_mcp_treated_image = ttk.LabelFrame(frm_mcp_treated, text='Images')
         frm_mcp_analysis_options = ttk.LabelFrame(frm_mcp_analysis, text='Options')
         frm_mcp_analysis_results = ttk.LabelFrame(frm_mcp_analysis, text='Results')
-        frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
-
-
-        lbl_from = tk.Label(frm_phase_scan, text='From:')
-        self.strvar_from = tk.StringVar(self.win, '-3.14')
-        self.ent_from = tk.Entry(
-            frm_phase_scan, width=5, validate='all',
-            textvariable=self.strvar_from)
-
-        lbl_to = tk.Label(frm_phase_scan, text='To:')
-        self.strvar_to = tk.StringVar(self.win, '3.14')
-        self.ent_to = tk.Entry(
-            frm_phase_scan, width=5, validate='all',
-            textvariable=self.strvar_to)
-
-        lbl_steps = tk.Label(frm_phase_scan, text='Steps:')
-        self.strvar_steps = tk.StringVar(self.win, '10')
-        self.ent_steps = tk.Entry(
-            frm_phase_scan, width=5, validate='all',
-            textvariable=self.strvar_steps)
-
-        self.var_phasescan = tk.IntVar()
-        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
-                                           offvalue=0,
-                                           command=None)
-
-        # MEASUREMENT FRAME
-        self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
-        self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
-        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
-        self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
-
-        self.but_hide_twocolor = tk.Button(frm_measure, text='Hide/Show Spectrometer', command=self.hide_show_spectrometer)
-        self.frm_plt_visible = False
-
-
-        self.var_background = tk.IntVar()
-        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
-                                            offvalue=0,
-                                            command=None)
-        self.var_saveh5 = tk.IntVar()
-        self.cb_saveh5 = tk.Checkbutton(frm_measure, text='Save as h5', variable=self.var_saveh5, onvalue=1,
-                                        offvalue=0,
-                                        command=None)
-
-        self.var_export_treated_image = tk.IntVar()
-        self.cb_export_treated_image = tk.Checkbutton(frm_measure, text='Export Treated Image',
-                                                      variable=self.var_export_treated_image, onvalue=1,
-                                                      offvalue=0,
-                                                      command=None)
-
-        lbl_avgs = tk.Label(frm_measure, text='Averages:')
-        self.strvar_avgs = tk.StringVar(self.win, '1')
-        self.ent_avgs = tk.Entry(
-            frm_measure, width=5, validate='all',
-            textvariable=self.strvar_avgs)
-
-        lbl_mcp_cam_choice = tk.Label(frm_measure, text='MCP Camera selected :')
-        self.strvar_mcp_cam_choice = tk.StringVar(self.win, '')
-        self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
-        self.cbox_mcp_cam_choice['values'] = ('Andor')
-
-        lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
-        self.strvar_exposure_time = tk.StringVar(self.win, '100000')
-        self.ent_exposure_time = tk.Entry(
-            frm_measure, width=25, validate='all',
-            textvariable=self.strvar_exposure_time)
-
-        lbl_temperature = tk.Label(frm_measure, text='Temp (C):')
-        lbl_temperature_status = tk.Label(frm_measure, text='Status:')
-
-        self.strvar_temperature = tk.StringVar(self.win, 'none')
-        self.strvar_temperature_status = tk.StringVar(self.win, 'none')
-        lbl_actual_temperature = tk.Label(frm_measure, textvariable=self.strvar_temperature)
-        lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
-
-        lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
-        self.strvar_mcp = tk.StringVar(self.win, '-1400')
-        self.ent_mcp = tk.Entry(
-            frm_measure, width=25, validate='none',
-            textvariable=self.strvar_mcp)
-
-        lbl_comment = tk.Label(frm_measure, text='Comment:')
-        self.strvar_comment = tk.StringVar(self.win, '')
-        self.ent_comment = tk.Entry(
-            frm_measure, width=25, validate='none',
-            textvariable=self.strvar_comment)
-
-        lbl_Stage = tk.Label(frm_stage, text='Stage')
-        lbl_Nr = tk.Label(frm_stage, text='#')
-        lbl_is = tk.Label(frm_stage, text='is (deg)')
-        lbl_should = tk.Label(frm_stage, text='should')
-
-        lbl_WPR = tk.Label(frm_stage, text='WP red:')
-        self.strvar_WPR_is = tk.StringVar(self.win, '')
-        self.ent_WPR_is = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_is)
-        self.strvar_WPR_should = tk.StringVar(self.win, '')
-        self.ent_WPR_should = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_should)
-        self.strvar_WPR_Nr = tk.StringVar(self.win, '83837724')
-        self.ent_WPR_Nr = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_Nr)
-
-        # buttons
-        self.but_WPR_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPR)
-        self.but_WPR_Home = tk.Button(frm_stage, text='Home', command=self.home_WPR)
-        self.but_WPR_Read = tk.Button(frm_stage, text='Read', command=self.read_WPR)
-        self.but_WPR_Move = tk.Button(frm_stage, text='Move', command=self.move_WPR)
-
-        self.var_wprpower = tk.IntVar()
-        self.cb_wprpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
-                                          command=None)
-
-        lbl_WPG = tk.Label(frm_stage, text='WP green:')
-        self.strvar_WPG_is = tk.StringVar(self.win, '')
-        self.ent_WPG_is = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_is)
-        self.strvar_WPG_should = tk.StringVar(self.win, '')
-        self.ent_WPG_should = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_should)
-        # self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
-        self.strvar_WPG_Nr = tk.StringVar(self.win, '83837714')
-        self.ent_WPG_Nr = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_Nr)
-        self.but_WPG_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPG)
-        self.but_WPG_Home = tk.Button(frm_stage, text='Home', command=self.home_WPG)
-        self.but_WPG_Read = tk.Button(frm_stage, text='Read', command=self.read_WPG)
-        self.but_WPG_Move = tk.Button(frm_stage, text='Move', command=self.move_WPG)
-
-        self.var_wpgpower = tk.IntVar()
-        self.cb_wpgpower = tk.Checkbutton(frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
-                                          command=None)
-
-        lbl_cam_stage = tk.Label(frm_stage, text='Camera in focus:')
-        self.strvar_cam_stage_is = tk.StringVar(self.win, '')
-        self.ent_cam_stage_is = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_is)
-        self.strvar_cam_stage_should = tk.StringVar(self.win, '')
-        self.ent_cam_stage_should = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_should)
-        self.strvar_cam_stage_Nr = tk.StringVar(self.win, '83837725')
-        self.ent_cam_stage_Nr = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_Nr)
-        self.but_cam_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_cam_stage)
-        self.but_cam_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_cam_stage)
-        self.but_cam_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_cam_stage)
-        self.but_cam_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_cam_stage)
-
-        lbl_delay_stage = tk.Label(frm_stage, text='Delay:')
-        self.strvar_delay_stage_is = tk.StringVar(self.win, '')
-        self.ent_delay_stage_is = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_delay_stage_is)
-        self.strvar_delay_stage_should = tk.StringVar(self.win, '')
-        self.ent_delay_stage_should = tk.Entry(
-            frm_stage, width=10, validate='all',
-
-            textvariable=self.strvar_delay_stage_should)
-        self.strvar_delay_stage_Nr = tk.StringVar(self.win, '83837719')
-        self.ent_delay_stage_Nr = tk.Entry(
-            frm_stage, width=10, validate='all',
-
-            textvariable=self.strvar_delay_stage_Nr)
-        # scan parameters
-        self.strvar_delay_stage_from = tk.StringVar(self.win, '6.40')
-        self.ent_delay_stage_from = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_delay_stage_from)
-        self.strvar_delay_stage_to = tk.StringVar(self.win, '6.45')
-        self.ent_delay_stage_to = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_delay_stage_to)
-        self.strvar_delay_stage_steps = tk.StringVar(self.win, '10')
-        self.ent_delay_stage_steps = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_delay_stage_steps)
-        self.var_delayscan = tk.IntVar()
-        self.cb_delayscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
-                                           command=None)
-        self.but_delay_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_delay_stage)
-        self.but_delay_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_delay_stage)
-        self.but_delay_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_delay_stage)
-        self.but_delay_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_delay_stage)
-
-        lbl_Stage_MPC = tk.Label(frm_mpc_campaign_stages, text='Stage')
-        lbl_Nr_MPC = tk.Label(frm_mpc_campaign_stages, text='#')
-        lbl_is_MPC = tk.Label(frm_mpc_campaign_stages, text='is')
-        lbl_should_MPC = tk.Label(frm_mpc_campaign_stages, text='should')
-
-        lbl_mpc_to = tk.Label(frm_mpc_campaign_scans, text='to')
-        lbl_mpc_from = tk.Label(frm_mpc_campaign_scans, text='from')
-        lbl_mpc_steps = tk.Label(frm_mpc_campaign_scans, text='steps')
-
-        lbl_mpc_stage_label = tk.Label(frm_mpc_campaign_scans, text='Stage')
-        lbl_mpc_wp_label = tk.Label(frm_mpc_campaign_scans, text='WP')
-        lbl_mpc_lens_label = tk.Label(frm_mpc_campaign_scans, text='Lens')
-        lbl_mpc_grating_label = tk.Label(frm_mpc_campaign_scans, text='Grating')
-
-
-        lbl_beam_shaping_to = tk.Label(frm_beam_shaping_scans, text='to')
-        lbl_beam_shaping_from = tk.Label(frm_beam_shaping_scans, text='from')
-        lbl_beam_shaping_steps = tk.Label(frm_beam_shaping_scans, text='steps')
-
-        lbl_beam_shaping_stage_label = tk.Label(frm_beam_shaping_scans, text='Stage')
-        lbl_beam_shaping_lens_label = tk.Label(frm_beam_shaping_scans, text='Lens')
-
-        lbl_lens_stage = tk.Label(frm_stage, text='Lens:')
-        lbl_MPC_wp = tk.Label(frm_mpc_campaign_stages, text='WP')
-        lbl_zaber_grating = tk.Label(frm_mpc_campaign_stages, text='Grating')
-
-        lbl_MPC_maxpower = tk.Label(frm_mpc_campaign_current, text='Max Power (W)')
-        lbl_MPC_minpower = tk.Label(frm_mpc_campaign_current, text='Min Power (W)')
-
-        lbl_MPC_maxangle = tk.Label(frm_mpc_campaign_current, text='Max Angle (deg)')
-        lbl_MPC_currentpower = tk.Label(frm_mpc_campaign_current, text='Current Power (W)')
-
-        self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
-        self.ent_mpc_lens_nr = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_nr)
-        self.strvar_mpc_lens_is = tk.StringVar(self.win, '')
-        self.ent_mpc_lens_is = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_is)
-        self.strvar_mpc_lens_should = tk.StringVar(self.win, '')
-        self.ent_mpc_lens_should = tk.Entry(
-            frm_stage, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_should)
-
-        self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83837724')
-        self.ent_mpc_wp_nr = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_nr)
-        self.strvar_mpc_wp_is = tk.StringVar(self.win, '')
-        self.ent_mpc_wp_is = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_is)
-        self.strvar_mpc_wp_should = tk.StringVar(self.win, '')
-        self.ent_mpc_wp_should = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_should)
-
-        self.strvar_zaber_grating_nr = tk.StringVar(self.win, 'COM11')
-        self.ent_zaber_grating_nr = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_zaber_grating_nr)
-        self.strvar_zaber_grating_is = tk.StringVar(self.win, '')
-        self.ent_zaber_grating_is = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_zaber_grating_is)
-        self.strvar_zaber_grating_should = tk.StringVar(self.win, '')
-        self.ent_zaber_grating_should = tk.Entry(
-            frm_mpc_campaign_stages, width=10, validate='all',
-            textvariable=self.strvar_zaber_grating_should)
-
-        self.strvar_mpc_lens_from = tk.StringVar(self.win, '5')
-        self.ent_mpc_lens_from = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_from)
-        self.strvar_mpc_lens_to = tk.StringVar(self.win, '10')
-        self.ent_mpc_lens_to = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_to)
-        self.strvar_mpc_lens_steps = tk.StringVar(self.win, '5')
-        self.ent_mpc_lens_steps = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_steps)
-
-        self.strvar_mpc_wp_from = tk.StringVar(self.win, '1')
-        self.ent_mpc_wp_from = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_from)
-        self.strvar_mpc_wp_to = tk.StringVar(self.win, '2')
-        self.ent_mpc_wp_to = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_to)
-        self.strvar_mpc_wp_steps = tk.StringVar(self.win, '5')
-        self.ent_mpc_wp_steps = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_wp_steps)
-
-        self.strvar_mpc_grating_from = tk.StringVar(self.win, '0')
-        self.ent_mpc_grating_from = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_grating_from)
-        self.strvar_mpc_grating_to = tk.StringVar(self.win, '10')
-        self.ent_mpc_grating_to = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_grating_to)
-        self.strvar_mpc_grating_steps = tk.StringVar(self.win, '10')
-        self.ent_mpc_grating_steps = tk.Entry(
-            frm_mpc_campaign_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_grating_steps)
-
-        self.strvar_beam_shaping_lens_from = tk.StringVar(self.win, '5')
-        self.ent_beam_shaping_lens_from = tk.Entry(
-            frm_beam_shaping_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_from)
-        self.strvar_beam_shaping_lens_to = tk.StringVar(self.win, '10')
-        self.ent_beam_shaping_lens_to = tk.Entry(
-            frm_beam_shaping_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_to)
-        self.strvar_beam_shaping_lens_steps = tk.StringVar(self.win, '5')
-        self.ent_beam_shaping_lens_steps = tk.Entry(
-            frm_beam_shaping_scans, width=10, validate='all',
-            textvariable=self.strvar_mpc_lens_steps)
-
-        self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
-        self.ent_mpc_maxpower = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_maxpower)
-
-        self.strvar_mpc_minpower = tk.StringVar(self.win, '5')
-        self.ent_mpc_minpower = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_minpower)
-
-        self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
-        self.ent_mpc_maxangle = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_maxangle)
-        self.strvar_mpc_currentpower = tk.StringVar(self.win, '')
-        self.ent_mpc_currentpower = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_currentpower)
-
-        self.but_MPC_measure = tk.Button(frm_mpc_campaign_scans, text='Measure The MPC', command=self.enabl_mpc_meas)
-        self.but_MPC_abort = tk.Button(frm_mpc_campaign_scans, text='ABORT!!!', command=self.abort_mpc_measurement)
-        self.but_MPC_test_scan = tk.Button(frm_mpc_campaign_scans, text='Test scan', command=self.enabl_mpc_test_scan)
-
-        self.but_beam_shaping_measure = tk.Button(frm_beam_shaping_scans, text='Measure', command=self.enabl_beam_shaping_meas)
-        self.but_beam_shaping_abort = tk.Button(frm_beam_shaping_scans, text='Abort', command=self.abort_beam_shaping_measurement)
-
-        self.but_lens_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_lens_stage)
-        self.but_lens_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_lens_stage)
-        self.but_lens_stage_Read = tk.Button(frm_stage, text='Read', command=self.read_lens_stage)
-        self.but_lens_stage_Move = tk.Button(frm_stage, text='Move', command=self.move_lens_stage)
-
-        self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_wp)
-        self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_wp)
-        self.but_MPC_wp_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_MPC_wp)
-        self.but_MPC_wp_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_MPC_wp)
-
-        self.but_zaber_grating_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_zaber_stage)
-        self.but_zaber_grating_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_zaber_stage)
-        self.but_zaber_grating_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_zaber_stage)
-        self.but_zaber_grating_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_zaber_stage)
-
-        self.var_mpc_wp_power = tk.IntVar()
-        self.cb_mpc_wp_power = tk.Checkbutton(frm_mpc_campaign_stages, text='Power', variable=self.var_mpc_wp_power,
-                                              onvalue=1,
-                                              offvalue=0,
-                                              command=None)
-        self.var_mpc_scan_lens = tk.IntVar()
-        self.cb_mpc_scan_lens = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Lens',
-                                               variable=self.var_mpc_scan_lens,
-                                               onvalue=1,
-                                               offvalue=0,
-                                               command=None)
-        self.var_mpc_scan_wp = tk.IntVar()
-        self.cb_mpc_scan_wp = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Power', variable=self.var_mpc_scan_wp,
-                                             onvalue=1,
-                                             offvalue=0,
-                                             command=None)
-
-        self.var_mpc_scan_grating = tk.IntVar()
-        self.cb_mpc_scan_grating = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Grating',
-                                                  variable=self.var_mpc_scan_grating,
-                                                  onvalue=1,
-                                                  offvalue=0,
-                                                  command=None)
-
-        self.var_beam_shaping_scan_lens = tk.IntVar()
-        self.cb_beam_shaping_scan_lens = tk.Checkbutton(frm_beam_shaping_scans, text='Scan Lens',
-                                               variable=self.var_beam_shaping_scan_lens,
-                                               onvalue=1,
-                                               offvalue=0,
-                                               command=None)
-
-        lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_zaber_grating.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_Nr_MPC.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_is_MPC.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_should_MPC.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.ent_mpc_lens_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_is.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_should.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_zaber_grating_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_zaber_grating_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_zaber_grating_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_mpc_stage_label.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_to.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_steps.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_wp_label.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_mpc_grating_label.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_beam_shaping_stage_label.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_beam_shaping_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_beam_shaping_to.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_beam_shaping_steps.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_beam_shaping_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.ent_beam_shaping_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_beam_shaping_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_beam_shaping_lens_steps.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.but_beam_shaping_measure.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_beam_shaping_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-
-        self.cb_beam_shaping_scan_lens.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-
-        self.ent_mpc_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_lens_steps.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_from.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_to.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_steps.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_grating_from.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_grating_to.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_grating_steps.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        self.cb_mpc_scan_lens.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.cb_mpc_scan_wp.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.cb_mpc_scan_grating.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_measure.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_test_scan.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-
-        self.but_lens_stage_Ini.grid(row=5, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Home.grid(row=5, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Read.grid(row=5, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_lens_stage_Move.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-        self.cb_mpc_wp_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_zaber_grating_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_zaber_grating_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_zaber_grating_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_zaber_grating_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-
-        lbl_MPC_maxpower.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_minpower.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_maxangle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_currentpower.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.ent_mpc_maxpower.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_minpower.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_maxangle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_currentpower.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_MPC_fitA = tk.Label(frm_mpc_campaign_current, text='Amplitude')
-        lbl_MPC_fitf = tk.Label(frm_mpc_campaign_current, text='Frequency')
-        lbl_MPC_fitph = tk.Label(frm_mpc_campaign_current, text='Phase offset')
-        lbl_MPC_fito = tk.Label(frm_mpc_campaign_current, text='Amp offset')
-
-        lbl_MPC_fitA.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_fitf.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_fitph.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_MPC_fito.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_MPC_fitA = tk.StringVar(self.win, '5')
-        self.ent_MPC_fitA = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_MPC_fitA)
-
-        self.strvar_MPC_fitf = tk.StringVar(self.win, '0.070')
-        self.ent_MPC_fitf = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_MPC_fitf)
-
-        self.strvar_MPC_fitph = tk.StringVar(self.win, '57.000')
-        self.ent_MPC_fitph = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_MPC_fitph)
-
-        self.strvar_MPC_fito = tk.StringVar(self.win, '1.000')
-        self.ent_MPC_fito = tk.Entry(
-            frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_MPC_fito)
-
-        self.ent_MPC_fitA.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_MPC_fitf.grid(row=7, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_MPC_fitph.grid(row=7, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_MPC_fito.grid(row=7, column=3, padx=2, pady=2, sticky='nsew')
-
-        # power wp calibration
-        lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
-        self.strvar_pharos_att = tk.StringVar(self.win, '100')
-        self.ent_pharos_att = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_pharos_att)
-
-        lbl_pharos_pp = tk.Label(frm_wp_power_cal, text='Pharos PP:')
-        self.strvar_pharos_pp = tk.StringVar(self.win, '1')
-        self.ent_pharos_pp = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-
-            textvariable=self.strvar_pharos_pp)
-
-        self.strvar_red_power = tk.StringVar(self.win, '')
-        self.ent_red_power = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_red_power)
-
-        self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
-
-        lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
-
-        self.strvar_red_power = tk.StringVar(self.win, '0')
-
-        self.ent_red_power = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_red_power)
-
-        lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
-        self.strvar_red_phase = tk.StringVar(self.win, '')
-        self.ent_red_phase = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_red_phase)
-
-        lbl_red_current_power = tk.Label(frm_wp_power_cal, text='Red current power (W):')
-        self.strvar_red_current_power = tk.StringVar(self.win, '')
-        self.ent_red_current_power = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_red_current_power)
-
-        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
-
-        self.strvar_green_power = tk.StringVar(self.win, '0')
-
-        self.ent_green_power = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_green_power)
-
-        lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
-        self.strvar_green_phase = tk.StringVar(self.win, '')
-        self.ent_green_phase = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_green_phase)
-
-        lbl_green_current_power = tk.Label(frm_wp_power_cal, text='Green current power (mW):')
-        self.strvar_green_current_power = tk.StringVar(self.win, '')
-        self.ent_green_current_power = tk.Entry(
-            frm_wp_power_cal, width=8, validate='all',
-            textvariable=self.strvar_green_current_power)
-
-        # calcualtor
-        lbl_pulse_length = tk.Label(frm_calculator, text='Pulse length (fs):')
-        self.strvar_pulse_length = tk.StringVar(self.win, '180')
-        self.ent_pulse_length = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_pulse_length)
-
-        lbl_rep_rate = tk.Label(frm_calculator, text='Repetition rate (kHz):')
-        self.strvar_rep_rate = tk.StringVar(self.win, '10')
-        self.ent_rep_rate = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_rep_rate)
-
-        lbl_power = tk.Label(frm_calculator, text='Power (W):')
-        self.strvar_power = tk.StringVar(self.win, '1')
-        self.ent_power = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_power)
-
-        lbl_beam_radius = tk.Label(frm_calculator, text='Beam radius (µm):')
-        self.strvar_beam_radius = tk.StringVar(self.win, '30')
-        self.ent_beam_radius = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_beam_radius)
-
-        lbl_pulse_energy = tk.Label(frm_calculator, text='Pulse energy (µJ):')
-        self.strvar_pulse_energy = tk.StringVar(self.win, '')
-        self.ent_pulse_energy = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_pulse_energy)
-
-        lbl_peak_intensity = tk.Label(frm_calculator, text='Peak intensity (1e14 W/cm2):')
-        self.strvar_peak_intensity = tk.StringVar(self.win, '')
-        self.ent_peak_intensity = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_peak_intensity)
-
-        lbl_hhg_cutoff = tk.Label(frm_calculator, text='HHG cutoff (eV, q):')
-        self.strvar_hhg_cutoff = tk.StringVar(self.win, '')
-        self.ent_hhg_cutoff = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_hhg_cutoff)
-
-        self.strvar_hhg_cutoff_q = tk.StringVar(self.win, '')
-        self.ent_hhg_cutoff_q = tk.Entry(
-            frm_calculator, width=8, validate='all',
-            textvariable=self.strvar_hhg_cutoff_q)
-
-        # frm_wp_scans
-        lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
-        self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
-        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red/Green Ratio",
-                                           text="Red/Green Ratio")
-        self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red", text="Only Red")
-        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green",
-                                     text="Only Green")
-        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing",
-                                         text="Nothing")
-        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Green Focus",
-                                                 text="Green Focus")
-        self.rb_red_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red Focus",
-                                               text="Red Focus")
-
-        lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
-        lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
-        lbl_stage_scan_steps = tk.Label(frm_wp_scans, text='steps:')
-
-        self.strvar_int_ratio_focus = tk.StringVar(self.win, '2')
-        self.ent_int_ratio_focus = tk.Entry(
-            frm_wp_scans, width=4, validate='all',
-            textvariable=self.strvar_int_ratio_focus)
-        self.strvar_int_ratio_constant = tk.StringVar(self.win, '4.4')
-        self.ent_int_ratio_constant = tk.Entry(
-            frm_wp_scans, width=4, validate='all',
-            textvariable=self.strvar_int_ratio_constant)
-
-        lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
-        self.lbl_int_ratio_constant = tk.Label(frm_wp_scans,
-                                               text='Pr+{:.2f}*PG='.format(
-                                                   (float(self.ent_int_ratio_focus.get())) ** 2))
-        lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
-
-        # scan paramters RATIO
-        self.strvar_ratio_from = tk.StringVar(self.win, '0')
-        self.ent_ratio_from = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_ratio_from)
-        x = float(self.ent_int_ratio_focus.get()) ** 2
-        c = float(self.ent_int_ratio_constant.get())
-        maxG = float(self.ent_green_power.get()) * 1e-3
-        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c), 3)))
-        self.ent_ratio_to = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_ratio_to)
-        self.strvar_ratio_steps = tk.StringVar(self.win, '10')
-        self.ent_ratio_steps = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_ratio_steps)
-
-        self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
-        self.strvar_int_ratio_focus.trace_add('write', self.update_maxgreenratio)
-
-        lbl_int_red = tk.Label(frm_wp_scans, text="Red Power (W)")
-        # scan parameters ONLY RED
-        self.strvar_WPR_from = tk.StringVar(self.win, '0')
-        self.ent_WPR_from = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPR_from)
-        self.strvar_WPR_to = tk.StringVar(self.win, self.ent_red_power.get())
-        self.ent_WPR_to = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPR_to)
-        self.strvar_WPR_steps = tk.StringVar(self.win, '10')
-        self.ent_WPR_steps = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPR_steps)
-        # self.var_wprscan = tk.IntVar()
-        # self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
-        #                                 command=None)
-
-        lbl_int_green = tk.Label(frm_wp_scans, text="Green Power (mW)")
-        # scan parameters ONLY GREEN
-        self.strvar_WPG_from = tk.StringVar(self.win, '0')
-        self.ent_WPG_from = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPG_from)
-        self.strvar_WPG_to = tk.StringVar(self.win, self.ent_green_power.get())
-        self.ent_WPG_to = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPG_to)
-        self.strvar_WPG_steps = tk.StringVar(self.win, '10')
-        self.ent_WPG_steps = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_WPG_steps)
-
-        lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (mm)")
-        # scan parameters GREEN FOCUS POSITIOM
-        self.strvar_GFP_from = tk.StringVar(self.win, '0.02')
-        self.ent_GFP_from = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_GFP_from)
-        self.strvar_GFP_to = tk.StringVar(self.win, '0.05')
-        self.ent_GFP_to = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_GFP_to)
-        self.strvar_GFP_steps = tk.StringVar(self.win, '10')
-        self.ent_GFP_steps = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_GFP_steps)
-
-        lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (mm)")
-        # scan parameters RED FOCUS POSITIOM
-        self.strvar_RFP_from = tk.StringVar(self.win, '-0.15')
-        self.ent_RFP_from = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_RFP_from)
-        self.strvar_RFP_to = tk.StringVar(self.win, '-0.05')
-        self.ent_RFP_to = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_RFP_to)
-        self.strvar_RFP_steps = tk.StringVar(self.win, '10')
-        self.ent_RFP_steps = tk.Entry(
-            frm_wp_scans, width=5, validate='all',
-            textvariable=self.strvar_RFP_steps)
-
-        self.but_fixyaxis = tk.Button(frm_mcp_options, text='Update Y Axis!', command=self.fixyaxis)
-        self.var_fixyaxis = tk.IntVar()
-        self.cb_fixyaxis = tk.Checkbutton(frm_mcp_options, text='Fix Y axis', variable=self.var_fixyaxis, onvalue=1,
-                                          offvalue=0,
-                                          command=None)
-
-        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
-        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
-                                               command=self.remove_background)
-
 
         frm_mcp_calibrate_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_calibrate_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
@@ -859,194 +190,6 @@ class HHGView(object):
         frm_mcp_treated_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_analysis_options.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         frm_mcp_analysis_results.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_notebook_mcp.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-
-        frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-
-        frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-
-
-        # setting up frm_measure
-        lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_mcp_cam_choice.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.cbox_mcp_cam_choice.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_avgs.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_avgs.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_exposure_time.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_exposure_time.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_temperature.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_temperature_status.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_actual_temperature.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        lbl_actual_temperature_status.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-
-        lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
-
-        self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
-        self.cb_saveh5.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
-        self.cb_export_treated_image.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
-
-        self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_hide_twocolor.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
-        # setting up frm_phase_scan
-        lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_to.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_steps.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_to.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_steps.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_stage
-        lbl_Stage.grid(row=0, column=0, pady=2, padx=2,sticky='nsew')
-        lbl_Nr.grid(row=0, column=1, pady=2, padx=2,sticky='nsew')
-        lbl_is.grid(row=0, column=2, pady=2, padx=2,sticky='nsew')
-        lbl_should.grid(row=0, column=3, pady=2, padx=2,sticky='nsew')
-
-        lbl_WPR.grid(row=1, column=0, pady=2, padx=2,sticky='nsew')
-        lbl_WPG.grid(row=2, column=0, pady=2, padx=2,sticky='nsew')
-        lbl_delay_stage.grid(row=3, column=0, padx=2,pady=2, sticky='nsew')
-        lbl_cam_stage.grid(row=4, column=0, padx=2,pady=2, sticky='nsew')
-        lbl_lens_stage.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.ent_WPR_Nr.grid(row=1, column=1, pady=2, padx=2,sticky='nsew')
-        self.ent_WPG_Nr.grid(row=2, column=1, pady=2, padx=2,sticky='nsew')
-        self.ent_delay_stage_Nr.grid(row=3, column=1, padx=2,pady=2, sticky='nsew')
-        self.ent_cam_stage_Nr.grid(row=4, column=1,padx=2, pady=2, sticky='nsew')
-
-        self.ent_WPR_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_cam_stage_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
-
-        self.ent_WPR_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_cam_stage_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.but_WPR_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.but_WPG_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.but_cam_stage_Ini.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.but_delay_stage_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.cb_wprpower.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-        self.cb_wpgpower.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_wp_power_calibration
-        self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_pharos_att.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_pharos_att.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_pharos_pp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_pharos_pp.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-
-        lbl_red_power.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
-        self.ent_red_power.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
-        lbl_red_phase.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.ent_red_phase.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        lbl_red_current_power.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.ent_red_current_power.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-
-        lbl_green_power.grid(row=0, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_green_power.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
-        lbl_green_phase.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_green_phase.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-        lbl_green_current_power.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_green_current_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_calculator
-
-        lbl_pulse_length.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_pulse_length.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_rep_rate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_rep_rate.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_power.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_power.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_beam_radius.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_beam_radius.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        self.but_calculate = tk.Button(frm_calculator, text='Calculate',
-                                       command=self.calculate_energy_and_peak_intensity)
-        self.but_calculate.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-
-        lbl_pulse_energy.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_pulse_energy.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_peak_intensity.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_peak_intensity.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_hhg_cutoff.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_hhg_cutoff.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_hhg_cutoff_q.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_wp_scans
-        lbl_wp_scan_info.grid(row=0, column=0, padx=2, pady=2)
-        self.rb_int_ratio.grid(row=1, column=0)
-        self.rb_wpr.grid(row=2, column=0)
-        self.rb_wpg.grid(row=3, column=0)
-        self.rb_green_focus_SLM.grid(row=4, column=0)
-        self.rb_red_focus_SLM.grid(row=5, column=0)
-        self.rb_nothing.grid(row=6, column=0)
-
-        lbl_int_ratio_focus.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.lbl_int_ratio_constant.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_stage_scan_from.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
-        lbl_stage_scan_to.grid(row=0, column=9, padx=2, pady=2, sticky='nsew')
-        lbl_stage_scan_steps.grid(row=0, column=10, padx=2, pady=2, sticky='nsew')
-
-        self.ent_int_ratio_focus.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_int_ratio_constant.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-
-        lbl_int_green_ratio.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.ent_ratio_from.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-        self.ent_ratio_to.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
-        self.ent_ratio_steps.grid(row=1, column=10, padx=2, pady=2, sticky='nsew')
-
-        lbl_int_red.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_WPR_from.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-        self.ent_WPR_to.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
-        self.ent_WPR_steps.grid(row=2, column=10, padx=2, pady=2, sticky='nsew')
-
-        lbl_int_green.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_from.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_to.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_steps.grid(row=3, column=10, padx=2, pady=2, sticky='nsew')
-
-        lbl_GFP_green.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_GFP_from.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
-        self.ent_GFP_to.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
-        self.ent_GFP_steps.grid(row=4, column=10, padx=2, pady=2, sticky='nsew')
-
-        lbl_RFP_red.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
-        self.ent_RFP_from.grid(row=5, column=8, padx=2, pady=2, sticky='nsew')
-        self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
-        self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
         self.figrMCP = Figure(figsize=(5, 6), dpi=100)
         self.axMCP = self.figrMCP.add_subplot(211)
@@ -1136,7 +279,8 @@ class HHGView(object):
         self.axHarmonics_calibrate_energy2.set_xlim(0, 515)
         self.figrMCP_calibrate_energy.tight_layout()
         self.figrMCP_calibrate_energy.canvas.draw()
-        self.imgMCP_calibrate_energy = FigureCanvasTkAgg(self.figrMCP_calibrate_energy, frm_mcp_calibrate_image_energy)
+        self.imgMCP_calibrate_energy = FigureCanvasTkAgg(self.figrMCP_calibrate_energy,
+                                                         frm_mcp_calibrate_image_energy)
         self.tk_widget_figrMCP_calibrate_energy = self.imgMCP_calibrate_energy.get_tk_widget()
         self.tk_widget_figrMCP_calibrate_energy.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.imgMCP_calibrate_energy.draw()
@@ -1174,7 +318,8 @@ class HHGView(object):
         self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
 
-        lbl_mcp_calibration_energy_ignore_list = tk.Label(frm_mcp_calibrate_options_energy, text="Ignore peaks around:")
+        lbl_mcp_calibration_energy_ignore_list = tk.Label(frm_mcp_calibrate_options_energy,
+                                                          text="Ignore peaks around:")
         self.var_mcp_calibration_energy_ignore_list = tk.StringVar(self.win, "")
         self.var_mcp_calibration_energy_ignore_list.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_ignore_list = tk.Entry(frm_mcp_calibrate_options_energy,
@@ -1289,112 +434,978 @@ class HHGView(object):
         # Draw canvas
         self.canvas_results.draw()
 
+        frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
         # setting up frm_mcp_options
+        self.but_fixyaxis = tk.Button(frm_mcp_options, text='Update Y Axis!', command=self.fixyaxis)
+        self.var_fixyaxis = tk.IntVar()
+        self.cb_fixyaxis = tk.Checkbutton(frm_mcp_options, text='Fix Y axis', variable=self.var_fixyaxis, onvalue=1,
+                                          offvalue=0,
+                                          command=None)
+
+        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
+        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
+                                               command=self.remove_background)
+
+        frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.but_fixyaxis.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
+    def initialize_measurement_frame(self):
+        frm_measure = ttk.LabelFrame(self.frm_scans, text='Measurement')
+        self.but_meas_simple = tk.Button(frm_measure, text='Single Image', command=self.enabl_mcp_simple)
+        self.but_meas_scan = tk.Button(frm_measure, text='Phase Scan', command=self.enabl_mcp)
+        self.but_meas_all = tk.Button(frm_measure, text='Measurement Series', command=self.enabl_mcp_all)
+        self.but_view_live = tk.Button(frm_measure, text='Live View!', command=self.enabl_mcp_live)
 
-        self.pid = PID(0, 0, 0, setpoint=0)
+        self.but_hide_twocolor = tk.Button(frm_measure, text='Hide/Show Spectrometer',
+                                           command=self.hide_show_spectrometer)
+        self.frm_plt_visible = False
 
-        self.im_phase = np.zeros(1000)
-        self.im_voltage = np.zeros(1000)
-        self.stop_acquire = 0
-        self.stop_pid = False
-        self.spec_interface_initialized = False
-        self.active_spec_handle = None
-        self.ANDOR_cam = False
+        self.var_background = tk.IntVar()
+        self.cb_background = tk.Checkbutton(frm_measure, text='Background', variable=self.var_background, onvalue=1,
+                                            offvalue=0,
+                                            command=None)
+        self.var_saveh5 = tk.IntVar()
+        self.cb_saveh5 = tk.Checkbutton(frm_measure, text='Save as h5', variable=self.var_saveh5, onvalue=1,
+                                        offvalue=0,
+                                        command=None)
 
+        self.var_export_treated_image = tk.IntVar()
+        self.cb_export_treated_image = tk.Checkbutton(frm_measure, text='Export Treated Image',
+                                                      variable=self.var_export_treated_image, onvalue=1,
+                                                      offvalue=0,
+                                                      command=None)
 
-        if self.ANDOR_cam is True:
-            self.name_cam = 'ANDOR_cam'
+        lbl_avgs = tk.Label(frm_measure, text='Averages:')
+        self.strvar_avgs = tk.StringVar(self.win, '1')
+        self.ent_avgs = tk.Entry(
+            frm_measure, width=5, validate='all',
+            textvariable=self.strvar_avgs)
+
+        lbl_mcp_cam_choice = tk.Label(frm_measure, text='MCP Camera selected :')
+        self.strvar_mcp_cam_choice = tk.StringVar(self.win, '')
+        self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
+        self.cbox_mcp_cam_choice['values'] = ('Andor')
+
+        lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
+        self.strvar_exposure_time = tk.StringVar(self.win, '100000')
+        self.ent_exposure_time = tk.Entry(
+            frm_measure, width=25, validate='all',
+            textvariable=self.strvar_exposure_time)
+
+        lbl_temperature = tk.Label(frm_measure, text='Temp (C):')
+        lbl_temperature_status = tk.Label(frm_measure, text='Status:')
+
+        self.strvar_temperature = tk.StringVar(self.win, 'none')
+        self.strvar_temperature_status = tk.StringVar(self.win, 'none')
+        lbl_actual_temperature = tk.Label(frm_measure, textvariable=self.strvar_temperature)
+        lbl_actual_temperature_status = tk.Label(frm_measure, textvariable=self.strvar_temperature_status)
+
+        lbl_mcp = tk.Label(frm_measure, text='Neg. MCP value (V):')
+        self.strvar_mcp = tk.StringVar(self.win, '-1400')
+        self.ent_mcp = tk.Entry(
+            frm_measure, width=25, validate='none',
+            textvariable=self.strvar_mcp)
+
+        lbl_comment = tk.Label(frm_measure, text='Comment:')
+        self.strvar_comment = tk.StringVar(self.win, '')
+        self.ent_comment = tk.Entry(
+            frm_measure, width=25, validate='none',
+            textvariable=self.strvar_comment)
+
+        frm_measure.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_mcp_cam_choice.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.cbox_mcp_cam_choice.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_avgs.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_avgs.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_exposure_time.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_exposure_time.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_temperature.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_temperature_status.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_actual_temperature.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        lbl_actual_temperature_status.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+
+        lbl_comment.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_comment.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.cb_background.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+        self.cb_saveh5.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+        self.cb_export_treated_image.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.but_meas_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_hide_twocolor.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_scan.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_meas_simple.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.but_view_live.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
         self.cbox_mcp_cam_choice.bind("<<ComboboxSelected>>", self.change_mcp_cam)
 
-        #self.open_calibrator_on_start()
+    def initialize_panel_1(self):
 
-    def initialize_window(self):
-        self.win = tk.Toplevel()
-        self.win.title('D-Lab Controller - HHGView')
-        self.win.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.frm_notebook_waveplate = ttk.Notebook(self.frm_scans)
+        self.frm_stage = ttk.Frame(self.frm_scans)
+        frm_wp_power_cal = ttk.Frame(self.frm_scans)
+        frm_calculator = ttk.Frame(self.frm_scans)
 
-    def initialize_variables(self):
-        self.cam = None
-        self.lens_green = self.parent.phase_refs_green[1]
-        self.lens_red = self.parent.phase_refs_red[1]
-        self.slm_lib = slm
-        self.set_point = 0
-        self.WPG = None
-        self.WPR = None
-        self.cam_stage = None
-        self.delay_stage = None
-        self.lens_stage = None
-        self.MPC_wp = None
-        self.MPC_grating = None
-        self.abort = 0
-        self.pid_stage = None
-        self.pid_stage_initialized = False
-        self.meas_has_started = False
-        self.scan_is_done = True
-        self.ymin_harmonics = None
-        self.ymax_harmonics = None
-        self.ymin_harmonics_calibrate = None
-        self.ymax_harmonics_calibrate = None
-        self.current_harmonics_profile_max = None
-        self.current_harmonics_profile_min = None
-        self.current_harmonics_profile_max_calibrate = None
-        self.current_harmonics_profile_min_calibrate = None
-        self.background = None
-        self.calibration_image = np.zeros([512, 512])
-        self.calibration_image_update = np.zeros([512, 512])
-        self.calibration_image_update_energy = np.zeros([512, 512])
-        self.eaxis = None
-        self.eaxis_correct = None
-        self.roix = [0, 512]
-        self.roiy = [0, 512]
-        self.live_is_pressed = False
-        self.measurement_array = None
-        self.measurement_array_flat = None
-        self.measurement_treated_array = None
-        self.measurement_treated_array_flat = None
-        self.focus_image_array = None
-        self.focus_image_array_flat = None
-        self.measurement_counter = 0
-        self.measurement_running = 0
-        self.phase_array = None
-        self.phase_meas_array = None
-        self.phase_meas_array_flat = None
-        self.phase_std_array = None
-        self.phase_std_array_flat = None
-        self.ratio_array = None
-        self.pi_radius_array = None
-        self.red_power_array = None
-        self.green_power_array = None
-        self.mcp_voltage = None
-        self.time_stamps_array = None
-        self.time_stamps_array_flat = None
-        self.aquisition_time = None
-        self.averages = None
-        self.calibrator = None
+        self.frm_notebook_waveplate.add(self.frm_stage, text="Stage control")
+        self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
+        self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
+        self.frm_notebook_waveplate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-        #self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
-        #self.autolog = self.saving_folder + '-' + 'auto-log.txt'
-        self.autolog = './ressources/dummy_log'
 
-        self.f = open(self.autolog, "a+")
+        lbl_Stage = tk.Label(self.frm_stage, text='Stage')
+        lbl_Nr = tk.Label(self.frm_stage, text='#')
+        lbl_is = tk.Label(self.frm_stage, text='is (deg)')
+        lbl_should = tk.Label(self.frm_stage, text='should')
 
-    def initialize_frames(self):
-        self.frm_mid = ttk.Frame(self.win)
-        self.frm_bot = ttk.Frame(self.win)
-        self.frm_scans = ttk.Frame(self.win)
-        self.frm_mcp_all = ttk.Frame(self.win)
-        self.frm_plt = ttk.LabelFrame(self.win, text='Spectrometer')
+        lbl_WPR = tk.Label(self.frm_stage, text='WP red:')
+        self.strvar_WPR_is = tk.StringVar(self.win, '')
+        self.ent_WPR_is = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPR_is)
+        self.strvar_WPR_should = tk.StringVar(self.win, '')
+        self.ent_WPR_should = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPR_should)
+        self.strvar_WPR_Nr = tk.StringVar(self.win, '83837724')
+        self.ent_WPR_Nr = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPR_Nr)
 
-        self.frm_mid.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        self.frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        # buttons
+        self.but_WPR_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_WPR)
+        self.but_WPR_Home = tk.Button(self.frm_stage, text='Home', command=self.home_WPR)
+        self.but_WPR_Read = tk.Button(self.frm_stage, text='Read', command=self.read_WPR)
+        self.but_WPR_Move = tk.Button(self.frm_stage, text='Move', command=self.move_WPR)
+
+        self.var_wprpower = tk.IntVar()
+        self.cb_wprpower = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
+                                          command=None)
+
+        lbl_WPG = tk.Label(self.frm_stage, text='WP green:')
+        self.strvar_WPG_is = tk.StringVar(self.win, '')
+        self.ent_WPG_is = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPG_is)
+        self.strvar_WPG_should = tk.StringVar(self.win, '')
+        self.ent_WPG_should = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPG_should)
+        # self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
+        self.strvar_WPG_Nr = tk.StringVar(self.win, '83837714')
+        self.ent_WPG_Nr = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_WPG_Nr)
+        self.but_WPG_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_WPG)
+        self.but_WPG_Home = tk.Button(self.frm_stage, text='Home', command=self.home_WPG)
+        self.but_WPG_Read = tk.Button(self.frm_stage, text='Read', command=self.read_WPG)
+        self.but_WPG_Move = tk.Button(self.frm_stage, text='Move', command=self.move_WPG)
+
+        self.var_wpgpower = tk.IntVar()
+        self.cb_wpgpower = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
+                                          command=None)
+
+        lbl_cam_stage = tk.Label(self.frm_stage, text='Camera in focus:')
+        self.strvar_cam_stage_is = tk.StringVar(self.win, '')
+        self.ent_cam_stage_is = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_cam_stage_is)
+        self.strvar_cam_stage_should = tk.StringVar(self.win, '')
+        self.ent_cam_stage_should = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_cam_stage_should)
+        self.strvar_cam_stage_Nr = tk.StringVar(self.win, '83837725')
+        self.ent_cam_stage_Nr = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_cam_stage_Nr)
+        self.but_cam_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_cam_stage)
+        self.but_cam_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_cam_stage)
+        self.but_cam_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_cam_stage)
+        self.but_cam_stage_Move = tk.Button(self.frm_stage, text='Move', command=self.move_cam_stage)
+
+        lbl_delay_stage = tk.Label(self.frm_stage, text='Delay:')
+        self.strvar_delay_stage_is = tk.StringVar(self.win, '')
+        self.ent_delay_stage_is = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_delay_stage_is)
+        self.strvar_delay_stage_should = tk.StringVar(self.win, '')
+        self.ent_delay_stage_should = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+
+            textvariable=self.strvar_delay_stage_should)
+        self.strvar_delay_stage_Nr = tk.StringVar(self.win, '83837719')
+        self.ent_delay_stage_Nr = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+
+            textvariable=self.strvar_delay_stage_Nr)
+        # scan parameters
+        self.strvar_delay_stage_from = tk.StringVar(self.win, '6.40')
+        self.ent_delay_stage_from = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_delay_stage_from)
+        self.strvar_delay_stage_to = tk.StringVar(self.win, '6.45')
+        self.ent_delay_stage_to = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_delay_stage_to)
+        self.strvar_delay_stage_steps = tk.StringVar(self.win, '10')
+        self.ent_delay_stage_steps = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_delay_stage_steps)
+        self.var_delayscan = tk.IntVar()
+        self.cb_delayscan = tk.Checkbutton(self.frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
+                                           command=None)
+        self.but_delay_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_delay_stage)
+        self.but_delay_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_delay_stage)
+        self.but_delay_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_delay_stage)
+        self.but_delay_stage_Move = tk.Button(self.frm_stage, text='Move', command=self.move_delay_stage)
+
+        # power wp calibration
+        lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
+        self.strvar_pharos_att = tk.StringVar(self.win, '100')
+        self.ent_pharos_att = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_pharos_att)
+
+        lbl_pharos_pp = tk.Label(frm_wp_power_cal, text='Pharos PP:')
+        self.strvar_pharos_pp = tk.StringVar(self.win, '1')
+        self.ent_pharos_pp = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+
+            textvariable=self.strvar_pharos_pp)
+
+        self.strvar_red_power = tk.StringVar(self.win, '')
+        self.ent_red_power = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_red_power)
+
+        self.but_calibrator_open = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
+
+        lbl_red_power = tk.Label(frm_wp_power_cal, text='Red max power (W):')
+
+        self.strvar_red_power = tk.StringVar(self.win, '0')
+
+        self.ent_red_power = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_red_power)
+
+        lbl_red_phase = tk.Label(frm_wp_power_cal, text='Red offset phase (deg):')
+        self.strvar_red_phase = tk.StringVar(self.win, '')
+        self.ent_red_phase = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_red_phase)
+
+        lbl_red_current_power = tk.Label(frm_wp_power_cal, text='Red current power (W):')
+        self.strvar_red_current_power = tk.StringVar(self.win, '')
+        self.ent_red_current_power = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_red_current_power)
+
+        lbl_green_power = tk.Label(frm_wp_power_cal, text='Green max power (mW):')
+
+        self.strvar_green_power = tk.StringVar(self.win, '0')
+
+        self.ent_green_power = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_green_power)
+
+        lbl_green_phase = tk.Label(frm_wp_power_cal, text='Green offset phase (deg):')
+        self.strvar_green_phase = tk.StringVar(self.win, '')
+        self.ent_green_phase = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_green_phase)
+
+        lbl_green_current_power = tk.Label(frm_wp_power_cal, text='Green current power (mW):')
+        self.strvar_green_current_power = tk.StringVar(self.win, '')
+        self.ent_green_current_power = tk.Entry(
+            frm_wp_power_cal, width=8, validate='all',
+            textvariable=self.strvar_green_current_power)
+
+        # calcualtor
+        lbl_pulse_length = tk.Label(frm_calculator, text='Pulse length (fs):')
+        self.strvar_pulse_length = tk.StringVar(self.win, '180')
+        self.ent_pulse_length = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_pulse_length)
+
+        lbl_rep_rate = tk.Label(frm_calculator, text='Repetition rate (kHz):')
+        self.strvar_rep_rate = tk.StringVar(self.win, '10')
+        self.ent_rep_rate = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_rep_rate)
+
+        lbl_power = tk.Label(frm_calculator, text='Power (W):')
+        self.strvar_power = tk.StringVar(self.win, '1')
+        self.ent_power = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_power)
+
+        lbl_beam_radius = tk.Label(frm_calculator, text='Beam radius (µm):')
+        self.strvar_beam_radius = tk.StringVar(self.win, '30')
+        self.ent_beam_radius = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_beam_radius)
+
+        lbl_pulse_energy = tk.Label(frm_calculator, text='Pulse energy (µJ):')
+        self.strvar_pulse_energy = tk.StringVar(self.win, '')
+        self.ent_pulse_energy = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_pulse_energy)
+
+        lbl_peak_intensity = tk.Label(frm_calculator, text='Peak intensity (1e14 W/cm2):')
+        self.strvar_peak_intensity = tk.StringVar(self.win, '')
+        self.ent_peak_intensity = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_peak_intensity)
+
+        lbl_hhg_cutoff = tk.Label(frm_calculator, text='HHG cutoff (eV, q):')
+        self.strvar_hhg_cutoff = tk.StringVar(self.win, '')
+        self.ent_hhg_cutoff = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_hhg_cutoff)
+
+        self.strvar_hhg_cutoff_q = tk.StringVar(self.win, '')
+        self.ent_hhg_cutoff_q = tk.Entry(
+            frm_calculator, width=8, validate='all',
+            textvariable=self.strvar_hhg_cutoff_q)
+
+        self.but_lens_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_lens_stage)
+        self.but_lens_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_lens_stage)
+        self.but_lens_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_lens_stage)
+        self.but_lens_stage_Move = tk.Button(self.frm_stage, text='Move', command=self.move_lens_stage)
+
+        lbl_lens_stage = tk.Label(self.frm_stage, text='Lens:')
+        self.but_lens_stage_Ini.grid(row=5, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Home.grid(row=5, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Read.grid(row=5, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_lens_stage_Move.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_stage
+        lbl_Stage.grid(row=0, column=0, pady=2, padx=2, sticky='nsew')
+        lbl_Nr.grid(row=0, column=1, pady=2, padx=2, sticky='nsew')
+        lbl_is.grid(row=0, column=2, pady=2, padx=2, sticky='nsew')
+        lbl_should.grid(row=0, column=3, pady=2, padx=2, sticky='nsew')
+
+        lbl_WPR.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
+        lbl_WPG.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
+        lbl_delay_stage.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_cam_stage.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_lens_stage.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_WPR_Nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
+        self.ent_WPG_Nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
+        self.ent_delay_stage_Nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_Nr.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.ent_WPR_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.ent_WPR_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_delay_stage_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_cam_stage_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_WPR_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPR_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.but_WPG_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_WPG_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.but_cam_stage_Ini.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_cam_stage_Move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.but_delay_stage_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_delay_stage_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.cb_wprpower.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.cb_wpgpower.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_wp_power_calibration
+        self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_pharos_att.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pharos_att.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_pharos_pp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pharos_pp.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+
+        lbl_red_power.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_power.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
+        lbl_red_phase.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_phase.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        lbl_red_current_power.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.ent_red_current_power.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+
+        lbl_green_power.grid(row=0, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_power.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_green_phase.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_phase.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_green_current_power.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_green_current_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_calculator
+
+        lbl_pulse_length.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_pulse_length.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_rep_rate.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_rep_rate.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_power.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_power.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_beam_radius.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_radius.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.but_calculate = tk.Button(frm_calculator, text='Calculate',
+                                       command=self.calculate_energy_and_peak_intensity)
+        self.but_calculate.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_pulse_energy.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_pulse_energy.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_peak_intensity.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_peak_intensity.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_hhg_cutoff.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_hhg_cutoff.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_hhg_cutoff_q.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+
+
+
+    def initialize_panel_2(self):
+
+        self.frm_notebook_scans = ttk.Notebook(self.frm_scans)
+        frm_wp_scans = ttk.Frame(self.frm_scans)
+        frm_phase_scan = ttk.Frame(self.frm_scans)
+        frm_mpc_campaign = ttk.Frame(self.frm_scans)
+        frm_beam_shaping = ttk.Frame(self.frm_scans)
+        self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
+        self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
+        self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
+        self.frm_notebook_scans.add(frm_beam_shaping, text="Beam Shaping scan")
+        self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        frm_mpc_campaign_stages = ttk.LabelFrame(frm_mpc_campaign, text='Stage control')
+        frm_mpc_campaign_stages.grid(row=0, column=0)
+        frm_mpc_campaign_scans = ttk.LabelFrame(frm_mpc_campaign, text='Scan')
+        frm_mpc_campaign_scans.grid(row=1, column=0)
+        frm_mpc_campaign_current = ttk.Frame(frm_mpc_campaign)
+        frm_mpc_campaign_current.grid(row=1, column=1)
+
+        frm_beam_shaping_scans = ttk.LabelFrame(frm_beam_shaping, text='Scan')
+        frm_beam_shaping_scans.grid(row=0, column=0)
+
+        lbl_from = tk.Label(frm_phase_scan, text='From:')
+        self.strvar_from = tk.StringVar(self.win, '-3.14')
+        self.ent_from = tk.Entry(
+            frm_phase_scan, width=5, validate='all',
+            textvariable=self.strvar_from)
+
+        lbl_to = tk.Label(frm_phase_scan, text='To:')
+        self.strvar_to = tk.StringVar(self.win, '3.14')
+        self.ent_to = tk.Entry(
+            frm_phase_scan, width=5, validate='all',
+            textvariable=self.strvar_to)
+
+        lbl_steps = tk.Label(frm_phase_scan, text='Steps:')
+        self.strvar_steps = tk.StringVar(self.win, '10')
+        self.ent_steps = tk.Entry(
+            frm_phase_scan, width=5, validate='all',
+            textvariable=self.strvar_steps)
+
+        self.var_phasescan = tk.IntVar()
+        self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
+                                           offvalue=0,
+                                           command=None)
+
+        lbl_Stage_MPC = tk.Label(frm_mpc_campaign_stages, text='Stage')
+        lbl_Nr_MPC = tk.Label(frm_mpc_campaign_stages, text='#')
+        lbl_is_MPC = tk.Label(frm_mpc_campaign_stages, text='is')
+        lbl_should_MPC = tk.Label(frm_mpc_campaign_stages, text='should')
+
+        lbl_mpc_to = tk.Label(frm_mpc_campaign_scans, text='to')
+        lbl_mpc_from = tk.Label(frm_mpc_campaign_scans, text='from')
+        lbl_mpc_steps = tk.Label(frm_mpc_campaign_scans, text='steps')
+
+        lbl_mpc_stage_label = tk.Label(frm_mpc_campaign_scans, text='Stage')
+        lbl_mpc_wp_label = tk.Label(frm_mpc_campaign_scans, text='WP')
+        lbl_mpc_lens_label = tk.Label(frm_mpc_campaign_scans, text='Lens')
+        lbl_mpc_grating_label = tk.Label(frm_mpc_campaign_scans, text='Grating')
+
+        lbl_beam_shaping_to = tk.Label(frm_beam_shaping_scans, text='to')
+        lbl_beam_shaping_from = tk.Label(frm_beam_shaping_scans, text='from')
+        lbl_beam_shaping_steps = tk.Label(frm_beam_shaping_scans, text='steps')
+
+        lbl_beam_shaping_stage_label = tk.Label(frm_beam_shaping_scans, text='Stage')
+        lbl_beam_shaping_lens_label = tk.Label(frm_beam_shaping_scans, text='Lens')
+
+        lbl_MPC_wp = tk.Label(frm_mpc_campaign_stages, text='WP')
+        lbl_zaber_grating = tk.Label(frm_mpc_campaign_stages, text='Grating')
+
+        lbl_MPC_maxpower = tk.Label(frm_mpc_campaign_current, text='Max Power (W)')
+        lbl_MPC_minpower = tk.Label(frm_mpc_campaign_current, text='Min Power (W)')
+
+        lbl_MPC_maxangle = tk.Label(frm_mpc_campaign_current, text='Max Angle (deg)')
+        lbl_MPC_currentpower = tk.Label(frm_mpc_campaign_current, text='Current Power (W)')
+
+        self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
+        self.ent_mpc_lens_nr = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_nr)
+        self.strvar_mpc_lens_is = tk.StringVar(self.win, '')
+        self.ent_mpc_lens_is = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_is)
+        self.strvar_mpc_lens_should = tk.StringVar(self.win, '')
+        self.ent_mpc_lens_should = tk.Entry(
+            self.frm_stage, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_should)
+
+        self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83837724')
+        self.ent_mpc_wp_nr = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_nr)
+        self.strvar_mpc_wp_is = tk.StringVar(self.win, '')
+        self.ent_mpc_wp_is = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_is)
+        self.strvar_mpc_wp_should = tk.StringVar(self.win, '')
+        self.ent_mpc_wp_should = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_should)
+
+        self.strvar_zaber_grating_nr = tk.StringVar(self.win, 'COM11')
+        self.ent_zaber_grating_nr = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_zaber_grating_nr)
+        self.strvar_zaber_grating_is = tk.StringVar(self.win, '')
+        self.ent_zaber_grating_is = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_zaber_grating_is)
+        self.strvar_zaber_grating_should = tk.StringVar(self.win, '')
+        self.ent_zaber_grating_should = tk.Entry(
+            frm_mpc_campaign_stages, width=10, validate='all',
+            textvariable=self.strvar_zaber_grating_should)
+
+        self.strvar_mpc_lens_from = tk.StringVar(self.win, '5')
+        self.ent_mpc_lens_from = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_from)
+        self.strvar_mpc_lens_to = tk.StringVar(self.win, '10')
+        self.ent_mpc_lens_to = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_to)
+        self.strvar_mpc_lens_steps = tk.StringVar(self.win, '5')
+        self.ent_mpc_lens_steps = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_steps)
+
+        self.strvar_mpc_wp_from = tk.StringVar(self.win, '1')
+        self.ent_mpc_wp_from = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_from)
+        self.strvar_mpc_wp_to = tk.StringVar(self.win, '2')
+        self.ent_mpc_wp_to = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_to)
+        self.strvar_mpc_wp_steps = tk.StringVar(self.win, '5')
+        self.ent_mpc_wp_steps = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_wp_steps)
+
+        self.strvar_mpc_grating_from = tk.StringVar(self.win, '0')
+        self.ent_mpc_grating_from = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_grating_from)
+        self.strvar_mpc_grating_to = tk.StringVar(self.win, '10')
+        self.ent_mpc_grating_to = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_grating_to)
+        self.strvar_mpc_grating_steps = tk.StringVar(self.win, '10')
+        self.ent_mpc_grating_steps = tk.Entry(
+            frm_mpc_campaign_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_grating_steps)
+
+        self.strvar_beam_shaping_lens_from = tk.StringVar(self.win, '5')
+        self.ent_beam_shaping_lens_from = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_from)
+        self.strvar_beam_shaping_lens_to = tk.StringVar(self.win, '10')
+        self.ent_beam_shaping_lens_to = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_to)
+        self.strvar_beam_shaping_lens_steps = tk.StringVar(self.win, '5')
+        self.ent_beam_shaping_lens_steps = tk.Entry(
+            frm_beam_shaping_scans, width=10, validate='all',
+            textvariable=self.strvar_mpc_lens_steps)
+
+        self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
+        self.ent_mpc_maxpower = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_mpc_maxpower)
+
+        self.strvar_mpc_minpower = tk.StringVar(self.win, '5')
+        self.ent_mpc_minpower = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_mpc_minpower)
+
+        self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
+        self.ent_mpc_maxangle = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_mpc_maxangle)
+        self.strvar_mpc_currentpower = tk.StringVar(self.win, '')
+        self.ent_mpc_currentpower = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_mpc_currentpower)
+
+        self.but_MPC_measure = tk.Button(frm_mpc_campaign_scans, text='Measure The MPC',
+                                         command=self.enabl_mpc_meas)
+        self.but_MPC_abort = tk.Button(frm_mpc_campaign_scans, text='ABORT!!!', command=self.abort_mpc_measurement)
+        self.but_MPC_test_scan = tk.Button(frm_mpc_campaign_scans, text='Test scan',
+                                           command=self.enabl_mpc_test_scan)
+
+        self.but_beam_shaping_measure = tk.Button(frm_beam_shaping_scans, text='Measure',
+                                                  command=self.enabl_beam_shaping_meas)
+        self.but_beam_shaping_abort = tk.Button(frm_beam_shaping_scans, text='Abort',
+                                                command=self.abort_beam_shaping_measurement)
+
+        self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_wp)
+        self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_wp)
+        self.but_MPC_wp_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_MPC_wp)
+        self.but_MPC_wp_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_MPC_wp)
+
+        self.but_zaber_grating_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_zaber_stage)
+        self.but_zaber_grating_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_zaber_stage)
+        self.but_zaber_grating_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_zaber_stage)
+        self.but_zaber_grating_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_zaber_stage)
+
+        self.var_mpc_wp_power = tk.IntVar()
+        self.cb_mpc_wp_power = tk.Checkbutton(frm_mpc_campaign_stages, text='Power', variable=self.var_mpc_wp_power,
+                                              onvalue=1,
+                                              offvalue=0,
+                                              command=None)
+        self.var_mpc_scan_lens = tk.IntVar()
+        self.cb_mpc_scan_lens = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Lens',
+                                               variable=self.var_mpc_scan_lens,
+                                               onvalue=1,
+                                               offvalue=0,
+                                               command=None)
+        self.var_mpc_scan_wp = tk.IntVar()
+        self.cb_mpc_scan_wp = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Power',
+                                             variable=self.var_mpc_scan_wp,
+                                             onvalue=1,
+                                             offvalue=0,
+                                             command=None)
+
+        self.var_mpc_scan_grating = tk.IntVar()
+        self.cb_mpc_scan_grating = tk.Checkbutton(frm_mpc_campaign_scans, text='Scan Grating',
+                                                  variable=self.var_mpc_scan_grating,
+                                                  onvalue=1,
+                                                  offvalue=0,
+                                                  command=None)
+
+        self.var_beam_shaping_scan_lens = tk.IntVar()
+        self.cb_beam_shaping_scan_lens = tk.Checkbutton(frm_beam_shaping_scans, text='Scan Lens',
+                                                        variable=self.var_beam_shaping_scan_lens,
+                                                        onvalue=1,
+                                                        offvalue=0,
+                                                        command=None)
+
+        lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_zaber_grating.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_Nr_MPC.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_is_MPC.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_should_MPC.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_lens_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_is.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_should.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_zaber_grating_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_zaber_grating_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_zaber_grating_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_mpc_stage_label.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_to.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_steps.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_wp_label.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_mpc_grating_label.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        lbl_beam_shaping_stage_label.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_to.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_steps.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_beam_shaping_lens_label.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_beam_shaping_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_shaping_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_beam_shaping_lens_steps.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_beam_shaping_measure.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_beam_shaping_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.cb_beam_shaping_scan_lens.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_lens_from.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_to.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_lens_steps.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_from.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_to.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_wp_steps.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_grating_from.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_grating_to.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_grating_steps.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_scan_lens.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_scan_wp.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_scan_grating.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_measure.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_test_scan.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_MPC_wp_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.cb_mpc_wp_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_zaber_grating_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_zaber_grating_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_zaber_grating_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_zaber_grating_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+
+        lbl_MPC_maxpower.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_minpower.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_maxangle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_currentpower.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_mpc_maxpower.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_minpower.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_maxangle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_mpc_currentpower.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_MPC_fitA = tk.Label(frm_mpc_campaign_current, text='Amplitude')
+        lbl_MPC_fitf = tk.Label(frm_mpc_campaign_current, text='Frequency')
+        lbl_MPC_fitph = tk.Label(frm_mpc_campaign_current, text='Phase offset')
+        lbl_MPC_fito = tk.Label(frm_mpc_campaign_current, text='Amp offset')
+
+        lbl_MPC_fitA.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fitf.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fitph.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_MPC_fito.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_MPC_fitA = tk.StringVar(self.win, '5')
+        self.ent_MPC_fitA = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_MPC_fitA)
+
+        self.strvar_MPC_fitf = tk.StringVar(self.win, '0.070')
+        self.ent_MPC_fitf = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_MPC_fitf)
+
+        self.strvar_MPC_fitph = tk.StringVar(self.win, '57.000')
+        self.ent_MPC_fitph = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_MPC_fitph)
+
+        self.strvar_MPC_fito = tk.StringVar(self.win, '1.000')
+        self.ent_MPC_fito = tk.Entry(
+            frm_mpc_campaign_current, width=10, validate='all',
+            textvariable=self.strvar_MPC_fito)
+
+        self.ent_MPC_fitA.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fitf.grid(row=7, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fitph.grid(row=7, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_MPC_fito.grid(row=7, column=3, padx=2, pady=2, sticky='nsew')
+
+        # frm_wp_scans
+        lbl_wp_scan_info = tk.Label(frm_wp_scans, text="Choose your fighter!")
+        self.var_scan_wp_option = tk.StringVar(self.win, "Nothing")
+        self.rb_int_ratio = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red/Green Ratio",
+                                           text="Red/Green Ratio")
+        self.rb_wpr = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Red",
+                                     text="Only Red")
+        self.rb_wpg = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Only Green",
+                                     text="Only Green")
+        self.rb_nothing = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Nothing",
+                                         text="Nothing")
+        self.rb_green_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option,
+                                                 value="Green Focus",
+                                                 text="Green Focus")
+        self.rb_red_focus_SLM = tk.Radiobutton(frm_wp_scans, variable=self.var_scan_wp_option, value="Red Focus",
+                                               text="Red Focus")
+
+        lbl_stage_scan_from = tk.Label(frm_wp_scans, text='from:')
+        lbl_stage_scan_to = tk.Label(frm_wp_scans, text='to:')
+        lbl_stage_scan_steps = tk.Label(frm_wp_scans, text='steps:')
+
+        self.strvar_int_ratio_focus = tk.StringVar(self.win, '2')
+        self.ent_int_ratio_focus = tk.Entry(
+            frm_wp_scans, width=4, validate='all',
+            textvariable=self.strvar_int_ratio_focus)
+        self.strvar_int_ratio_constant = tk.StringVar(self.win, '4.4')
+        self.ent_int_ratio_constant = tk.Entry(
+            frm_wp_scans, width=4, validate='all',
+            textvariable=self.strvar_int_ratio_constant)
+
+        lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
+        self.lbl_int_ratio_constant = tk.Label(frm_wp_scans,
+                                               text='Pr+{:.2f}*PG='.format(
+                                                   (float(self.ent_int_ratio_focus.get())) ** 2))
+        lbl_int_green_ratio = tk.Label(frm_wp_scans, text="Ratio of green intensity: ")
+
+        # scan paramters RATIO
+        self.strvar_ratio_from = tk.StringVar(self.win, '0')
+        self.ent_ratio_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_ratio_from)
+        x = float(self.ent_int_ratio_focus.get()) ** 2
+        c = float(self.ent_int_ratio_constant.get())
+        maxG = float(self.ent_green_power.get()) * 1e-3
+        self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c), 3)))
+        self.ent_ratio_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_ratio_to)
+        self.strvar_ratio_steps = tk.StringVar(self.win, '10')
+        self.ent_ratio_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_ratio_steps)
+
+        self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
+        self.strvar_int_ratio_focus.trace_add('write', self.update_maxgreenratio)
+
+        lbl_int_red = tk.Label(frm_wp_scans, text="Red Power (W)")
+        # scan parameters ONLY RED
+        self.strvar_WPR_from = tk.StringVar(self.win, '0')
+        self.ent_WPR_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPR_from)
+        self.strvar_WPR_to = tk.StringVar(self.win, self.ent_red_power.get())
+        self.ent_WPR_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPR_to)
+        self.strvar_WPR_steps = tk.StringVar(self.win, '10')
+        self.ent_WPR_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPR_steps)
+
+        lbl_int_green = tk.Label(frm_wp_scans, text="Green Power (mW)")
+        # scan parameters ONLY GREEN
+        self.strvar_WPG_from = tk.StringVar(self.win, '0')
+        self.ent_WPG_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPG_from)
+        self.strvar_WPG_to = tk.StringVar(self.win, self.ent_green_power.get())
+        self.ent_WPG_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPG_to)
+        self.strvar_WPG_steps = tk.StringVar(self.win, '10')
+        self.ent_WPG_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_WPG_steps)
+
+        lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (mm)")
+        # scan parameters GREEN FOCUS POSITIOM
+        self.strvar_GFP_from = tk.StringVar(self.win, '0.02')
+        self.ent_GFP_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_GFP_from)
+        self.strvar_GFP_to = tk.StringVar(self.win, '0.05')
+        self.ent_GFP_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_GFP_to)
+        self.strvar_GFP_steps = tk.StringVar(self.win, '10')
+        self.ent_GFP_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_GFP_steps)
+
+        lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (mm)")
+        # scan parameters RED FOCUS POSITIOM
+        self.strvar_RFP_from = tk.StringVar(self.win, '-0.15')
+        self.ent_RFP_from = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_RFP_from)
+        self.strvar_RFP_to = tk.StringVar(self.win, '-0.05')
+        self.ent_RFP_to = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_RFP_to)
+        self.strvar_RFP_steps = tk.StringVar(self.win, '10')
+        self.ent_RFP_steps = tk.Entry(
+            frm_wp_scans, width=5, validate='all',
+            textvariable=self.strvar_RFP_steps)
+
+        # setting up frm_phase_scan
+        lbl_from.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_to.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_steps.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_from.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_to.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_steps.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.cb_phasescan.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_wp_scans
+        lbl_wp_scan_info.grid(row=0, column=0, padx=2, pady=2)
+        self.rb_int_ratio.grid(row=1, column=0)
+        self.rb_wpr.grid(row=2, column=0)
+        self.rb_wpg.grid(row=3, column=0)
+        self.rb_green_focus_SLM.grid(row=4, column=0)
+        self.rb_red_focus_SLM.grid(row=5, column=0)
+        self.rb_nothing.grid(row=6, column=0)
+
+        lbl_int_ratio_focus.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.lbl_int_ratio_constant.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_stage_scan_from.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
+        lbl_stage_scan_to.grid(row=0, column=9, padx=2, pady=2, sticky='nsew')
+        lbl_stage_scan_steps.grid(row=0, column=10, padx=2, pady=2, sticky='nsew')
+
+        self.ent_int_ratio_focus.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_int_ratio_constant.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+
+        lbl_int_green_ratio.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.ent_ratio_from.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_ratio_to.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_ratio_steps.grid(row=1, column=10, padx=2, pady=2, sticky='nsew')
+
+        lbl_int_red.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_from.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_to.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_WPR_steps.grid(row=2, column=10, padx=2, pady=2, sticky='nsew')
+
+        lbl_int_green.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_from.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_to.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_WPG_steps.grid(row=3, column=10, padx=2, pady=2, sticky='nsew')
+
+        lbl_GFP_green.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_from.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_to.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_GFP_steps.grid(row=4, column=10, padx=2, pady=2, sticky='nsew')
+
+        lbl_RFP_red.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_from.grid(row=5, column=8, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_to.grid(row=5, column=9, padx=2, pady=2, sticky='nsew')
+        self.ent_RFP_steps.grid(row=5, column=10, padx=2, pady=2, sticky='nsew')
 
     def initialize_spectrometer(self):
         self.frm_notebook_param_spc = ttk.Notebook(self.win)
