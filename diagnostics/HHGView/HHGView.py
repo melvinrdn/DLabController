@@ -29,11 +29,11 @@ from diagnostics.diagnostics_helpers import process_image
 import hardware.avaspec_driver._avs_py as avs
 import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
-import diagnostics.HHGView.helpers as help
+import diagnostics.diagnostics_helpers as help
 from hardware.thorlabs_apt_driver import core as apt
 from hardware.vimba_driver import *
 from ressources.calibration import waveplate_calibrator as cal
-from ressources.slm_infos import slm_size, bit_depth
+from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator, slm_size, bit_depth
 
 colors = [
     (1, 1, 1),  # white
@@ -52,24 +52,8 @@ custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
 
 class HHGView(object):
-    """
-    A class for controlling the overlap between the green and the red, using spectral fringes.
-    """
 
     def __init__(self, parent):
-        """
-        Initialize the object.
-
-        Parameters
-        ----------
-        parent : object
-            The parent object.
-
-        Returns
-        -------
-        None
-
-        """
 
         matplotlib.use("TkAgg")
         self.cam = None
@@ -246,8 +230,6 @@ class HHGView(object):
         # frm_mcp_image = ttk.LabelFrame(self.win, text='MCP')
         frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
 
-        vcmd = (self.win.register(self.parent.callback))
-
         # creating buttons n labels
         but_exit = tk.Button(frm_bot, text='EXIT', command=self.on_close)
         but_feedback = tk.Button(frm_bot, text='Feedback', command=self.feedback)
@@ -256,19 +238,16 @@ class HHGView(object):
         self.strvar_spc_ind = tk.StringVar(self.win, '1')
         self.ent_spc_ind = tk.Entry(
             frm_spc_settings, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_ind)
         lbl_spc_exp = tk.Label(frm_spc_settings, text='Exposure time (ms):')
         self.strvar_spc_exp = tk.StringVar(self.win, '50')
         self.ent_spc_exp = tk.Entry(
             frm_spc_settings, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_exp)
         lbl_spc_gain = tk.Label(frm_spc_settings, text='Nbr. of averages:')
         self.strvar_spc_avg = tk.StringVar(self.win, '1')
         self.ent_spc_avg = tk.Entry(
             frm_spc_settings, width=9, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_spc_avg)
         but_spc_activate = tk.Button(frm_spc_settings, text='Activate',
                                      command=self.spec_activate, width=8)
@@ -295,7 +274,6 @@ class HHGView(object):
         self.strvar_flat = tk.StringVar()
         self.ent_flat = tk.Entry(
             frm_spc_ratio, width=11, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_flat)
 
         text = '20'
@@ -323,25 +301,21 @@ class HHGView(object):
         self.strvar_setp = tk.StringVar(self.win, '0')
         self.ent_setp = tk.Entry(
             frm_spc_pid, width=11, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_setp)
         lbl_pidp = tk.Label(frm_spc_pid, text='P-value:')
         self.strvar_pidp = tk.StringVar(self.win, '0')
         self.ent_pidp = tk.Entry(
             frm_spc_pid, width=11, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidp)
         lbl_pidi = tk.Label(frm_spc_pid, text='I-value:')
         self.strvar_pidi = tk.StringVar(self.win, '0')  # -6 is nice
         self.ent_pidi = tk.Entry(
             frm_spc_pid, width=11, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidi)
         lbl_pidd = tk.Label(frm_spc_pid, text='D-value:')
         self.strvar_pidd = tk.StringVar(self.win, '0')
         self.ent_pidd = tk.Entry(
             frm_spc_pid, width=11, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pidd)
         lbl_std = tk.Label(frm_spc_pid, text='std:', width=6)
         self.lbl_std_val = tk.Label(frm_spc_pid, text='None', width=6)
@@ -370,38 +344,32 @@ class HHGView(object):
         self.strvar_stage_pid_com = tk.StringVar(self.win, 'COM9')
         self.ent_pid_stage_com = tk.Entry(
             frm_spc_pid, width=8, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_stage_pid_com)
         self.strvar_pid_stage_actual_position = tk.StringVar(self.win, '')
         self.ent_pid_stage_actual_position = tk.Entry(
             frm_spc_pid, width=8, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pid_stage_actual_position)
         self.strvar_pid_stage_set_position = tk.StringVar(self.win, '0.00')
         self.ent_pid_stage_set_position = tk.Entry(
             frm_spc_pid, width=8, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_pid_stage_set_position)
 
         lbl_from = tk.Label(frm_phase_scan, text='From:')
         self.strvar_from = tk.StringVar(self.win, '-3.14')
         self.ent_from = tk.Entry(
             frm_phase_scan, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_from)
 
         lbl_to = tk.Label(frm_phase_scan, text='To:')
         self.strvar_to = tk.StringVar(self.win, '3.14')
         self.ent_to = tk.Entry(
             frm_phase_scan, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_to)
 
         lbl_steps = tk.Label(frm_phase_scan, text='Steps:')
         self.strvar_steps = tk.StringVar(self.win, '10')
         self.ent_steps = tk.Entry(
             frm_phase_scan, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_steps)
 
 
@@ -442,20 +410,17 @@ class HHGView(object):
         self.strvar_avgs = tk.StringVar(self.win, '1')
         self.ent_avgs = tk.Entry(
             frm_measure, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_avgs)
 
         lbl_mcp_cam_choice = tk.Label(frm_measure, text='MCP Camera selected :')
         self.strvar_mcp_cam_choice = tk.StringVar(self.win, '')
         self.cbox_mcp_cam_choice = ttk.Combobox(frm_measure, textvariable=self.strvar_mcp_cam_choice)
-        # self.cbox_mcp_cam_choice['values'] = ('Pike Camera', 'Andor Camera')
         self.cbox_mcp_cam_choice['values'] = ('Andor')
 
         lbl_exposure_time = tk.Label(frm_measure, text='Exposure (us):')
         self.strvar_exposure_time = tk.StringVar(self.win, '100000')
         self.ent_exposure_time = tk.Entry(
             frm_measure, width=25, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_exposure_time)
 
         lbl_temperature = tk.Label(frm_measure, text='Temp (C):')
@@ -487,17 +452,14 @@ class HHGView(object):
         self.strvar_WPR_is = tk.StringVar(self.win, '')
         self.ent_WPR_is = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_is)
         self.strvar_WPR_should = tk.StringVar(self.win, '')
         self.ent_WPR_should = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_should)
         self.strvar_WPR_Nr = tk.StringVar(self.win, '83837724')
         self.ent_WPR_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_Nr)
 
         # buttons
@@ -514,18 +476,15 @@ class HHGView(object):
         self.strvar_WPG_is = tk.StringVar(self.win, '')
         self.ent_WPG_is = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_is)
         self.strvar_WPG_should = tk.StringVar(self.win, '')
         self.ent_WPG_should = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_should)
         # self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
         self.strvar_WPG_Nr = tk.StringVar(self.win, '83837714')
         self.ent_WPG_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_Nr)
         self.but_WPG_Ini = tk.Button(frm_stage, text='Init', command=self.init_WPG)
         self.but_WPG_Home = tk.Button(frm_stage, text='Home', command=self.home_WPG)
@@ -540,17 +499,14 @@ class HHGView(object):
         self.strvar_cam_stage_is = tk.StringVar(self.win, '')
         self.ent_cam_stage_is = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_cam_stage_is)
         self.strvar_cam_stage_should = tk.StringVar(self.win, '')
         self.ent_cam_stage_should = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_cam_stage_should)
         self.strvar_cam_stage_Nr = tk.StringVar(self.win, '83837725')
         self.ent_cam_stage_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_cam_stage_Nr)
         self.but_cam_stage_Ini = tk.Button(frm_stage, text='Init', command=self.init_cam_stage)
         self.but_cam_stage_Home = tk.Button(frm_stage, text='Home', command=self.home_cam_stage)
@@ -561,33 +517,29 @@ class HHGView(object):
         self.strvar_delay_stage_is = tk.StringVar(self.win, '')
         self.ent_delay_stage_is = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_delay_stage_is)
         self.strvar_delay_stage_should = tk.StringVar(self.win, '')
         self.ent_delay_stage_should = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+
             textvariable=self.strvar_delay_stage_should)
         self.strvar_delay_stage_Nr = tk.StringVar(self.win, '83837719')
         self.ent_delay_stage_Nr = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
+
             textvariable=self.strvar_delay_stage_Nr)
         # scan parameters
         self.strvar_delay_stage_from = tk.StringVar(self.win, '6.40')
         self.ent_delay_stage_from = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_delay_stage_from)
         self.strvar_delay_stage_to = tk.StringVar(self.win, '6.45')
         self.ent_delay_stage_to = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_delay_stage_to)
         self.strvar_delay_stage_steps = tk.StringVar(self.win, '10')
         self.ent_delay_stage_steps = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_delay_stage_steps)
         self.var_delayscan = tk.IntVar()
         self.cb_delayscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
@@ -632,136 +584,111 @@ class HHGView(object):
         self.strvar_mpc_lens_nr = tk.StringVar(self.win, '83838295')
         self.ent_mpc_lens_nr = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_nr)
         self.strvar_mpc_lens_is = tk.StringVar(self.win, '')
         self.ent_mpc_lens_is = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_is)
         self.strvar_mpc_lens_should = tk.StringVar(self.win, '')
         self.ent_mpc_lens_should = tk.Entry(
             frm_stage, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_should)
 
         self.strvar_mpc_wp_nr = tk.StringVar(self.win, '83837724')
         self.ent_mpc_wp_nr = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_nr)
         self.strvar_mpc_wp_is = tk.StringVar(self.win, '')
         self.ent_mpc_wp_is = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_is)
         self.strvar_mpc_wp_should = tk.StringVar(self.win, '')
         self.ent_mpc_wp_should = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_should)
 
         self.strvar_zaber_grating_nr = tk.StringVar(self.win, 'COM11')
         self.ent_zaber_grating_nr = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_zaber_grating_nr)
         self.strvar_zaber_grating_is = tk.StringVar(self.win, '')
         self.ent_zaber_grating_is = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_zaber_grating_is)
         self.strvar_zaber_grating_should = tk.StringVar(self.win, '')
         self.ent_zaber_grating_should = tk.Entry(
             frm_mpc_campaign_stages, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_zaber_grating_should)
 
         self.strvar_mpc_lens_from = tk.StringVar(self.win, '5')
         self.ent_mpc_lens_from = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_from)
         self.strvar_mpc_lens_to = tk.StringVar(self.win, '10')
         self.ent_mpc_lens_to = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_to)
         self.strvar_mpc_lens_steps = tk.StringVar(self.win, '5')
         self.ent_mpc_lens_steps = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_steps)
 
         self.strvar_mpc_wp_from = tk.StringVar(self.win, '1')
         self.ent_mpc_wp_from = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_from)
         self.strvar_mpc_wp_to = tk.StringVar(self.win, '2')
         self.ent_mpc_wp_to = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_to)
         self.strvar_mpc_wp_steps = tk.StringVar(self.win, '5')
         self.ent_mpc_wp_steps = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_wp_steps)
 
         self.strvar_mpc_grating_from = tk.StringVar(self.win, '0')
         self.ent_mpc_grating_from = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_grating_from)
         self.strvar_mpc_grating_to = tk.StringVar(self.win, '10')
         self.ent_mpc_grating_to = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_grating_to)
         self.strvar_mpc_grating_steps = tk.StringVar(self.win, '10')
         self.ent_mpc_grating_steps = tk.Entry(
             frm_mpc_campaign_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_grating_steps)
 
         self.strvar_beam_shaping_lens_from = tk.StringVar(self.win, '5')
         self.ent_beam_shaping_lens_from = tk.Entry(
             frm_beam_shaping_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_from)
         self.strvar_beam_shaping_lens_to = tk.StringVar(self.win, '10')
         self.ent_beam_shaping_lens_to = tk.Entry(
             frm_beam_shaping_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_to)
         self.strvar_beam_shaping_lens_steps = tk.StringVar(self.win, '5')
         self.ent_beam_shaping_lens_steps = tk.Entry(
             frm_beam_shaping_scans, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_lens_steps)
 
         self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
         self.ent_mpc_maxpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_maxpower)
 
         self.strvar_mpc_minpower = tk.StringVar(self.win, '5')
         self.ent_mpc_minpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_minpower)
 
         self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
         self.ent_mpc_maxangle = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_maxangle)
         self.strvar_mpc_currentpower = tk.StringVar(self.win, '')
         self.ent_mpc_currentpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_mpc_currentpower)
 
         self.but_MPC_measure = tk.Button(frm_mpc_campaign_scans, text='Measure The MPC', command=self.enabl_mpc_meas)
@@ -912,25 +839,21 @@ class HHGView(object):
         self.strvar_MPC_fitA = tk.StringVar(self.win, '5')
         self.ent_MPC_fitA = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_MPC_fitA)
 
         self.strvar_MPC_fitf = tk.StringVar(self.win, '0.070')
         self.ent_MPC_fitf = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_MPC_fitf)
 
         self.strvar_MPC_fitph = tk.StringVar(self.win, '57.000')
         self.ent_MPC_fitph = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_MPC_fitph)
 
         self.strvar_MPC_fito = tk.StringVar(self.win, '1.000')
         self.ent_MPC_fito = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_MPC_fito)
 
         self.ent_MPC_fitA.grid(row=7, column=0, padx=2, pady=2, sticky='nsew')
@@ -1069,12 +992,10 @@ class HHGView(object):
         self.strvar_int_ratio_focus = tk.StringVar(self.win, '2')
         self.ent_int_ratio_focus = tk.Entry(
             frm_wp_scans, width=4, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_int_ratio_focus)
         self.strvar_int_ratio_constant = tk.StringVar(self.win, '4.4')
         self.ent_int_ratio_constant = tk.Entry(
             frm_wp_scans, width=4, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_int_ratio_constant)
 
         lbl_int_ratio_focus = tk.Label(frm_wp_scans, text='Focus size ratio:')
@@ -1087,7 +1008,6 @@ class HHGView(object):
         self.strvar_ratio_from = tk.StringVar(self.win, '0')
         self.ent_ratio_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_from)
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
@@ -1095,12 +1015,10 @@ class HHGView(object):
         self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_to)
         self.strvar_ratio_steps = tk.StringVar(self.win, '10')
         self.ent_ratio_steps = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_ratio_steps)
 
         self.strvar_int_ratio_constant.trace_add('write', self.update_maxgreenratio)
@@ -1111,17 +1029,14 @@ class HHGView(object):
         self.strvar_WPR_from = tk.StringVar(self.win, '0')
         self.ent_WPR_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_from)
         self.strvar_WPR_to = tk.StringVar(self.win, self.ent_red_power.get())
         self.ent_WPR_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_to)
         self.strvar_WPR_steps = tk.StringVar(self.win, '10')
         self.ent_WPR_steps = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPR_steps)
         # self.var_wprscan = tk.IntVar()
         # self.cb_wprscan = tk.Checkbutton(frm_stage, text='Scan', variable=self.var_wprscan, onvalue=1, offvalue=0,
@@ -1132,17 +1047,14 @@ class HHGView(object):
         self.strvar_WPG_from = tk.StringVar(self.win, '0')
         self.ent_WPG_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_from)
         self.strvar_WPG_to = tk.StringVar(self.win, self.ent_green_power.get())
         self.ent_WPG_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_to)
         self.strvar_WPG_steps = tk.StringVar(self.win, '10')
         self.ent_WPG_steps = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_WPG_steps)
 
         lbl_GFP_green = tk.Label(frm_wp_scans, text="Green Focus Position (mm)")
@@ -1150,17 +1062,14 @@ class HHGView(object):
         self.strvar_GFP_from = tk.StringVar(self.win, '0.02')
         self.ent_GFP_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_from)
         self.strvar_GFP_to = tk.StringVar(self.win, '0.05')
         self.ent_GFP_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_to)
         self.strvar_GFP_steps = tk.StringVar(self.win, '10')
         self.ent_GFP_steps = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_GFP_steps)
 
         lbl_RFP_red = tk.Label(frm_wp_scans, text="Red Focus Position (mm)")
@@ -1168,17 +1077,14 @@ class HHGView(object):
         self.strvar_RFP_from = tk.StringVar(self.win, '-0.15')
         self.ent_RFP_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_RFP_from)
         self.strvar_RFP_to = tk.StringVar(self.win, '-0.05')
         self.ent_RFP_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_RFP_to)
         self.strvar_RFP_steps = tk.StringVar(self.win, '10')
         self.ent_RFP_steps = tk.Entry(
             frm_wp_scans, width=5, validate='all',
-            validatecommand=(vcmd, '%d', '%P', '%S'),
             textvariable=self.strvar_RFP_steps)
 
         # self.var_wpgscan = tk.IntVar()
@@ -1495,7 +1401,7 @@ class HHGView(object):
         self.var_mcp_calibration_shear_val.trace_add("write", self.update_calibration)
         self.ent_mcp_calibration_shear_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_shear_val,
-                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all')
         lbl_mcp_calibration_shear_val.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_shear_val.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
@@ -1506,10 +1412,10 @@ class HHGView(object):
         self.var_mcp_calibration_ROIX2_val.trace_add("write", self.update_calibration)
         self.ent_mcp_calibration_ROIX1_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_ROIX1_val,
-                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all')
         self.ent_mcp_calibration_ROIX2_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_ROIX2_val,
-                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all')
         lbl_mcp_calibration_ROIX_val.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_ROIX1_val.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_ROIX2_val.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
@@ -1521,10 +1427,10 @@ class HHGView(object):
         self.var_mcp_calibration_ROIY2_val.trace_add("write", self.update_calibration)
         self.ent_mcp_calibration_ROIY1_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_ROIY1_val,
-                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all')
         self.ent_mcp_calibration_ROIY2_val = tk.Entry(frm_mcp_calibrate_options,
                                                       textvariable=self.var_mcp_calibration_ROIY2_val,
-                                                      width=4, validate='all', validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                      width=4, validate='all')
         lbl_mcp_calibration_ROIY_val.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_ROIY1_val.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_ROIY2_val.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
@@ -1534,8 +1440,7 @@ class HHGView(object):
         self.var_mcp_calibration_background_val.trace_add("write", self.update_calibration)
         self.ent_mcp_calibration_background_val = tk.Entry(frm_mcp_calibrate_options,
                                                            textvariable=self.var_mcp_calibration_background_val,
-                                                           width=6, validate='all',
-                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                           width=6, validate='all')
         lbl_mcp_calibration_background_val.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_background_val.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
 
@@ -1556,8 +1461,7 @@ class HHGView(object):
         self.var_mcp_calibration_energy_smooth.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_smooth = tk.Entry(frm_mcp_calibrate_options_energy,
                                                           textvariable=self.var_mcp_calibration_energy_smooth,
-                                                          width=4, validate='all',
-                                                          validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                          width=4, validate='all')
         lbl_mcp_calibration_energy_smooth.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_smooth.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
 
@@ -1566,8 +1470,7 @@ class HHGView(object):
         self.var_mcp_calibration_energy_prom.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_prom = tk.Entry(frm_mcp_calibrate_options_energy,
                                                         textvariable=self.var_mcp_calibration_energy_prom,
-                                                        width=6, validate='all',
-                                                        validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                        width=6, validate='all')
         lbl_mcp_calibration_energy_prom.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_prom.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
@@ -1578,12 +1481,10 @@ class HHGView(object):
         self.var_mcp_calibration_energy_ignore2.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_ignore1 = tk.Entry(frm_mcp_calibrate_options_energy,
                                                            textvariable=self.var_mcp_calibration_energy_ignore1,
-                                                           width=4, validate='all',
-                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                           width=4, validate='all')
         self.ent_mcp_calibration_energy_ignore2 = tk.Entry(frm_mcp_calibrate_options_energy,
                                                            textvariable=self.var_mcp_calibration_energy_ignore2,
-                                                           width=4, validate='all',
-                                                           validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                           width=4, validate='all')
         lbl_mcp_calibration_energy_ignore.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore1.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_ignore2.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
@@ -1602,8 +1503,7 @@ class HHGView(object):
         self.var_mcp_calibration_energy_firstharmonic.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_firstharmonic = tk.Entry(frm_mcp_calibrate_options_energy,
                                                                  textvariable=self.var_mcp_calibration_energy_firstharmonic,
-                                                                 width=4, validate='all',
-                                                                 validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                                 width=4, validate='all')
         lbl_mcp_calibration_energy_firstharmonic.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_firstharmonic.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
 
@@ -1612,8 +1512,7 @@ class HHGView(object):
         self.var_mcp_calibration_energy_order.trace_add("write", self.update_calibration_energy)
         self.ent_mcp_calibration_energy_order = tk.Entry(frm_mcp_calibrate_options_energy,
                                                          textvariable=self.var_mcp_calibration_energy_order,
-                                                         width=4, validate='all',
-                                                         validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                         width=4, validate='all')
         lbl_mcp_calibration_energy_order.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
         self.ent_mcp_calibration_energy_order.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
@@ -1666,8 +1565,7 @@ class HHGView(object):
         self.var_mcp_analysis_harmonic_order.trace_add("write", self.update_mcp_analysis)
         self.ent_mcp_analysis_harmonic_order = tk.Entry(frm_mcp_analysis_options,
                                                         textvariable=self.var_mcp_analysis_harmonic_order,
-                                                        width=4, validate='all',
-                                                        validatecommand=(vcmd, '%d', '%P', '%S'))
+                                                        width=4, validate='all')
 
         self.var_mcp_analysis_emin = tk.StringVar(self.win, "20")
         self.var_mcp_analysis_emin.trace_add("write", self.update_mcp_analysis)
@@ -1676,13 +1574,11 @@ class HHGView(object):
 
         self.ent_mcp_analysis_emax = tk.Entry(frm_mcp_analysis_options,
                                               textvariable=self.var_mcp_analysis_emax,
-                                              width=4, validate='all',
-                                              validatecommand=(vcmd, '%d', '%P', '%S'))
+                                              width=4, validate='all')
 
         self.ent_mcp_analysis_emin = tk.Entry(frm_mcp_analysis_options,
                                               textvariable=self.var_mcp_analysis_emin,
-                                              width=4, validate='all',
-                                              validatecommand=(vcmd, '%d', '%P', '%S'))
+                                              width=4, validate='all')
 
         self.open_h5_file_analysis.grid(row=0, column=0)
         lbl_mcp_analysis_harmonic_order.grid(row=0, column=1)
@@ -1790,7 +1686,6 @@ class HHGView(object):
         self.spec_interface_initialized = False
         self.active_spec_handle = None
 
-        self.PIKE_cam = False
         self.ANDOR_cam = False
 
         if self.ANDOR_cam is True:
@@ -2220,24 +2115,14 @@ class HHGView(object):
 
     def change_mcp_cam(self, event):
         selected_value = self.strvar_mcp_cam_choice.get()
-
-        if selected_value == 'Pike Camera':
-            if self.cam is not None:
-                self.cam.stop_acquisition()
-                self.cam.close()
-            self.PIKE_cam = True
-            self.ANDOR_cam = False
-            self.name_cam = 'PIKE_cam'
-        elif selected_value == 'Andor':
+        if selected_value == 'Andor':
             self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
-            self.PIKE_cam = False
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
             self.background = np.zeros([512, 512])
             # self.strvar_temperature_status.set(str(self.cam.get_temperature_status()))
             # self.strvar_temperature.set(str(self.cam.get_temperature()))
             self.update_camera_status_thread()
-        print(f"PIKE_cam: {self.PIKE_cam}")
         print(f"ANDOR_cam: {self.ANDOR_cam}")
 
     def update_camera_status_thread(self):
@@ -2931,27 +2816,7 @@ class HHGView(object):
             The captured image.
 
         """
-        if self.PIKE_cam is True:
-            with Vimba.get_instance() as vimba:
-                cams = vimba.get_all_cameras()
-                image = np.zeros([1000, 1600])
-                self.d_phase = deque()
-                self.meas_has_started = True
-                nr = avgs
-                with cams[0] as cam:
-                    exposure_time = cam.ExposureTime
-                    exposure_time.set(float(self.ent_exposure_time.get()))
-                    for frame in cam.get_frame_generator(limit=avgs):
-                        frame = cam.get_frame()
-                        frame.convert_pixel_format(PixelFormat.Mono8)
-                        img = frame.as_opencv_image()
-                        img = np.squeeze(frame.as_opencv_image())
-                        numpy_image = img
-                        image = image + numpy_image
-                    image = image / nr
-                    self.meas_has_started = False
-
-        elif self.ANDOR_cam is True:
+        if self.ANDOR_cam is True:
             self.cam.set_exposure(float(self.ent_exposure_time.get()) * 1e-6)
             self.cam.setup_shutter('open')
             self.d_phase = deque()
@@ -4162,34 +4027,10 @@ class HHGView(object):
         None
         """
 
-        # mcpimage = mcpimage - self.background
-
-        if self.PIKE_cam is True:
-            self.axMCP.clear()
-            self.axMCP.imshow(mcpimage, vmin=0, vmax=2, extent=[0, 1600, 0, 1000])
-            # self.axMCP.set_aspect('equal')
-
-            self.axMCP.set_xlabel("X (px)")
-            self.axMCP.set_ylabel("Y (px)")
-            self.axMCP.set_xlim(0, 1600)
-            self.axMCP.set_ylim(0, 1000)
-
-            self.axHarmonics.clear()
-            self.axHarmonics.plot(np.arange(1600), np.sum(mcpimage, 0))
-            self.axHarmonics.set_xlabel("X (px)")
-            self.axHarmonics.set_ylabel("Counts (arb.u.)")
-
-            self.axHarmonics.set_xlim(0, 1600)
-
-            self.figrMCP.tight_layout()
-            self.imgMCP.draw()
-
-        elif self.ANDOR_cam is True:
+        if self.ANDOR_cam is True:
             self.axMCP.clear()
             pcm = self.axMCP.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T,cmap='turbo')
             cbar = self.figrMCP.colorbar(pcm, ax=self.axMCP)
-
-            # self.axMCP.set_aspect('equal')
 
             self.axMCP.set_xlabel("X (px)")
             self.axMCP.set_ylabel("Y (px)")
