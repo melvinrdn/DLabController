@@ -30,10 +30,9 @@ import hardware.avaspec_driver._avs_py as avs
 import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
 import diagnostics.diagnostics_helpers as help
-from hardware.thorlabs_apt_driver import core as apt
+#from hardware.thorlabs_apt_driver import core as apt
 from ressources.calibration import waveplate_calibrator as cal
 from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator, slm_size, bit_depth
-
 
 
 
@@ -47,24 +46,11 @@ class HHGView(object):
         self.initialize_window()
         self.initialize_variables()
         self.initialize_frames()
+        self.initialize_spectrometer()
 
 
         pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
         self.scan_is_done_threading = threading.Event()
-
-
-        self.frm_notebook_param_spc = ttk.Notebook(self.win)
-        frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
-        frm_spc_export = ttk.Frame(self.frm_notebook_param_spc)
-        frm_spc_plt_set = ttk.Frame(self.frm_notebook_param_spc)
-        frm_spc_ratio = ttk.Frame(self.frm_notebook_param_spc)
-        frm_spc_pid = ttk.Frame(self.frm_notebook_param_spc)
-        self.frm_notebook_param_spc.add(frm_spc_settings, text="Acquisition parameters")
-        self.frm_notebook_param_spc.add(frm_spc_pid, text="PID options")
-        self.frm_notebook_param_spc.add(frm_spc_plt_set, text="Plot options")
-        self.frm_notebook_param_spc.add(frm_spc_ratio, text="Phase extraction options")
-        self.frm_notebook_param_spc.add(frm_spc_export, text="Export options")
-
         frm_measure = ttk.LabelFrame(self.frm_scans, text='Measurement')
         self.frm_notebook_scans = ttk.Notebook(self.frm_scans)
         frm_wp_scans = ttk.Frame(self.frm_scans)
@@ -86,7 +72,6 @@ class HHGView(object):
         frm_mcp_analysis = ttk.Frame(self.frm_mcp_all)
 
 
-
         self.frm_notebook_scans.add(frm_wp_scans, text="Power scan")
         self.frm_notebook_scans.add(frm_phase_scan, text="Two-color phase scan")
         self.frm_notebook_scans.add(frm_mpc_campaign, text="MPC")
@@ -102,14 +87,12 @@ class HHGView(object):
         frm_beam_shaping_scans = ttk.LabelFrame(frm_beam_shaping, text='Scan')
         frm_beam_shaping_scans.grid(row=0, column=0)
 
-
         self.frm_notebook_waveplate.add(frm_stage, text="Stage control")
         self.frm_notebook_waveplate.add(frm_wp_power_cal, text="Power calibration")
         self.frm_notebook_waveplate.add(frm_calculator, text="Calculator")
 
         self.output_console = ScrolledText(self.win, height=10, state='disabled')
         self.output_console.grid(row=1, column=1, columnspan=4, sticky='ew')
-
 
         self.frm_notebook_mcp.add(frm_mcp_image, text='MCP raw')
         self.frm_notebook_mcp.add(frm_mcp_calibrate, text='Calibrate Spatial')
@@ -127,125 +110,6 @@ class HHGView(object):
         frm_mcp_analysis_results = ttk.LabelFrame(frm_mcp_analysis, text='Results')
         frm_mcp_options = ttk.LabelFrame(self.win, text='MCP options')
 
-        lbl_spc_ind = tk.Label(frm_spc_settings, text='Spectrometer index:')
-        self.strvar_spc_ind = tk.StringVar(self.win, '1')
-        self.ent_spc_ind = tk.Entry(
-            frm_spc_settings, width=9, validate='all',
-            textvariable=self.strvar_spc_ind)
-        lbl_spc_exp = tk.Label(frm_spc_settings, text='Exposure time (ms):')
-        self.strvar_spc_exp = tk.StringVar(self.win, '50')
-        self.ent_spc_exp = tk.Entry(
-            frm_spc_settings, width=9, validate='all',
-            textvariable=self.strvar_spc_exp)
-        lbl_spc_gain = tk.Label(frm_spc_settings, text='Nbr. of averages:')
-        self.strvar_spc_avg = tk.StringVar(self.win, '1')
-        self.ent_spc_avg = tk.Entry(
-            frm_spc_settings, width=9, validate='all',
-            textvariable=self.strvar_spc_avg)
-        but_spc_activate = tk.Button(frm_spc_settings, text='Activate',
-                                     command=self.spec_activate, width=8)
-        but_spc_deactivate = tk.Button(frm_spc_settings, text='Desactivate',
-                                       command=self.spec_deactivate, width=8)
-        but_spc_start = tk.Button(frm_spc_settings, text='Start',
-                                  command=self.spc_img)
-        but_spc_stop = tk.Button(frm_spc_settings, text='Stop',
-                                 command=self.stop_measure)
-        but_spc_phi = tk.Button(frm_spc_settings, text='Fast 2pi',
-                                command=self.fast_scan)
-
-        self.but_spc_export_fringes = tk.Button(frm_spc_export, text='Save spectral fringes',
-                                                command=self.enable_save_spc_fringes, width=20)
-        self.but_spc_export_phase_stab = tk.Button(frm_spc_export, text='Save phase stability',
-                                                   command=self.enable_save_spc_phase_stability, width=20)
-
-        but_auto_scale = tk.Button(frm_spc_plt_set, text='Auto-scale',
-                                   command=self.auto_scale_spec_axis, width=13)
-        but_bck = tk.Button(frm_spc_plt_set, text='Take background',
-                            command=self.take_background, width=13)
-        lbl_phi = tk.Label(frm_spc_ratio, text='Phase shift:')
-        lbl_phi_2 = tk.Label(frm_spc_ratio, text='pi')
-        self.strvar_flat = tk.StringVar()
-        self.ent_flat = tk.Entry(
-            frm_spc_ratio, width=11, validate='all',
-            textvariable=self.strvar_flat)
-
-        text = '20'
-        self.strvar_indexfft = tk.StringVar(self.win, text)
-        lbl_indexfft = tk.Label(frm_spc_ratio, text='Index fft:')
-        lbl_angle = tk.Label(frm_spc_ratio, text='Phase:')
-        self.ent_indexfft = tk.Entry(
-            frm_spc_ratio, width=11,
-            textvariable=self.strvar_indexfft)
-        self.lbl_angle = tk.Label(frm_spc_ratio, text='angle')
-
-        text = '1950'
-        self.strvar_area1x = tk.StringVar(self.win, text)
-        self.ent_area1x = tk.Entry(
-            frm_spc_ratio, width=11,
-            textvariable=self.strvar_area1x)
-
-        text = '2100'
-        self.strvar_area1y = tk.StringVar(self.win, text)
-        self.ent_area1y = tk.Entry(
-            frm_spc_ratio, width=11,
-            textvariable=self.strvar_area1y)
-
-        lbl_setp = tk.Label(frm_spc_pid, text='Setpoint:')
-        self.strvar_setp = tk.StringVar(self.win, '0')
-        self.ent_setp = tk.Entry(
-            frm_spc_pid, width=11, validate='all',
-            textvariable=self.strvar_setp)
-        lbl_pidp = tk.Label(frm_spc_pid, text='P-value:')
-        self.strvar_pidp = tk.StringVar(self.win, '0')
-        self.ent_pidp = tk.Entry(
-            frm_spc_pid, width=11, validate='all',
-            textvariable=self.strvar_pidp)
-        lbl_pidi = tk.Label(frm_spc_pid, text='I-value:')
-        self.strvar_pidi = tk.StringVar(self.win, '0')  # -6 is nice
-        self.ent_pidi = tk.Entry(
-            frm_spc_pid, width=11, validate='all',
-            textvariable=self.strvar_pidi)
-        lbl_pidd = tk.Label(frm_spc_pid, text='D-value:')
-        self.strvar_pidd = tk.StringVar(self.win, '0')
-        self.ent_pidd = tk.Entry(
-            frm_spc_pid, width=11, validate='all',
-            textvariable=self.strvar_pidd)
-        lbl_std = tk.Label(frm_spc_pid, text='std:', width=6)
-        self.lbl_std_val = tk.Label(frm_spc_pid, text='None', width=6)
-
-        but_pid_setp = tk.Button(frm_spc_pid, text='Setpoint', command=self.set_setpoint)
-        but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
-        but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
-        but_pid_setk = tk.Button(frm_spc_pid, text='Set PID values', command=self.set_pid_val)
-
-
-        self.var_pid_cl = tk.IntVar()
-        self.cb_pid_cl = tk.Checkbutton(frm_spc_pid, text='Closed Loop', variable=self.var_pid_cl, onvalue=1,
-                                        offvalue=0,
-                                        command=None)
-        self.var_pid_stage_enable = tk.IntVar()
-        self.cb_pid_stage_enable = tk.Checkbutton(frm_spc_pid, text='PID with Piezo',
-                                                  variable=self.var_pid_stage_enable, onvalue=1,
-                                                  offvalue=0,
-                                                  command=None)
-        self.but_pid_stage_init = tk.Button(frm_spc_pid, text='Init', command=self.init_pid_piezo)
-
-        lbl_pid_stage_move = tk.Label(frm_spc_pid, text='Position (V):')
-        but_pid_stage_move = tk.Button(frm_spc_pid, text='Move', command=self.move_pid_piezo)
-        but_pid_stage_home = tk.Button(frm_spc_pid, text='Set to 0V', command=self.home_pid_piezo)
-        lbl_pid_stage_com = tk.Label(frm_spc_pid, text='COM Port:')
-        self.strvar_stage_pid_com = tk.StringVar(self.win, 'COM9')
-        self.ent_pid_stage_com = tk.Entry(
-            frm_spc_pid, width=8, validate='all',
-            textvariable=self.strvar_stage_pid_com)
-        self.strvar_pid_stage_actual_position = tk.StringVar(self.win, '')
-        self.ent_pid_stage_actual_position = tk.Entry(
-            frm_spc_pid, width=8, validate='all',
-            textvariable=self.strvar_pid_stage_actual_position)
-        self.strvar_pid_stage_set_position = tk.StringVar(self.win, '0.00')
-        self.ent_pid_stage_set_position = tk.Entry(
-            frm_spc_pid, width=8, validate='all',
-            textvariable=self.strvar_pid_stage_set_position)
 
         lbl_from = tk.Label(frm_phase_scan, text='From:')
         self.strvar_from = tk.StringVar(self.win, '-3.14')
@@ -264,10 +128,6 @@ class HHGView(object):
         self.ent_steps = tk.Entry(
             frm_phase_scan, width=5, validate='all',
             textvariable=self.strvar_steps)
-
-
-
-
 
         self.var_phasescan = tk.IntVar()
         self.cb_phasescan = tk.Checkbutton(frm_phase_scan, text='Scan', variable=self.var_phasescan, onvalue=1,
@@ -1008,66 +868,6 @@ class HHGView(object):
         self.frm_notebook_scans.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
 
-
-        # setting up buttons frm_spc
-
-        but_spc_start.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        but_spc_stop.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        but_spc_phi.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        lbl_spc_ind.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        but_spc_activate.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_spc_exp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_spc_exp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_spc_gain.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_spc_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-
-        self.but_spc_export_fringes.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.but_spc_export_phase_stab.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_spc_set
-        but_auto_scale.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        but_bck.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
-        # setting up buttons frm_bot
-        #but_exit.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        #but_feedback.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
-        # setting up frm_spc_pid
-        lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_pidp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_pidi.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_pidd.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.ent_setp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_pidp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_pidi.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_pidd.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-
-        but_pid_setp.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
-        but_pid_setk.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
-        but_pid_enbl.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
-        but_pid_stop.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
-
-        lbl_pid_stage_com.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
-        lbl_pid_stage_move.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-
-        self.ent_pid_stage_com.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_pid_stage_set_position.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        #self.ent_pid_stage_actual_position.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.but_pid_stage_init.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
-        but_pid_stage_move.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        but_pid_stage_home.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-
-        self.cb_pid_stage_enable.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
-        self.cb_pid_cl.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-
-        lbl_std.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.lbl_std_val.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-
-
         # setting up frm_measure
         lbl_mcp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.ent_mcp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
@@ -1489,89 +1289,23 @@ class HHGView(object):
         # Draw canvas
         self.canvas_results.draw()
 
-        sizefactor = 1
-
-        self.figr = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
-        self.ax1r = self.figr.add_subplot(211)
-        self.ax2r = self.figr.add_subplot(212)
-        self.trace_line, = self.ax1r.plot([])
-        self.fourier_line, = self.ax2r.plot([])
-        self.fourier_indicator = self.ax2r.plot([], 'v')[0]
-        self.fourier_text = self.ax2r.text(0.4, 0.5, "")
-        self.ax1r.set_xlim(510, 520)
-        self.ax1r.set_ylim(0, 3000)
-        self.ax1r.grid()
-        self.ax2r.set_xlim(0, 50)
-        self.ax2r.set_ylim(0, .6)
-        self.figr.tight_layout()
-        self.figr.canvas.draw()
-        self.img1r = FigureCanvasTkAgg(self.figr, self.frm_plt)
-        self.tk_widget_figr = self.img1r.get_tk_widget()
-        self.tk_widget_figr.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.img1r.draw()
-        self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
-        self.ax2r_blit = self.figr.canvas.copy_from_bbox(self.ax2r.bbox)
-
-        self.figp = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
-        self.ax1p = self.figp.add_subplot(111)
-        self.phase_line, = self.ax1p.plot([], '.', ms=1)
-        self.ax1p.set_xlim(0, 1000)
-        self.ax1p.set_ylim([-np.pi, np.pi])
-        self.ax1p.set_ylabel('Phase $\phi$')
-        self.ax1p.grid()
-        self.figp.tight_layout()
-        self.figp.canvas.draw()
-        self.img1p = FigureCanvasTkAgg(self.figp, self.frm_plt)
-        self.tk_widget_figp = self.img1p.get_tk_widget()
-        self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.img1p.draw()
-        self.ax1p_blit = self.figp.canvas.copy_from_bbox(self.ax1p.bbox)
-
-        self.figV = Figure(figsize=(5, 2), dpi=100)
-        self.ax1V = self.figV.add_subplot(111)
-        self.V_line, = self.ax1V.plot([], '.', ms=1)
-        self.ax1V.set_xlim(0, 1000)
-        self.ax1V.set_ylabel('Voltage (V)')
-        self.ax1V.grid()
-        self.figV.tight_layout()
-        self.figV.canvas.draw()
-        self.img1V = FigureCanvasTkAgg(self.figV, self.frm_plt)
-        self.tk_widget_figV = self.img1V.get_tk_widget()
-        self.tk_widget_figV.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.img1V.draw()
-        self.ax1V_blit = self.figV.canvas.copy_from_bbox(self.ax1V.bbox)
-
         # setting up frm_mcp_options
         self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.but_fixyaxis.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.but_get_background.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.but_remove_background.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-        # setting up frm_spc_ratio
-        self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
 
-        lbl_indexfft.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-        self.ent_indexfft.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_angle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-        self.lbl_angle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_phi.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.ent_flat.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-        lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.pid = PID(0, 0, 0, setpoint=0)
 
         self.im_phase = np.zeros(1000)
         self.im_voltage = np.zeros(1000)
-        self.pid = PID(0, 0, 0, setpoint=0)
-
         self.stop_acquire = 0
         self.stop_pid = False
-
         self.spec_interface_initialized = False
         self.active_spec_handle = None
-
         self.ANDOR_cam = False
+
 
         if self.ANDOR_cam is True:
             self.name_cam = 'ANDOR_cam'
@@ -1644,8 +1378,10 @@ class HHGView(object):
         self.averages = None
         self.calibrator = None
 
-        self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
-        self.autolog = self.saving_folder + '-' + 'auto-log.txt'
+        #self.saving_folder = 'C:/data/' + str(date.today()) + '/' + str(date.today())
+        #self.autolog = self.saving_folder + '-' + 'auto-log.txt'
+        self.autolog = './ressources/dummy_log'
+
         self.f = open(self.autolog, "a+")
 
     def initialize_frames(self):
@@ -1659,6 +1395,257 @@ class HHGView(object):
         self.frm_bot.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
         self.frm_scans.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
         self.frm_mcp_all.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+
+    def initialize_spectrometer(self):
+        self.frm_notebook_param_spc = ttk.Notebook(self.win)
+        frm_spc_settings = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_export = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_plt_set = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_ratio = ttk.Frame(self.frm_notebook_param_spc)
+        frm_spc_pid = ttk.Frame(self.frm_notebook_param_spc)
+        self.frm_notebook_param_spc.add(frm_spc_settings, text="Acquisition parameters")
+        self.frm_notebook_param_spc.add(frm_spc_pid, text="PID options")
+        self.frm_notebook_param_spc.add(frm_spc_plt_set, text="Plot options")
+        self.frm_notebook_param_spc.add(frm_spc_ratio, text="Phase extraction options")
+        self.frm_notebook_param_spc.add(frm_spc_export, text="Export options")
+
+
+
+        lbl_spc_ind = tk.Label(frm_spc_settings, text='Spectrometer index:')
+        self.strvar_spc_ind = tk.StringVar(self.win, '1')
+        self.ent_spc_ind = tk.Entry(
+            frm_spc_settings, width=9, validate='all',
+            textvariable=self.strvar_spc_ind)
+        lbl_spc_exp = tk.Label(frm_spc_settings, text='Exposure time (ms):')
+        self.strvar_spc_exp = tk.StringVar(self.win, '50')
+        self.ent_spc_exp = tk.Entry(
+            frm_spc_settings, width=9, validate='all',
+            textvariable=self.strvar_spc_exp)
+        lbl_spc_gain = tk.Label(frm_spc_settings, text='Nbr. of averages:')
+        self.strvar_spc_avg = tk.StringVar(self.win, '1')
+        self.ent_spc_avg = tk.Entry(
+            frm_spc_settings, width=9, validate='all',
+            textvariable=self.strvar_spc_avg)
+        but_spc_activate = tk.Button(frm_spc_settings, text='Activate',
+                                     command=self.spec_activate, width=8)
+        but_spc_deactivate = tk.Button(frm_spc_settings, text='Desactivate',
+                                       command=self.spec_deactivate, width=8)
+        but_spc_start = tk.Button(frm_spc_settings, text='Start',
+                                  command=self.spc_img)
+        but_spc_stop = tk.Button(frm_spc_settings, text='Stop',
+                                 command=self.stop_measure)
+        but_spc_phi = tk.Button(frm_spc_settings, text='Fast 2pi',
+                                command=self.fast_scan)
+
+        self.but_spc_export_fringes = tk.Button(frm_spc_export, text='Save spectral fringes',
+                                                command=self.enable_save_spc_fringes, width=20)
+        self.but_spc_export_phase_stab = tk.Button(frm_spc_export, text='Save phase stability',
+                                                   command=self.enable_save_spc_phase_stability, width=20)
+
+        but_auto_scale = tk.Button(frm_spc_plt_set, text='Auto-scale',
+                                   command=self.auto_scale_spec_axis, width=13)
+        but_bck = tk.Button(frm_spc_plt_set, text='Take background',
+                            command=self.take_background, width=13)
+        lbl_phi = tk.Label(frm_spc_ratio, text='Phase shift:')
+        lbl_phi_2 = tk.Label(frm_spc_ratio, text='pi')
+        self.strvar_flat = tk.StringVar()
+        self.ent_flat = tk.Entry(
+            frm_spc_ratio, width=11, validate='all',
+            textvariable=self.strvar_flat)
+
+        text = '20'
+        self.strvar_indexfft = tk.StringVar(self.win, text)
+        lbl_indexfft = tk.Label(frm_spc_ratio, text='Index fft:')
+        lbl_angle = tk.Label(frm_spc_ratio, text='Phase:')
+        self.ent_indexfft = tk.Entry(
+            frm_spc_ratio, width=11,
+            textvariable=self.strvar_indexfft)
+        self.lbl_angle = tk.Label(frm_spc_ratio, text='angle')
+
+        text = '1950'
+        self.strvar_area1x = tk.StringVar(self.win, text)
+        self.ent_area1x = tk.Entry(
+            frm_spc_ratio, width=11,
+            textvariable=self.strvar_area1x)
+
+        text = '2100'
+        self.strvar_area1y = tk.StringVar(self.win, text)
+        self.ent_area1y = tk.Entry(
+            frm_spc_ratio, width=11,
+            textvariable=self.strvar_area1y)
+
+        lbl_setp = tk.Label(frm_spc_pid, text='Setpoint:')
+        self.strvar_setp = tk.StringVar(self.win, '0')
+        self.ent_setp = tk.Entry(
+            frm_spc_pid, width=11, validate='all',
+            textvariable=self.strvar_setp)
+        lbl_pidp = tk.Label(frm_spc_pid, text='P-value:')
+        self.strvar_pidp = tk.StringVar(self.win, '0')
+        self.ent_pidp = tk.Entry(
+            frm_spc_pid, width=11, validate='all',
+            textvariable=self.strvar_pidp)
+        lbl_pidi = tk.Label(frm_spc_pid, text='I-value:')
+        self.strvar_pidi = tk.StringVar(self.win, '0')  # -6 is nice
+        self.ent_pidi = tk.Entry(
+            frm_spc_pid, width=11, validate='all',
+            textvariable=self.strvar_pidi)
+        lbl_pidd = tk.Label(frm_spc_pid, text='D-value:')
+        self.strvar_pidd = tk.StringVar(self.win, '0')
+        self.ent_pidd = tk.Entry(
+            frm_spc_pid, width=11, validate='all',
+            textvariable=self.strvar_pidd)
+        lbl_std = tk.Label(frm_spc_pid, text='std:', width=6)
+        self.lbl_std_val = tk.Label(frm_spc_pid, text='None', width=6)
+
+        but_pid_setp = tk.Button(frm_spc_pid, text='Setpoint', command=self.set_setpoint)
+        but_pid_enbl = tk.Button(frm_spc_pid, text='Start PID', command=self.enbl_pid)
+        but_pid_stop = tk.Button(frm_spc_pid, text='Stop PID', command=self.pid_stop)
+        but_pid_setk = tk.Button(frm_spc_pid, text='Set PID values', command=self.set_pid_val)
+
+        self.var_pid_cl = tk.IntVar()
+        self.cb_pid_cl = tk.Checkbutton(frm_spc_pid, text='Closed Loop', variable=self.var_pid_cl, onvalue=1,
+                                        offvalue=0,
+                                        command=None)
+        self.var_pid_stage_enable = tk.IntVar()
+        self.cb_pid_stage_enable = tk.Checkbutton(frm_spc_pid, text='PID with Piezo',
+                                                  variable=self.var_pid_stage_enable, onvalue=1,
+                                                  offvalue=0,
+                                                  command=None)
+        self.but_pid_stage_init = tk.Button(frm_spc_pid, text='Init', command=self.init_pid_piezo)
+
+        lbl_pid_stage_move = tk.Label(frm_spc_pid, text='Position (V):')
+        but_pid_stage_move = tk.Button(frm_spc_pid, text='Move', command=self.move_pid_piezo)
+        but_pid_stage_home = tk.Button(frm_spc_pid, text='Set to 0V', command=self.home_pid_piezo)
+        lbl_pid_stage_com = tk.Label(frm_spc_pid, text='COM Port:')
+        self.strvar_stage_pid_com = tk.StringVar(self.win, 'COM9')
+        self.ent_pid_stage_com = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            textvariable=self.strvar_stage_pid_com)
+        self.strvar_pid_stage_actual_position = tk.StringVar(self.win, '')
+        self.ent_pid_stage_actual_position = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            textvariable=self.strvar_pid_stage_actual_position)
+        self.strvar_pid_stage_set_position = tk.StringVar(self.win, '0.00')
+        self.ent_pid_stage_set_position = tk.Entry(
+            frm_spc_pid, width=8, validate='all',
+            textvariable=self.strvar_pid_stage_set_position)
+
+        but_spc_start.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        but_spc_stop.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        but_spc_phi.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        lbl_spc_ind.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_spc_ind.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        but_spc_activate.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        but_spc_deactivate.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_spc_exp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_spc_exp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_spc_gain.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_spc_avg.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+
+        self.but_spc_export_fringes.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.but_spc_export_phase_stab.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_spc_set
+        but_auto_scale.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        but_bck.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+
+        # setting up frm_spc_pid
+        lbl_setp.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidi.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_pidd.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_setp.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidp.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidi.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_pidd.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+
+        but_pid_setp.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        but_pid_setk.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+        but_pid_enbl.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        but_pid_stop.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
+        lbl_pid_stage_com.grid(row=0, column=2, padx=2, pady=2, sticky='nsew')
+        lbl_pid_stage_move.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.ent_pid_stage_com.grid(row=0, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_pid_stage_set_position.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.but_pid_stage_init.grid(row=0, column=4, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_move.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        but_pid_stage_home.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.cb_pid_stage_enable.grid(row=0, column=5, padx=2, pady=2, sticky='nsew')
+        self.cb_pid_cl.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+
+        lbl_std.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.lbl_std_val.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+
+        lbl_indexfft.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_indexfft.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_angle.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.lbl_angle.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+
+        lbl_phi.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+
+        self.ent_flat.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        lbl_phi_2.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.ent_area1x.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.ent_area1y.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
+
+
+        sizefactor = 1
+
+        self.figr = Figure(figsize=(5 * sizefactor, 3 * sizefactor), dpi=100)
+        self.ax1r = self.figr.add_subplot(211)
+        self.ax2r = self.figr.add_subplot(212)
+        self.trace_line, = self.ax1r.plot([])
+        self.fourier_line, = self.ax2r.plot([])
+        self.fourier_indicator = self.ax2r.plot([], 'v')[0]
+        self.fourier_text = self.ax2r.text(0.4, 0.5, "")
+        self.ax1r.set_xlim(510, 520)
+        self.ax1r.set_ylim(0, 3000)
+        self.ax1r.grid()
+        self.ax2r.set_xlim(0, 50)
+        self.ax2r.set_ylim(0, .6)
+        self.figr.tight_layout()
+        self.figr.canvas.draw()
+        self.img1r = FigureCanvasTkAgg(self.figr, self.frm_plt)
+        self.tk_widget_figr = self.img1r.get_tk_widget()
+        self.tk_widget_figr.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+        self.img1r.draw()
+        self.ax1r_blit = self.figr.canvas.copy_from_bbox(self.ax1r.bbox)
+        self.ax2r_blit = self.figr.canvas.copy_from_bbox(self.ax2r.bbox)
+
+        self.figp = Figure(figsize=(5 * sizefactor, 2 * sizefactor), dpi=100)
+        self.ax1p = self.figp.add_subplot(111)
+        self.phase_line, = self.ax1p.plot([], '.', ms=1)
+        self.ax1p.set_xlim(0, 1000)
+        self.ax1p.set_ylim([-np.pi, np.pi])
+        self.ax1p.set_ylabel('Phase $\phi$')
+        self.ax1p.grid()
+        self.figp.tight_layout()
+        self.figp.canvas.draw()
+        self.img1p = FigureCanvasTkAgg(self.figp, self.frm_plt)
+        self.tk_widget_figp = self.img1p.get_tk_widget()
+        self.tk_widget_figp.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+        self.img1p.draw()
+        self.ax1p_blit = self.figp.canvas.copy_from_bbox(self.ax1p.bbox)
+
+        self.figV = Figure(figsize=(5, 2), dpi=100)
+        self.ax1V = self.figV.add_subplot(111)
+        self.V_line, = self.ax1V.plot([], '.', ms=1)
+        self.ax1V.set_xlim(0, 1000)
+        self.ax1V.set_ylabel('Voltage (V)')
+        self.ax1V.grid()
+        self.figV.tight_layout()
+        self.figV.canvas.draw()
+        self.img1V = FigureCanvasTkAgg(self.figV, self.frm_plt)
+        self.tk_widget_figV = self.img1V.get_tk_widget()
+        self.tk_widget_figV.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
+        self.img1V.draw()
+        self.ax1V_blit = self.figV.canvas.copy_from_bbox(self.ax1V.bbox)
 
     def hide_show_spectrometer(self):
         if self.frm_plt_visible:
