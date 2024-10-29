@@ -176,92 +176,87 @@ class HHGView(object):
         self.frm_control_panel_2.add(frm_wp_power_cal, text="Power calibration")
         self.frm_control_panel_2.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-
         lbl_Stage = tk.Label(self.frm_stage, text='Stage')
         lbl_Nr = tk.Label(self.frm_stage, text='#')
         lbl_is = tk.Label(self.frm_stage, text='is (deg)')
         lbl_should = tk.Label(self.frm_stage, text='should')
 
-        lbl_WPR = tk.Label(self.frm_stage, text='WP red:')
-        self.strvar_WPR_is = tk.StringVar(self.win, '')
-        self.ent_WPR_is = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_is)
-        self.strvar_WPR_should = tk.StringVar(self.win, '')
-        self.ent_WPR_should = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_should)
-        self.strvar_WPR_Nr = tk.StringVar(self.win, '83837724')
-        self.ent_WPR_Nr = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPR_Nr)
+        # Waveplate 1
+        lbl_wp_1 = tk.Label(self.frm_stage, text='Waveplate 1:')
 
-        # buttons
-        self.but_WPR_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_WPR)
-        self.but_WPR_Home = tk.Button(self.frm_stage, text='Home', command=self.home_WPR)
-        self.but_WPR_Read = tk.Button(self.frm_stage, text='Read', command=self.read_WPR)
-        self.but_WPR_Move = tk.Button(self.frm_stage, text='Move', command=self.move_WPR)
+        self.strvar_wp_1_is = tk.StringVar(self.win, '')
+        self.ent_wp_1_is = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_1_is)
 
-        self.var_wprpower = tk.IntVar()
-        self.cb_wprpower = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wprpower, onvalue=1, offvalue=0,
-                                          command=None)
+        self.strvar_wp_1_should = tk.StringVar(self.win, '')
+        self.ent_wp_1_should = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_1_should)
 
-        lbl_WPG = tk.Label(self.frm_stage, text='WP green:')
-        self.strvar_WPG_is = tk.StringVar(self.win, '')
-        self.ent_WPG_is = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_is)
-        self.strvar_WPG_should = tk.StringVar(self.win, '')
-        self.ent_WPG_should = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_should)
-        # self.strvar_WPG_Nr = tk.StringVar(self.win, '83837725')
-        self.strvar_WPG_Nr = tk.StringVar(self.win, '83837714')
-        self.ent_WPG_Nr = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_WPG_Nr)
-        self.but_WPG_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_WPG)
-        self.but_WPG_Home = tk.Button(self.frm_stage, text='Home', command=self.home_WPG)
-        self.but_WPG_Read = tk.Button(self.frm_stage, text='Read', command=self.read_WPG)
-        self.but_WPG_Move = tk.Button(self.frm_stage, text='Move', command=self.move_WPG)
+        self.strvar_wp_1_nr = tk.StringVar(self.win, '83837724')
+        self.ent_wp_1_nr = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_1_nr)
 
-        self.var_wpgpower = tk.IntVar()
-        self.cb_wpgpower = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wpgpower, onvalue=1, offvalue=0,
-                                          command=None)
+        self.var_wp_1_power = tk.IntVar()
+        self.cb_wp_1_power = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wp_1_power, onvalue=1, offvalue=0,
+                                            command=None)
 
-        lbl_cam_stage = tk.Label(self.frm_stage, text='Camera in focus:')
-        self.strvar_cam_stage_is = tk.StringVar(self.win, '')
-        self.ent_cam_stage_is = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_is)
-        self.strvar_cam_stage_should = tk.StringVar(self.win, '')
-        self.ent_cam_stage_should = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_should)
-        self.strvar_cam_stage_Nr = tk.StringVar(self.win, '83837725')
-        self.ent_cam_stage_Nr = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_cam_stage_Nr)
-        self.but_cam_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_cam_stage)
-        self.but_cam_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_cam_stage)
-        self.but_cam_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_cam_stage)
-        self.but_cam_stage_Move = tk.Button(self.frm_stage, text='Move', command=self.move_cam_stage)
+        self.but_wp_1_init = tk.Button(self.frm_stage, text='Init', command=self.init_wp_1)
+        self.but_wp_1_home = tk.Button(self.frm_stage, text='Home', command=self.home_wp_1)
+        self.but_wp_1_read = tk.Button(self.frm_stage, text='Read', command=self.read_wp_1)
+        self.but_wp_1_move = tk.Button(self.frm_stage, text='Move', command=self.move_wp_1)
 
-        lbl_delay_stage = tk.Label(self.frm_stage, text='Delay:')
-        self.strvar_delay_stage_is = tk.StringVar(self.win, '')
-        self.ent_delay_stage_is = tk.Entry(
-            self.frm_stage, width=10, validate='all',
-            textvariable=self.strvar_delay_stage_is)
-        self.strvar_delay_stage_should = tk.StringVar(self.win, '')
-        self.ent_delay_stage_should = tk.Entry(
-            self.frm_stage, width=10, validate='all',
+        # Waveplate 2
+        lbl_wp_2 = tk.Label(self.frm_stage, text='Waveplate 2:')
 
-            textvariable=self.strvar_delay_stage_should)
-        self.strvar_delay_stage_Nr = tk.StringVar(self.win, '83837719')
-        self.ent_delay_stage_Nr = tk.Entry(
-            self.frm_stage, width=10, validate='all',
+        self.strvar_wp_2_is = tk.StringVar(self.win, '')
+        self.ent_wp_2_is = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_2_is)
 
-            textvariable=self.strvar_delay_stage_Nr)
+        self.strvar_wp_2_should = tk.StringVar(self.win, '')
+        self.ent_wp_2_should = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_2_should)
+
+        self.strvar_wp_2_nr = tk.StringVar(self.win, '83837714')
+        self.ent_wp_2_nr = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
+
+        self.var_wp_2_power = tk.IntVar()
+        self.wb_wp_2_power = tk.Checkbutton(self.frm_stage, text='Power', variable=self.var_wp_2_power, onvalue=1, offvalue=0,
+                                            command=None)
+
+        self.but_wp_2_init = tk.Button(self.frm_stage, text='Init', command=self.init_wp_2)
+        self.but_wp_2_home = tk.Button(self.frm_stage, text='Home', command=self.home_wp_2)
+        self.but_wp_2_read = tk.Button(self.frm_stage, text='Read', command=self.read_wp_2)
+        self.but_wp_2_move = tk.Button(self.frm_stage, text='Move', command=self.move_wp_2)
+
+        # Stage 1
+        lbl_stage_1 = tk.Label(self.frm_stage, text='Stage 1:')
+
+        self.strvar_stage_1_is = tk.StringVar(self.win, '')
+        self.ent_stage_1_is = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_1_is)
+
+        self.strvar_stage_1_should = tk.StringVar(self.win, '')
+        self.ent_stage_1_should = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_1_should)
+
+        self.strvar_stage_1_nr = tk.StringVar(self.win, '83837725')
+        self.ent_stage_1_nr = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_1_nr)
+
+        self.but_stage_1_init = tk.Button(self.frm_stage, text='Init', command=self.init_stage_1)
+        self.but_stage_1_home = tk.Button(self.frm_stage, text='Home', command=self.home_stage_1)
+        self.but_stage_1_read = tk.Button(self.frm_stage, text='Read', command=self.read_stage_1)
+        self.but_stage_1_move = tk.Button(self.frm_stage, text='Move', command=self.move_stage_1)
+
+        # Stage 2
+        lbl_stage_2 = tk.Label(self.frm_stage, text='Stage 2:')
+
+        self.strvar_stage_2_is = tk.StringVar(self.win, '')
+        self.ent_stage_2_is = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_2_is)
+
+        self.strvar_stage_2_should = tk.StringVar(self.win, '')
+        self.ent_stage_2_should = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_2_should)
+
+        self.strvar_stage_2_nr = tk.StringVar(self.win, '83837719')
+        self.ent_stage_2_nr = tk.Entry(self.frm_stage, width=10, validate='all', textvariable=self.strvar_stage_2_nr)
+
+        self.but_stage_2_init = tk.Button(self.frm_stage, text='Init', command=self.init_stage_2)
+        self.but_stage_2_home = tk.Button(self.frm_stage, text='Home', command=self.home_stage_2)
+        self.but_stage_2_read = tk.Button(self.frm_stage, text='Read', command=self.read_stage_2)
+        self.but_stage_2_move = tk.Button(self.frm_stage, text='Move', command=self.move_stage_2)
+
         # scan parameters
         self.strvar_delay_stage_from = tk.StringVar(self.win, '6.40')
         self.ent_delay_stage_from = tk.Entry(
@@ -278,10 +273,6 @@ class HHGView(object):
         self.var_delayscan = tk.IntVar()
         self.cb_delayscan = tk.Checkbutton(self.frm_stage, text='Scan', variable=self.var_delayscan, onvalue=1, offvalue=0,
                                            command=None)
-        self.but_delay_stage_Ini = tk.Button(self.frm_stage, text='Init', command=self.init_delay_stage)
-        self.but_delay_stage_Home = tk.Button(self.frm_stage, text='Home', command=self.home_delay_stage)
-        self.but_delay_stage_Read = tk.Button(self.frm_stage, text='Read', command=self.read_delay_stage)
-        self.but_delay_stage_Move = tk.Button(self.frm_stage, text='Move', command=self.move_delay_stage)
 
         # power wp calibration
         lbl_pharos_att = tk.Label(frm_wp_power_cal, text='Pharos Att:')
@@ -361,49 +352,49 @@ class HHGView(object):
         lbl_is.grid(row=0, column=2, pady=2, padx=2, sticky='nsew')
         lbl_should.grid(row=0, column=3, pady=2, padx=2, sticky='nsew')
 
-        lbl_WPR.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
-        lbl_WPG.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
-        lbl_delay_stage.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
-        lbl_cam_stage.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_wp_1.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
+        lbl_wp_2.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
+        lbl_stage_2.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
+        lbl_stage_1.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
         lbl_lens_stage.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_Nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
-        self.ent_WPG_Nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
-        self.ent_delay_stage_Nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_cam_stage_Nr.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_1_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
+        self.ent_wp_2_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
+        self.ent_stage_2_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
+        self.ent_stage_1_nr.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_cam_stage_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_1_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_2_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_stage_2_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_stage_1_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
-        self.ent_WPR_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_WPG_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_delay_stage_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_cam_stage_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_1_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_2_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_stage_2_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_stage_1_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPR_Ini.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPR_Move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_wp_1_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_wp_1_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_wp_1_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_wp_1_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.but_WPG_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_WPG_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.but_cam_stage_Ini.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_cam_stage_Move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_stage_1_init.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_stage_1_home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_stage_1_read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_stage_1_move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.but_delay_stage_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_delay_stage_Move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_stage_2_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_stage_2_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_stage_2_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_stage_2_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.cb_wprpower.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-        self.cb_wpgpower.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+        self.cb_wp_1_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
         # setting up frm_wp_power_calibration
         self.but_calibrator_open.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1996,57 +1987,57 @@ class HHGView(object):
             self.insert_message(f"Impossible to move {motor_attr}")
 
     # WPR motor
-    def init_WPR(self):
-        self.initialize_motor('WPR', self.ent_WPR_Nr, self.but_WPR_Ini, 'WPR')
+    def init_wp_1(self):
+        self.initialize_motor('WPR', self.ent_wp_1_nr, self.but_wp_1_init, 'WPR')
 
-    def home_WPR(self):
-        self.home_motor('WPR', self.but_WPR_Home, 'WPR')
+    def home_wp_1(self):
+        self.home_motor('WPR', self.but_wp_1_home, 'WPR')
 
-    def read_WPR(self):
+    def read_wp_1(self):
         self.read_position('WPR', 'strvar_WPR_is', 'strvar_red_current_power',
                            max_power=float(self.ent_red_power.get()))
 
-    def move_WPR(self):
+    def move_wp_1(self):
         self.move_motor('WPR', 'strvar_WPR_should', 'strvar_WPR_should', max_power=float(self.ent_red_power.get()))
 
-    def init_WPG(self):
-        self.initialize_motor('WPG', self.ent_WPG_Nr, self.but_WPG_Ini, 'WPG')
+    def init_wp_2(self):
+        self.initialize_motor('WPG', self.ent_wp_2_nr, self.but_wp_2_init, 'WPG')
 
-    def home_WPG(self):
+    def home_wp_2(self):
         message = "This feature is currently deactivated"
         self.insert_message(message)
 
-    def read_WPG(self):
+    def read_wp_2(self):
         self.read_position('WPG', 'strvar_WPG_is', 'strvar_green_current_power',
                            max_power=float(self.ent_green_power.get()))
 
-    def move_WPG(self):
+    def move_wp_2(self):
         self.move_motor('WPG', 'strvar_WPG_should', 'strvar_WPG_should', max_power=float(self.ent_green_power.get()))
 
     # cam_stage Motor
-    def init_cam_stage(self):
-        self.initialize_motor('cam_stage', self.ent_cam_stage_Nr, self.but_cam_stage_Ini, 'cam_stage')
+    def init_stage_1(self):
+        self.initialize_motor('cam_stage', self.ent_stage_1_nr, self.but_stage_1_init, 'cam_stage')
 
-    def home_cam_stage(self):
-        self.home_motor('cam_stage', self.but_cam_stage_Home, 'cam_stage')
+    def home_stage_1(self):
+        self.home_motor('cam_stage', self.but_stage_1_home, 'cam_stage')
 
-    def read_cam_stage(self):
+    def read_stage_1(self):
         self.read_position('cam_stage', 'strvar_cam_stage_is')
 
-    def move_cam_stage(self):
+    def move_stage_1(self):
         self.move_motor('cam_stage', 'strvar_cam_stage_should')
 
     # delay_stage Motor
-    def init_delay_stage(self):
-        self.initialize_motor('delay_stage', self.ent_delay_stage_Nr, self.but_delay_stage_Ini, 'delay_stage')
+    def init_stage_2(self):
+        self.initialize_motor('delay_stage', self.ent_stage_2_nr, self.but_stage_2_init, 'delay_stage')
 
-    def home_delay_stage(self):
-        self.home_motor('delay_stage', self.but_delay_stage_Home, 'delay_stage')
+    def home_stage_2(self):
+        self.home_motor('delay_stage', self.but_stage_2_home, 'delay_stage')
 
-    def read_delay_stage(self):
+    def read_stage_2(self):
         self.read_position('delay_stage', 'strvar_delay_stage_is')
 
-    def move_delay_stage(self):
+    def move_stage_2(self):
         self.move_motor('delay_stage', 'strvar_delay_stage_should')
 
     # lens_stage Motor
@@ -2394,27 +2385,27 @@ class HHGView(object):
         return start_image
 
     def red_only_scan(self):
-        self.var_wprpower.set(1)
+        self.var_wp_1_power.set(1)
         WPR_steps = int(self.ent_WPR_steps.get())
         WPR_scan_list = np.linspace(float(self.ent_WPR_from.get()), float(self.ent_WPR_to.get()), WPR_steps)
 
         for i in np.arange(0, WPR_steps):
             r = WPR_scan_list[i]
-            self.strvar_WPR_should.set(str(r))
-            self.move_WPR()
+            self.strvar_wp_1_should.set(str(r))
+            self.move_wp_1()
             im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.save_im(im)
             self.plot_MCP(im)
 
     def green_only_scan(self):
-        self.var_wpgpower.set(1)
+        self.var_wp_2_power.set(1)
         WPG_steps = int(self.ent_WPG_steps.get())
         WPG_scan_list = np.linspace(float(self.ent_WPG_from.get()), float(self.ent_WPG_to.get()), WPG_steps)
 
         for i in np.arange(0, WPG_steps):
             g = WPG_scan_list[i]
-            self.strvar_WPG_should.set(str(g))
-            self.move_WPG()
+            self.strvar_wp_2_should.set(str(g))
+            self.move_wp_2()
             im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.save_im(im)
             self.plot_MCP(im)
@@ -2422,8 +2413,8 @@ class HHGView(object):
     def red_green_ratio_scan(self):
         steps = int(self.ent_ratio_steps.get())
         pr, pg = self.get_power_values_for_ratio_scan()
-        self.var_wprpower.set(1)
-        self.var_wpgpower.set(1)
+        self.var_wp_1_power.set(1)
+        self.var_wp_2_power.set(1)
 
         message = f'Power values for red: {pr}'
         self.insert_message(message)
@@ -2434,12 +2425,12 @@ class HHGView(object):
             r = pr[i]
             g = pg[i]
 
-            self.strvar_WPG_should.set(str(1e3 * g))
-            self.move_WPG()
+            self.strvar_wp_2_should.set(str(1e3 * g))
+            self.move_wp_2()
             time.sleep(0.2)
 
-            self.strvar_WPR_should.set(str(r))
-            self.move_WPR()
+            self.strvar_wp_1_should.set(str(r))
+            self.move_wp_1()
             time.sleep(0.2)
 
             if self.var_phasescan.get() == 1 and self.var_background.get() == 0:
