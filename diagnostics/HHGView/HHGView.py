@@ -7,7 +7,7 @@ from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
 from tkinter.scrolledtext import ScrolledText
 import pygame
-
+import logging
 import cv2
 import h5py
 import matplotlib
@@ -30,6 +30,10 @@ import diagnostics.diagnostics_helpers as help
 from diagnostics.WaveplateCalib import WaveplateCalib as cal
 from hardware.SLM_driver.SpatialLightModulator import slm_size, bit_depth
 import time
+from diagnostics.diagnostics_helpers import ColorFormatter
+handler = logging.StreamHandler()
+handler.setFormatter(ColorFormatter("from WPCalib: %(levelname)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 class HHGView(object):
 
@@ -45,7 +49,7 @@ class HHGView(object):
         if self.ANDOR_cam is True:
             self.name_cam = 'ANDOR_cam'
 
-        #self.open_calibrator_on_start()
+        self.open_calibrator_on_start()
 
     def initialize_window(self):
         self.win = tk.Toplevel()
@@ -519,49 +523,49 @@ class HHGView(object):
         lbl_omega = tk.Label(frm_wp_power_cal, text='ω field', fg='red')
         lbl_omega.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_omega_power = tk.StringVar(self.win, '0')
-        self.ent_omega_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_omega_power)
-        self.ent_omega_power.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_1_power = tk.StringVar(self.win, '0')
+        self.ent_wp_1_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_power)
+        self.ent_wp_1_power.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_omega_offset = tk.StringVar(self.win, '0')
-        self.ent_omega_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_omega_offset)
-        self.ent_omega_offset.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_1_offset = tk.StringVar(self.win, '0')
+        self.ent_wp_1_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_offset)
+        self.ent_wp_1_offset.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_omega_current_power = tk.StringVar(self.win, '0')
-        self.ent_omega_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_omega_current_power)
-        self.ent_omega_current_power.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_1_current_power = tk.StringVar(self.win, '0')
+        self.ent_wp_1_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_current_power)
+        self.ent_wp_1_current_power.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
 
         # 2 Omega
         lbl_2omega = tk.Label(frm_wp_power_cal, text='2ω field', fg='green')
         lbl_2omega.grid(row=0, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_2omega_power = tk.StringVar(self.win, '0')
-        self.ent_2omega_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_2omega_power)
-        self.ent_2omega_power.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_2_power = tk.StringVar(self.win, '0')
+        self.ent_wp_2_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_power)
+        self.ent_wp_2_power.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_2omega_offset = tk.StringVar(self.win, '0')
-        self.ent_2omega_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_2omega_offset)
-        self.ent_2omega_offset.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_2_offset = tk.StringVar(self.win, '0')
+        self.ent_wp_2_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_offset)
+        self.ent_wp_2_offset.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_2omega_current_power = tk.StringVar(self.win, '0')
-        self.ent_2omega_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_2omega_current_power)
-        self.ent_2omega_current_power.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_2_current_power = tk.StringVar(self.win, '0')
+        self.ent_wp_2_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_current_power)
+        self.ent_wp_2_current_power.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
         # 3 Omega
         lbl_3omega = tk.Label(frm_wp_power_cal, text='3ω field', fg='blue')
         lbl_3omega.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_3omega_power = tk.StringVar(self.win, '0')
-        self.ent_3omega_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_3omega_power)
-        self.ent_3omega_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_3_power = tk.StringVar(self.win, '0')
+        self.ent_wp_3_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_power)
+        self.ent_wp_3_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_3omega_offset = tk.StringVar(self.win, '0')
-        self.ent_3omega_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_3omega_offset)
-        self.ent_3omega_offset.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_3_offset = tk.StringVar(self.win, '0')
+        self.ent_wp_3_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_offset)
+        self.ent_wp_3_offset.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_3omega_current_power = tk.StringVar(self.win, '0')
-        self.ent_3omega_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_3omega_current_power)
-        self.ent_3omega_current_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_3_current_power = tk.StringVar(self.win, '0')
+        self.ent_wp_3_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_current_power)
+        self.ent_wp_3_current_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 4
         lbl_wp_4_calib = tk.Label(frm_wp_power_cal, text='Waveplate 4')
@@ -751,20 +755,20 @@ class HHGView(object):
             frm_beam_shaping_scans, width=10, validate='all',
             textvariable=self.strvar_mpc_lens_steps)
 
-        self.strvar_mpc_maxpower = tk.StringVar(self.win, '5')
+        self.strvar_wp_4_maxpower = tk.StringVar(self.win, '5')
         self.ent_mpc_maxpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_maxpower)
+            textvariable=self.strvar_wp_4_maxpower)
 
         self.strvar_mpc_minpower = tk.StringVar(self.win, '5')
         self.ent_mpc_minpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
             textvariable=self.strvar_mpc_minpower)
 
-        self.strvar_mpc_maxangle = tk.StringVar(self.win, '42')
+        self.strvar_wp_4_maxangle = tk.StringVar(self.win, '42')
         self.ent_mpc_maxangle = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
-            textvariable=self.strvar_mpc_maxangle)
+            textvariable=self.strvar_wp_4_maxangle)
         self.strvar_mpc_currentpower = tk.StringVar(self.win, '')
         self.ent_mpc_currentpower = tk.Entry(
             frm_mpc_campaign_current, width=10, validate='all',
@@ -979,7 +983,7 @@ class HHGView(object):
             textvariable=self.strvar_ratio_from)
         x = float(self.ent_int_ratio_focus.get()) ** 2
         c = float(self.ent_int_ratio_constant.get())
-        maxG = float(self.ent_2omega_power.get()) * 1e-3
+        maxG = float(self.ent_wp_2_power.get()) * 1e-3
         self.strvar_ratio_to = tk.StringVar(self.win, str(np.round(x * maxG / (c), 3)))
         self.ent_ratio_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
@@ -998,7 +1002,7 @@ class HHGView(object):
         self.ent_WPR_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             textvariable=self.strvar_WPR_from)
-        self.strvar_WPR_to = tk.StringVar(self.win, self.ent_omega_power.get())
+        self.strvar_WPR_to = tk.StringVar(self.win, self.ent_wp_1_power.get())
         self.ent_WPR_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             textvariable=self.strvar_WPR_to)
@@ -1013,7 +1017,7 @@ class HHGView(object):
         self.ent_WPG_from = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             textvariable=self.strvar_WPG_from)
-        self.strvar_WPG_to = tk.StringVar(self.win, self.ent_2omega_power.get())
+        self.strvar_WPG_to = tk.StringVar(self.win, self.ent_wp_2_power.get())
         self.ent_WPG_to = tk.Entry(
             frm_wp_scans, width=5, validate='all',
             textvariable=self.strvar_WPG_to)
@@ -2020,7 +2024,7 @@ class HHGView(object):
         try:
             x = float(self.ent_int_ratio_focus.get()) ** 2
             c = float(self.ent_int_ratio_constant.get())
-            maxG = float(self.ent_2omega_power.get()) * 1e-3
+            maxG = float(self.ent_wp_2_power.get()) * 1e-3
             self.lbl_int_ratio_constant.config(text='Pr+{:.2f}*PG='.format(x))
             self.strvar_ratio_to.set(str(np.round(x * maxG / c, 3)))
         except:
@@ -2161,10 +2165,10 @@ class HHGView(object):
 
     def read_wp_1(self):
         self.read_position('WPR', 'strvar_WPR_is', 'strvar_red_current_power',
-                           max_power=float(self.ent_omega_power.get()))
+                           max_power=float(self.ent_wp_1_power.get()))
 
     def move_wp_1(self):
-        self.move_motor('WPR', 'strvar_WPR_should', 'strvar_WPR_should', max_power=float(self.ent_omega_power.get()))
+        self.move_motor('WPR', 'strvar_WPR_should', 'strvar_WPR_should', max_power=float(self.ent_wp_1_power.get()))
 
     def init_wp_2(self):
         self.initialize_motor('WPG', self.ent_wp_2_nr, self.but_wp_2_init, 'WPG')
@@ -2175,10 +2179,10 @@ class HHGView(object):
 
     def read_wp_2(self):
         self.read_position('WPG', 'strvar_WPG_is', 'strvar_green_current_power',
-                           max_power=float(self.ent_2omega_power.get()))
+                           max_power=float(self.ent_wp_2_power.get()))
 
     def move_wp_2(self):
-        self.move_motor('WPG', 'strvar_WPG_should', 'strvar_WPG_should', max_power=float(self.ent_2omega_power.get()))
+        self.move_motor('WPG', 'strvar_WPG_should', 'strvar_WPG_should', max_power=float(self.ent_wp_2_power.get()))
 
     # cam_stage Motor
     def init_stage_1(self):
@@ -2256,38 +2260,31 @@ class HHGView(object):
 
     def open_calibrator(self):
         """
-        Open the file where the power calibration is
-
-        Returns
-        -------
-        None
+        Opens the waveplate calibrator, retrieves maximum power and offset values
+        for each waveplate, and updates the corresponding Tkinter StringVars.
         """
-        # try:
         self.calibrator = cal.WPCalib()
-        self.strvar_omega_power.set(str(self.calibrator.max_wp_1))
-        self.strvar_2omega_power.set(str(self.calibrator.max_wp_2))
-        self.strvar_mpc_maxpower.set(str(self.calibrator.max_wp_3))
-        self.strvar_omega_offset.set(str(self.calibrator.offset_wp_1))
-        self.strvar_2omega_offset.set(str(self.calibrator.offset_wp_2))
-        self.strvar_mpc_maxangle.set(str(self.calibrator.offset_wp_3))
+        for i in range(1, 5):
+            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
+            offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
+            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
+            getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
 
     def open_calibrator_on_start(self):
         """
-        Open the calibrator to initialize current calibration value
-
-        Returns
-        -------
-        None
+        Opens the waveplate calibrator on startup, retrieves and updates the
+        maximum power and phase offset values for each waveplate, then closes
+        the calibrator. Logs information and errors during the process.
         """
-        # try:
-        self.calibrator = cal.WPCalib()
-        self.strvar_omega_power.set(str(self.calibrator.max_wp_1))
-        self.strvar_2omega_power.set(str(self.calibrator.max_wp_2))
-        self.strvar_omega_offset.set(str(self.calibrator.phase_wp_1))
-        self.strvar_mpc_maxpower.set(str(self.calibrator.max_wp_3))
-        self.strvar_2omega_offset.set(str(self.calibrator.phase_wp_2))
-        self.strvar_mpc_maxangle.set(str(self.calibrator.phase_wp_3))
-        self.calibrator.on_close()
+        try:
+            self.open_calibrator()
+            self.calibrator.on_close()
+            logging.info("Waveplate calibrator values successfully loaded.")
+
+        except AttributeError as e:
+            logging.error(f"Failed to access waveplate attributes: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in open_calibrator_on_start: {e}")
 
     def read_red_power(self):
         """
@@ -2307,7 +2304,7 @@ class HHGView(object):
             given_pp = float(self.ent_laser_pp.get())
             red_power_indice = np.where((self.pharos_att == given_att) & (self.pharos_pp == given_pp))
             red_power = self.red_p[red_power_indice]
-            self.strvar_omega_power.set(str(red_power[0]))
+            self.strvar_wp_1_power.set(str(red_power[0]))
         except:
             message = 'Impossible to read red power'
             self.insert_message(message)
@@ -2419,7 +2416,7 @@ class HHGView(object):
             gl_pos = np.nan
 
         log_entry = str(
-            int(nr)) + '\t' + self.ent_omega_current_power.get() + '\t' + self.ent_2omega_current_power.get() + '\t' + str(
+            int(nr)) + '\t' + self.ent_wp_1_current_power.get() + '\t' + self.ent_wp_2_current_power.get() + '\t' + str(
             np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
             np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
             np.round(np.std(np.unwrap(self.d_phase)),

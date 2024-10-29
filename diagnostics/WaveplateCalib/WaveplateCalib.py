@@ -11,7 +11,7 @@ import matplotlib
 from diagnostics.diagnostics_helpers import ColorFormatter
 
 handler = logging.StreamHandler()
-handler.setFormatter(ColorFormatter("from WPCalib: %(levelname)s: %(message)s"))
+handler.setFormatter(ColorFormatter("from HHGView: %(levelname)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 class WPCalib:
@@ -139,7 +139,7 @@ class WPCalib:
 
             self.update_waveplate_data(wp_index, amplitude, phase)
             getattr(self, f'but_calibration_power_wp_{wp_index}').config(fg='green')
-            logging.info(f"Calibration data for WP{wp_index} loaded and plotted from {filename}.")
+            logging.info(f"Calibration data for WP{wp_index} loaded from {filename}.")
         except Exception as e:
             logging.error(f"Failed to load the calibration data for WP{wp_index}: {e}")
             getattr(self, f'but_calibration_power_wp_{wp_index}').config(fg='red')
