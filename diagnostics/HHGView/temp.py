@@ -16,7 +16,7 @@ import h5py
 import matplotlib
 import numpy as np
 import pylablib as pll
-from PIL import Image, ImageTk
+from PIL import Image
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -31,8 +31,8 @@ import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
 import diagnostics.diagnostics_helpers as help
 from hardware.thorlabs_apt_driver import core as apt
-from ressources.calibration import waveplate_calibrator as cal
-from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator, slm_size, bit_depth
+from diagnostics.WaveplateCalib import WaveplateCalib as cal
+from hardware.SLM_driver.SpatialLightModulator import slm_size, bit_depth
 
 
 
@@ -2712,13 +2712,13 @@ class HHGView(object):
         None
         """
         # try:
-        self.calibrator = cal.Calibrator()
-        self.strvar_red_power.set(str(self.calibrator.max_red))
-        self.strvar_green_power.set(str(self.calibrator.max_green))
-        self.strvar_mpc_maxpower.set(str(self.calibrator.max_mpc))
-        self.strvar_red_phase.set(str(self.calibrator.phase_red))
-        self.strvar_green_phase.set(str(self.calibrator.phase_green))
-        self.strvar_mpc_maxangle.set(str(self.calibrator.phase_mpc))
+        self.calibrator = cal.WPCalib()
+        self.strvar_red_power.set(str(self.calibrator.max_wp_1))
+        self.strvar_green_power.set(str(self.calibrator.max_wp_2))
+        self.strvar_mpc_maxpower.set(str(self.calibrator.max_wp_3))
+        self.strvar_red_phase.set(str(self.calibrator.phase_wp_1))
+        self.strvar_green_phase.set(str(self.calibrator.phase_wp_2))
+        self.strvar_mpc_maxangle.set(str(self.calibrator.phase_wp_3))
 
     def open_calibrator_on_start(self):
         """
@@ -2729,13 +2729,13 @@ class HHGView(object):
         None
         """
         # try:
-        self.calibrator = cal.Calibrator()
-        self.strvar_red_power.set(str(self.calibrator.max_red))
-        self.strvar_green_power.set(str(self.calibrator.max_green))
-        self.strvar_red_phase.set(str(self.calibrator.phase_red))
-        self.strvar_mpc_maxpower.set(str(self.calibrator.max_mpc))
-        self.strvar_green_phase.set(str(self.calibrator.phase_green))
-        self.strvar_mpc_maxangle.set(str(self.calibrator.phase_mpc))
+        self.calibrator = cal.WPCalib()
+        self.strvar_red_power.set(str(self.calibrator.max_wp_1))
+        self.strvar_green_power.set(str(self.calibrator.max_wp_2))
+        self.strvar_red_phase.set(str(self.calibrator.phase_wp_1))
+        self.strvar_mpc_maxpower.set(str(self.calibrator.max_wp_3))
+        self.strvar_green_phase.set(str(self.calibrator.phase_wp_2))
+        self.strvar_mpc_maxangle.set(str(self.calibrator.phase_wp_3))
         self.calibrator.on_close()
 
     def read_red_power(self):

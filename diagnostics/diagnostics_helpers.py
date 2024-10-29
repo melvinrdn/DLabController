@@ -4,6 +4,7 @@ import cv2
 from scipy.signal import find_peaks
 from scipy.optimize import curve_fit
 from matplotlib.colors import LinearSegmentedColormap
+import logging
 
 colors = [
     (1, 1, 1),  # white
@@ -26,6 +27,21 @@ c = 299792458
 qe = 1.60217662e-19
 lam = 1030e-9
 Eq = h * c / lam
+
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+RESET = "\033[0m"
+
+class ColorFormatter(logging.Formatter):
+    def format(self, record):
+        if record.levelno == logging.WARNING:
+            record.msg = f"{YELLOW}{record.msg}{RESET}"
+        elif record.levelno == logging.ERROR:
+            record.msg = f"{RED}{record.msg}{RESET}"
+        else:
+            record.msg = f"{GREEN}{record.msg}{RESET}"
+        return super().format(record)
 
 
 def shear_image(image_old, val, axis=0):
