@@ -24,12 +24,14 @@ and the associated function.
 add a new Type. 
 """
 
+
 class DLabController:
     """
     A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
     in the D-lab.
     """
-    config_file = './ressources/saved_settings/default_settings_path.json'  # JSON file to store the new default settings paths
+    config_file = './ressources/saved_settings/default_settings_path.json'
+
     def __init__(self, parent):
         """
         Initializes the D-Lab Controller interface and sets up the main window components.
@@ -149,7 +151,7 @@ class DLabController:
             The color of the SLM ('green' or 'red').
         """
         close_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Close {color}',
-                                    command=lambda: self.close_publish_win(color))
+                                  command=lambda: self.close_publish_win(color))
         close_button.grid(row=0, column=2, sticky='nsew', padx=5, pady=5)
 
     def setup_frames(self, color):
@@ -312,7 +314,7 @@ class DLabController:
         for ind, phase_type in enumerate(phase_refs):
             if vars_color[ind].get() == 1:
                 active_phase_types.append(phase_type.__class__.__name__)
-                phase += phase_type.phase()                   # Add each phase type to the phase variable
+                phase += phase_type.phase()  # Add each phase type to the phase variable
 
                 if phase_type.__class__.__name__ == 'TypeBackground':
                     slm.background_phase = phase_type.phase()  # Send the new background on the SLM class
@@ -322,8 +324,8 @@ class DLabController:
 
         logging.info(f"Phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
 
-        slm.phase = phase                       # Send the new phase on the SLM class
-        self.update_phase_plot(slm, color)      # Update the plot on the main interface
+        slm.phase = phase  # Send the new phase on the SLM class
+        self.update_phase_plot(slm, color)  # Update the plot on the main interface
         return phase
 
     def update_phase_plot(self, slm, color):
@@ -346,7 +348,7 @@ class DLabController:
             img = self.img_red
 
         ax.clear()
-        ax.imshow(slm.phase-slm.background_phase, cmap='hsv', interpolation='None', extent=(
+        ax.imshow(slm.phase - slm.background_phase, cmap='hsv', interpolation='None', extent=(
             -slm.slm_size[1] / 2, slm.slm_size[1] / 2,
             -slm.slm_size[0] / 2, slm.slm_size[0] / 2))
         ax.set_xlabel('y')
@@ -523,7 +525,7 @@ class DLabController:
             logging.warning(f"Default {color} settings file not found at {filepath}.")
 
     ## Closing and exit commands
-    def close_publish_win(self,color):
+    def close_publish_win(self, color):
         """
         Close the connection to the SLM
 
@@ -534,7 +536,6 @@ class DLabController:
         """
         slm = getattr(self, f'SLM_{color}')
         slm.close()
-
 
     def exit_prog(self):
         """
