@@ -9,7 +9,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
 from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator
-from hardware.SLM_driver import phase_settings
+from hardware.SLM_driver import PhaseSettings
 from diagnostics.diagnostics_helpers import ColorFormatter
 
 handler = logging.StreamHandler()
@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.INFO, handlers=[handler])
 Welcome to the D-lab Controller. If you are reading this this is maybe because you want to modify something is the code.
 - If you want to add a button that opens a new window, directly go to setup_side_panel and add the name of your button 
 and the associated function.
-- If you want to add a new phase pattern, you to go to hardware>SLM_driver>phase_settings and
+- If you want to add a new phase pattern, you to go to hardware>SLM_driver>PhaseSettings and
 add a new Type. 
 """
 
@@ -57,7 +57,7 @@ class DLabController:
         self.frm_green_visible = False
         logging.info("Loading the default parameters...")
         #self.load_default_parameters('green')
-        self.load_default_parameters('red')
+        #self.load_default_parameters('red')
         logging.info("Welcome to the D-Lab Controller")
 
     ## Setting up the interface
@@ -225,7 +225,7 @@ class DLabController:
         tabs_attr = f"tabs_{color}"
         frm_mid_attr = f"frm_mid_{color}"
 
-        setattr(self, types_attr, phase_settings.types)
+        setattr(self, types_attr, PhaseSettings.types)
         setattr(self, vars_attr, [])
         setattr(self, phase_refs_attr, [])
         setattr(self, tabs_attr, [])
@@ -242,7 +242,7 @@ class DLabController:
             tab = ttk.Frame(frm_mid)
             tabs_list.append(tab)
             frm_mid.add(tab, text=typ)
-            phase_refs_list.append(phase_settings.new_type(tab, typ))
+            phase_refs_list.append(PhaseSettings.new_type(tab, typ))
             box = ttk.Checkbutton(frm_box, text=typ,
                                   variable=vars_list[ind],
                                   onvalue=1, offvalue=0)
