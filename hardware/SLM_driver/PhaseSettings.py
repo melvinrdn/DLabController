@@ -17,7 +17,7 @@ handler = logging.StreamHandler()
 handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-types = ['Background', 'Lens', 'Zernike', 'Vortex', 'Grating', 'Binary', 'PhaseJumps', 'Image']
+types = ['Background', 'Lens', 'Zernike', 'Vortex', 'Grating', 'Binary', 'PhaseJumps']
 w_L = 3.5e-3  # Beam waist on the SLM
 
 
@@ -29,7 +29,6 @@ def new_type(frm_mid, typ):
         'Lens': TypeLens,
         'Vortex': TypeVortex,
         'Zernike': TypeZernike,
-        'Image': TypeImage,
         'PhaseJumps': TypePhaseJumps,
         'Grating': TypeGrating
     }
@@ -765,8 +764,7 @@ class TypePhaseJumps(BaseType):
         """Load the list of phase jumps."""
         self.phase_jumps = settings.get('phase_jumps', [])
         self.update_jump_display()
-
-
+"""
 class TypeImage(TypeBackground):
     def __init__(self, parent):
         self.name = 'Image'
@@ -808,28 +806,24 @@ class TypeImage(TypeBackground):
             self.lbl_file.config(text='No file selected')
 
     def refresh_profile(self):
-        """Refreshes the loaded image to update any changes."""
         if self.img is not None:
             self.update_preview(self.lbl_file.cget("text"))
         else:
             logging.info("No image to refresh")
 
     def update_preview(self, filepath):
-        """Displays a thumbnail preview of the loaded image on the Canvas."""
         if self.img is not None:
             img_resized = self.img.resize((100, 100))  # Resize for preview
             self.preview_photo = ImageTk.PhotoImage(img_resized)
             self.preview_canvas.create_image(50, 50, image=self.preview_photo)
 
     def _read_file(self, filepath):
-        """Reads the selected image file and converts it to grayscale if needed."""
         if filepath.endswith('.csv'):
             self.img = np.loadtxt(filepath, delimiter=',')
         else:
             self.img = Image.open(filepath).convert('L')  # Convert image to grayscale
 
     def phase(self):
-        """Returns the image data as a phase profile, normalized to bit depth if applicable."""
         if self.img is not None:
             phase = np.array(self.img) / 255 * bit_depth  # Normalize to SLM bit depth
         else:
@@ -1116,3 +1110,4 @@ class TypeImage(TypeBackground):
 #         self.strvar_vit.set(dict['vit'])
 #         self.strvar_vis.set(dict['vis'])
 #         self.strvar_pxsiz.set(dict['pxsiz'])
+"""

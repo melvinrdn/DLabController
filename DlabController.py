@@ -509,7 +509,6 @@ class DLabController:
                 if phase_data:
                     phase.load_(phase_data['Params'])
                     vars_[num].set(phase_data['Enabled'])
-                    print('yes')
                 else:
                     logging.warning(f"Missing data for {phase.name_()} in {color} settings file.")
 
