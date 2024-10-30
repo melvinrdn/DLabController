@@ -14,7 +14,7 @@ import subprocess
 from PIL import Image, ImageTk
 
 handler = logging.StreamHandler()
-handler.setFormatter(ColorFormatter("from PhaseSettings: %(levelname)s: %(message)s"))
+handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 types = ['Background', 'Lens', 'Zernike', 'Vortex', 'Grating', 'Binary', 'PhaseJumps', 'Image']
@@ -387,6 +387,8 @@ class TypeZernike(BaseType):
             coefs = data[:, 1]
             self.update_plot(js, coefs)
 
+    import numpy as np
+
     def update_plot(self, js, coefs):
         # Clear previous plot and draw new bar plot with small font size
         self.ax.clear()
@@ -394,6 +396,10 @@ class TypeZernike(BaseType):
         self.ax.set_title("Zernike Coefficients", fontsize=10)
         self.ax.set_xlabel('Mode (j)', fontsize=8)
         self.ax.set_ylabel("Coef (nm RMS)", fontsize=8)
+
+        # Set the x-axis ticks to every 2 units
+        self.ax.set_xticks(np.arange(min(js), max(js) + 1, 2))
+        self.ax.grid(True)
         self.canvas.draw()
 
     def phase(self):

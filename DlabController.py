@@ -13,7 +13,7 @@ from hardware.SLM_driver import PhaseSettings
 from diagnostics.diagnostics_helpers import ColorFormatter
 
 handler = logging.StreamHandler()
-handler.setFormatter(ColorFormatter("from DlabController: %(levelname)s: %(message)s"))
+handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 """
@@ -56,8 +56,8 @@ class DLabController:
 
         self.frm_green_visible = False
         logging.info("Loading the default parameters...")
-        #self.load_default_parameters('green')
-        #self.load_default_parameters('red')
+        self.load_default_parameters('red')
+        self.load_default_parameters('green')
         logging.info("Welcome to the D-Lab Controller")
 
     ## Setting up the interface
@@ -250,7 +250,7 @@ class DLabController:
 
     def setup_phase_display(self, color):
         """
-        Sets up the phase display using matplotlib for the specified color.
+        Sets up the phase display using matplotlib for the specified color with axis limits matching the SLM size.
 
         Parameters
         ----------
@@ -259,14 +259,31 @@ class DLabController:
         """
         figure = Figure(figsize=(3, 2))
         ax = figure.add_subplot(111)
-        ax.figure.tight_layout()
+        figure.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)  # Adjust to center the plot
+
+        # Get the SLM size and set the extent of the plot accordingly
+        slm = getattr(self, f"SLM_{color}")
+        extent = (-slm.slm_size[1] / 2, slm.slm_size[1] / 2, -slm.slm_size[0] / 2, slm.slm_size[0] / 2)
+
+        # Initialize the phase plot with fixed colormap limits
+        phase_image = ax.imshow(np.zeros(slm.slm_size), cmap='hsv', vmin=0, vmax=2*np.pi, extent=extent)
+        colorbar = figure.colorbar(phase_image, ax=ax, orientation='horizontal', fraction=0.07, pad=0.03)
+        colorbar.set_ticks([0, np.pi, 2 * np.pi])
+        colorbar.set_ticklabels(['0', 'π', '2π'])
+
+        ax.set_xticks([])
+        ax.set_yticks([])
 
         setattr(self, f"fig_{color}", figure)
         setattr(self, f"ax_{color}", ax)
+        setattr(self, f"phase_image_{color}", phase_image)  # Save reference to update later
+
+        ax.figure.tight_layout()
 
         canvas = FigureCanvasTkAgg(figure, getattr(self, f"frm_top_b_{color}"))
         canvas_widget = canvas.get_tk_widget()
-        canvas_widget.grid(row=2, sticky='ew')
+        canvas_widget.grid(row=2, padx=2, pady=2, sticky='nsew')
+
 
         setattr(self, f"img_{color}", canvas)
 
@@ -330,8 +347,7 @@ class DLabController:
 
     def update_phase_plot(self, slm, color):
         """
-        Updates the phase plot for the specified SLM. No need to specify the phase, since the get_phase function is
-        logging the new phase into the slm class. One just have to call this function after setting the phase.
+        Updates the phase plot for the specified SLM without re-adding the colorbar or changing axes.
 
         Parameters
         ----------
@@ -340,21 +356,16 @@ class DLabController:
         color : str
             The color of the SLM ('green' or 'red').
         """
-        if color == 'green':
-            ax = self.ax_green
-            img = self.img_green
-        elif color == 'red':
-            ax = self.ax_red
-            img = self.img_red
+        phase_image = getattr(self, f"phase_image_{color}")
 
-        ax.clear()
-        ax.imshow(slm.phase - slm.background_phase, cmap='hsv', interpolation='None', extent=(
-            -slm.slm_size[1] / 2, slm.slm_size[1] / 2,
-            -slm.slm_size[0] / 2, slm.slm_size[0] / 2))
-        ax.set_xlabel('y')
-        ax.set_ylabel('x')
-        ax.figure.tight_layout()
-        img.draw()
+        # Convert the phase data from 0-1023 range to 0-2π range for display only
+        display_phase = (slm.phase - slm.background_phase) * (2 * np.pi / 1023)
+
+        # Update the phase image data
+        phase_image.set_data(display_phase)
+
+        # Draw only the canvas without re-adding the color bar
+        getattr(self, f"img_{color}").draw()
 
     ##  Opening other windows
     def open_publish_win(self, color):
@@ -472,57 +483,72 @@ class DLabController:
             The path to the settings file. If not provided, a dialog is opened.
         """
         from tkinter.filedialog import askopenfilename
+
+        # Open file dialog if filepath is not provided
         if filepath is None:
             initial_directory = f'./ressources/saved_settings/SLM_{color}/'
             filepath = askopenfilename(initialdir=initial_directory,
                                        filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
             if not filepath:
+                logging.info(f"No file selected for loading {color} settings.")
                 return
 
         try:
             with open(filepath, 'r') as f:
-                dics = json.loads(f.read())
+                dics = json.load(f)
+
+
 
             phase_refs = getattr(self, f"phase_refs_{color}")
             vars_ = getattr(self, f"vars_{color}")
             ent_scr = getattr(self, f"ent_scr_{color}")
 
-            try:
-                for num, phase in enumerate(phase_refs):
-                    phase.load_(dics[phase.name_()]['Params'])
-                    vars_[num].set(dics[phase.name_()]['Enabled'])
+            # Load each phase reference setting if available
+            for num, phase in enumerate(phase_refs):
+                phase_data = dics.get(phase.name_())
+                if phase_data:
+                    phase.load_(phase_data['Params'])
+                    vars_[num].set(phase_data['Enabled'])
+                    print('yes')
+                else:
+                    logging.warning(f"Missing data for {phase.name_()} in {color} settings file.")
+
+            # Set screen position
+            screen_pos = dics.get('screen_pos')
+            if screen_pos:
                 ent_scr.delete(0, tk.END)
-                ent_scr.insert(0, dics['screen_pos'])
-                logging.info(f"{color.capitalize()} settings loaded successfully")
-            except ValueError:
-                logging.error(f'Not able to load {color} settings')
+                ent_scr.insert(0, screen_pos)
+            else:
+                logging.warning(f"No screen position found in {color} settings file.")
+
+            logging.info(f"{color.capitalize()} settings loaded successfully from {filepath}")
+
+
         except FileNotFoundError:
-            logging.error(f'No {color} settings file found at {filepath}')
+            logging.error(f"No settings file found at {filepath}")
+        except json.JSONDecodeError:
+            logging.error(f"Error decoding JSON in {color} settings file at {filepath}")
+        except Exception as e:
+            logging.error(f"Unexpected error loading {color} settings from {filepath}: {e}")
 
     def load_default_parameters(self, color):
         """
-        Loads the default parameters for the specified color SLM from the corresponding default settings file.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
+        Loads the default parameters for the specified color SLM using the path from the JSON configuration file.
         """
-        # Load the default path for the specific color from the config JSON
         try:
+            # Load the configuration file
             with open(self.config_file, 'r') as f:
                 data = json.load(f)
-                filepath = data.get(f"{color}_default_path",
-                                    f'./ressources/saved_settings/SLM_{color}/default_{color}_settings.txt')
-        except (FileNotFoundError, json.JSONDecodeError):
-            filepath = f'./ressources/saved_settings/SLM_{color}/default_{color}_settings.txt'
-            logging.warning(f"No default path found in config file for {color}. Using {filepath}")
+                filepath = data.get(f"{color}_default_path")
 
-        if os.path.exists(filepath):
-            logging.info(f"Loading default {color} settings from {filepath}...")
-            self.load_settings(color, filepath)
-        else:
-            logging.warning(f"Default {color} settings file not found at {filepath}.")
+            # Ensure that a path was found in the configuration
+            if filepath:
+                logging.info(f"Loading default {color} settings from {filepath}...")
+                self.load_settings(color, filepath)
+            else:
+                logging.error(f"No default path specified in the config file for {color}.")
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.error(f"Error loading config file: {e}")
 
     ## Closing and exit commands
     def close_publish_win(self, color):
