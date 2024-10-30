@@ -216,7 +216,7 @@ class TypeBackground(BaseType):
         Open a file dialog to choose a file and load its data.
         """
 
-        initial_directory = os.path.join('../../model', 'ressources', 'background')
+        initial_directory = os.path.join('./ressources/background/')
         filepath = askopenfilename(initialdir=initial_directory,
                                    filetypes=[('CSV data arrays', '*.csv'), ('Image Files', '*.bmp'),
                                               ("Text files", "*.txt"), ("All files", "*.*")])
@@ -1623,7 +1623,7 @@ class TypeZernike(BaseType):
         ttk.Button(lbl_frm, text="Plot", command=self.plot_data).grid(row=2, column=0, pady=10)
 
     def load_file(self):
-        initial_directory = os.path.join('../../model', 'ressources', 'aberration_correction')
+        initial_directory = os.path.join('./ressources/aberration_correction/')
         filepath = askopenfilename(initialdir=initial_directory,
                                    filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
         if filepath:

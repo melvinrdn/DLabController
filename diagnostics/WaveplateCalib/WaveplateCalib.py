@@ -18,9 +18,8 @@ class WPCalib:
     """
     A graphical interface for waveplate calibration using Tkinter and Matplotlib.
     """
-
     colors = ['r', 'g', 'b', 'k']
-    config_file = 'calibration_path_config.json'  # JSON file to store calibration paths
+    config_file = './diagnostics/WaveplateCalib/calib_path.json'  # JSON file to store calibration paths
 
     def __init__(self):
         """
@@ -163,7 +162,8 @@ class WPCalib:
             logging.warning("Please select a valid waveplate number.")
             return
 
-        filename = tk.filedialog.askopenfilename(title=f"Select calibration file for WP{wp_index}")
+        init_dir = os.path.join('./ressources/calibration/')
+        filename = tk.filedialog.askopenfilename(initialdir=init_dir,title=f"Select calibration file for WP{wp_index}")
         if filename:
             self.default_calib[wp_index] = filename
             logging.info(f"Updated WP{wp_index} calibration file path to {filename}")

@@ -1,8 +1,8 @@
-print('Importing the libraries...')
 import json
 import tkinter as tk
 from tkinter import ttk
 import os
+import logging
 
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -10,6 +10,11 @@ from matplotlib.figure import Figure
 
 from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator
 from hardware.SLM_driver import phase_settings
+from diagnostics.diagnostics_helpers import ColorFormatter
+
+handler = logging.StreamHandler()
+handler.setFormatter(ColorFormatter("from DlabController: %(levelname)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 """
 Welcome to the D-lab Controller. If you are reading this this is maybe because you want to modify something is the code.
@@ -24,6 +29,7 @@ class DLabController:
     A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
     in the D-lab.
     """
+    config_file = './ressources/saved_settings/default_settings_path.json'  # JSON file to store the new default settings paths
     def __init__(self, parent):
         """
         Initializes the D-Lab Controller interface and sets up the main window components.
@@ -33,7 +39,7 @@ class DLabController:
         parent : tkinter.Tk
             The root tkinter window for the application.
         """
-        print('Initialisation of the interface...')
+        logging.info('Initialisation of the interface...')
         self.main_win = parent
         self.style = ttk.Style()
 
@@ -47,10 +53,10 @@ class DLabController:
         self.create_main_window()
 
         self.frm_green_visible = False
-        print("Loading the default parameters...")
+        logging.info("Loading the default parameters...")
         #self.load_default_parameters('green')
-        #self.load_default_parameters('red')
-        print("Welcome to the D-Lab Controller")
+        self.load_default_parameters('red')
+        logging.info("Welcome to the D-Lab Controller")
 
     ## Setting up the interface
     def create_main_window(self):
@@ -171,11 +177,10 @@ class DLabController:
             The color of the SLM ('green' or 'red').
         """
         button_frame = getattr(self, f"frm_top_b_{color}")
-
         save_button = ttk.Button(button_frame, text=f'Save {color} settings', command=lambda: self.save_settings(color))
         load_button = ttk.Button(button_frame, text=f'Load {color} settings', command=lambda: self.load_settings(color))
-        save_button.grid(row=0, sticky='ew')
-        load_button.grid(row=1, sticky='ew')
+        save_button.grid(row=1, sticky='ew')
+        load_button.grid(row=0, sticky='ew')
 
         label_screen = ttk.Label(getattr(self, f"frm_top_{color}"), text='Display number:')
         setattr(self, f"strvar_{color}", tk.StringVar(value='2' if color == 'green' else '1'))
@@ -313,9 +318,9 @@ class DLabController:
                     slm.background_phase = phase_type.phase()  # Send the new background on the SLM class
 
         if np.all(slm.background_phase == 0):
-            print(f"Warning: The background phase of the {color} SLM is an array of 0.")
+            logging.warning(f"The background phase of the {color} SLM is an array of 0.")
 
-        print(f"Phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
+        logging.info(f"Phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
 
         slm.phase = phase                       # Send the new phase on the SLM class
         self.update_phase_plot(slm, color)      # Update the plot on the main interface
@@ -407,7 +412,7 @@ class DLabController:
         """
         from tkinter.filedialog import asksaveasfilename
         if filepath is None:
-            initial_directory = './ressources/saved_settings'
+            initial_directory = f'./ressources/saved_settings/SLM_{color}/'
             filepath = asksaveasfilename(initialdir=initial_directory,
                                          defaultextension='txt',
                                          filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
@@ -425,6 +430,34 @@ class DLabController:
             dict['screen_pos'] = ent_scr.get()
             f.write(json.dumps(dict))
 
+        self.update_default_path(filepath, color)
+
+    def update_default_path(self, path, color):
+        """
+        Updates the default settings path for the specified color in the JSON configuration file.
+
+        Parameters
+        ----------
+        path : str
+            The path to be saved as the default.
+        color : str
+            The color ('green' or 'red') whose path is being updated.
+        """
+        try:
+            with open(self.config_file, 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {}
+
+        data[f"{color}_default_path"] = path
+
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(data, f)
+            logging.info(f"Default {color} settings path updated to {path}")
+        except Exception as e:
+            logging.error(f"Failed to update default settings path for {color}: {e}")
+
     def load_settings(self, color, filepath=None):
         """
         Loads the phase settings for the specified SLM from a file.
@@ -438,7 +471,7 @@ class DLabController:
         """
         from tkinter.filedialog import askopenfilename
         if filepath is None:
-            initial_directory = './ressources/saved_settings'
+            initial_directory = f'./ressources/saved_settings/SLM_{color}/'
             filepath = askopenfilename(initialdir=initial_directory,
                                        filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
             if not filepath:
@@ -458,11 +491,11 @@ class DLabController:
                     vars_[num].set(dics[phase.name_()]['Enabled'])
                 ent_scr.delete(0, tk.END)
                 ent_scr.insert(0, dics['screen_pos'])
-                print(f"{color.capitalize()} settings loaded successfully")
+                logging.info(f"{color.capitalize()} settings loaded successfully")
             except ValueError:
-                print(f'Not able to load {color} settings')
+                logging.error(f'Not able to load {color} settings')
         except FileNotFoundError:
-            print(f'No {color} settings file found at {filepath}')
+            logging.error(f'No {color} settings file found at {filepath}')
 
     def load_default_parameters(self, color):
         """
@@ -473,13 +506,21 @@ class DLabController:
         color : str
             The color of the SLM ('green' or 'red').
         """
-        filepath = f'./ressources/saved_settings/default_{color}_settings.txt'
+        # Load the default path for the specific color from the config JSON
+        try:
+            with open(self.config_file, 'r') as f:
+                data = json.load(f)
+                filepath = data.get(f"{color}_default_path",
+                                    f'./ressources/saved_settings/SLM_{color}/default_{color}_settings.txt')
+        except (FileNotFoundError, json.JSONDecodeError):
+            filepath = f'./ressources/saved_settings/SLM_{color}/default_{color}_settings.txt'
+            logging.warning(f"No default path found in config file for {color}. Using {filepath}")
 
         if os.path.exists(filepath):
-            print(f"Loading default {color} settings from {filepath}...")
+            logging.info(f"Loading default {color} settings from {filepath}...")
             self.load_settings(color, filepath)
         else:
-            print(f"Default {color} settings file not found.")
+            logging.warning(f"Default {color} settings file not found at {filepath}.")
 
     ## Closing and exit commands
     def close_publish_win(self,color):

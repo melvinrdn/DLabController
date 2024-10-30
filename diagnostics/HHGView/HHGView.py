@@ -6,7 +6,6 @@ from datetime import date
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
 from tkinter.scrolledtext import ScrolledText
-import pygame
 import logging
 import cv2
 import h5py
@@ -2716,11 +2715,8 @@ class HHGView(object):
         self.current_grating_array = grating_array
 
         self.but_MPC_measure.config(fg='red')
-        pygame.mixer.init()
-        pygame.mixer.music.load("ressources/ok_lets_go.mp3")
         message = "OKKKKKKKK LET'S GO"
         self.insert_message(message)
-        pygame.mixer.music.play()
         if self.var_mpc_scan_grating.get() == 1:
             self.scan_type = 3
             self.current_scan_type = 3
