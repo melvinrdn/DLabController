@@ -18,7 +18,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.colors import LogNorm
 from pylablib.devices import Andor
-from simple_pid import PID
+#from simple_pid import PID
 import hardware.zaber_binary.zaber_binary as zb
 
 import hardware.avaspec_driver._avs_py as avs
@@ -26,7 +26,7 @@ import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
 import diagnostics.diagnostics_helpers as help
 #from hardware.thorlabs_apt_driver import core as apt
-from diagnostics.WaveplateCalib import WaveplateCalib as cal
+from diagnostics.WaveplateCalib import WaveplateCalib
 from hardware.SLM_driver.SpatialLightModulator import slm_size, bit_depth
 import time
 from diagnostics.diagnostics_helpers import ColorFormatter
@@ -39,8 +39,6 @@ class HHGView(object):
     def __init__(self, parent):
 
         self.parent = parent
-        matplotlib.use("TkAgg")
-
         self.initialize_window()
         self.initialize_variables()
         self.initialize_frames()
@@ -58,7 +56,7 @@ class HHGView(object):
     def initialize_variables(self):
         pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
         self.scan_is_done_threading = threading.Event()
-        self.pid = PID(0, 0, 0, setpoint=0)
+        self.pid = 0
         self.cam = None
         self.lens_green = self.parent.phase_refs_green[1]
         self.lens_red = self.parent.phase_refs_red[1]
@@ -105,7 +103,7 @@ class HHGView(object):
         self.initialize_control_panel_2()
         self.initialize_control_panel_3()
 
-        #self.initialize_mcp_frame()
+        self.initialize_mcp_frame()
         #self.initialize_spc_frame()
 
     def initialize_control_panel_1(self):
@@ -217,16 +215,16 @@ class HHGView(object):
                                             offvalue=0, command=None)
         self.cb_wp_1_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_init = tk.Button(self.frm_waveplates, text='Init', command=self.init_wp_1)
+        self.but_wp_1_init = tk.Button(self.frm_waveplates, text='Init', command=None)
         self.but_wp_1_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_home = tk.Button(self.frm_waveplates, text='Home', command=self.home_wp_1)
+        self.but_wp_1_home = tk.Button(self.frm_waveplates, text='Home', command=None)
         self.but_wp_1_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_read = tk.Button(self.frm_waveplates, text='Read', command=self.read_wp_1)
+        self.but_wp_1_read = tk.Button(self.frm_waveplates, text='Read', command=None)
         self.but_wp_1_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_move = tk.Button(self.frm_waveplates, text='Move', command=self.move_wp_1)
+        self.but_wp_1_move = tk.Button(self.frm_waveplates, text='Move', command=None)
         self.but_wp_1_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 2
@@ -250,16 +248,16 @@ class HHGView(object):
                                             offvalue=0, command=None)
         self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=self.init_wp_2)
+        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=None)
         self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=self.home_wp_2)
+        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=None)
         self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=self.read_wp_2)
+        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=None)
         self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=self.move_wp_2)
+        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=None)
         self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 2
@@ -283,16 +281,16 @@ class HHGView(object):
                                             offvalue=0, command=None)
         self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=self.init_wp_2)
+        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=None)
         self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=self.home_wp_2)
+        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=None)
         self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=self.read_wp_2)
+        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=None)
         self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=self.move_wp_2)
+        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=None)
         self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 3
@@ -390,16 +388,16 @@ class HHGView(object):
         self.ent_stage_1_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_1_nr)
         self.ent_stage_1_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_1_init = tk.Button(self.frm_stages, text='Init', command=self.init_stage_1)
+        self.but_stage_1_init = tk.Button(self.frm_stages, text='Init', command=None)
         self.but_stage_1_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_1_home = tk.Button(self.frm_stages, text='Home', command=self.home_stage_1)
+        self.but_stage_1_home = tk.Button(self.frm_stages, text='Home', command=None)
         self.but_stage_1_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_1_read = tk.Button(self.frm_stages, text='Read', command=self.read_stage_1)
+        self.but_stage_1_read = tk.Button(self.frm_stages, text='Read', command=None)
         self.but_stage_1_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_1_move = tk.Button(self.frm_stages, text='Move', command=self.move_stage_1)
+        self.but_stage_1_move = tk.Button(self.frm_stages, text='Move', command=None)
         self.but_stage_1_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
         # Stage 2
@@ -418,16 +416,16 @@ class HHGView(object):
         self.ent_stage_2_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_2_nr)
         self.ent_stage_2_nr.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_2_init = tk.Button(self.frm_stages, text='Init', command=self.init_stage_2)
+        self.but_stage_2_init = tk.Button(self.frm_stages, text='Init', command=None)
         self.but_stage_2_init.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_2_home = tk.Button(self.frm_stages, text='Home', command=self.home_stage_2)
+        self.but_stage_2_home = tk.Button(self.frm_stages, text='Home', command=None)
         self.but_stage_2_home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_2_read = tk.Button(self.frm_stages, text='Read', command=self.read_stage_2)
+        self.but_stage_2_read = tk.Button(self.frm_stages, text='Read', command=None)
         self.but_stage_2_read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_2_move = tk.Button(self.frm_stages, text='Move', command=self.move_stage_2)
+        self.but_stage_2_move = tk.Button(self.frm_stages, text='Move', command=None)
         self.but_stage_2_move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
 
         # Stage 3
@@ -446,16 +444,16 @@ class HHGView(object):
         self.ent_stage_3_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_3_nr)
         self.ent_stage_3_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_3_init = tk.Button(self.frm_stages, text='Init', command=self.init_stage_3)
+        self.but_stage_3_init = tk.Button(self.frm_stages, text='Init', command=None)
         self.but_stage_3_init.grid(row=5, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_3_home = tk.Button(self.frm_stages, text='Home', command=self.home_stage_3)
+        self.but_stage_3_home = tk.Button(self.frm_stages, text='Home', command=None)
         self.but_stage_3_home.grid(row=5, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_3_read = tk.Button(self.frm_stages, text='Read', command=self.read_stage_3)
+        self.but_stage_3_read = tk.Button(self.frm_stages, text='Read', command=None)
         self.but_stage_3_read.grid(row=5, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_stage_3_move = tk.Button(self.frm_stages, text='Move', command=self.move_stage_3)
+        self.but_stage_3_move = tk.Button(self.frm_stages, text='Move', command=None)
         self.but_stage_3_move.grid(row=5, column=7, padx=2, pady=2, sticky='nsew')
 
         # Stage 4
@@ -784,10 +782,10 @@ class HHGView(object):
         self.but_beam_shaping_abort = tk.Button(frm_beam_shaping_scans, text='Abort',
                                                 command=self.abort_beam_shaping_measurement)
 
-        self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_MPC_wp)
-        self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_MPC_wp)
-        self.but_MPC_wp_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=self.read_MPC_wp)
-        self.but_MPC_wp_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=self.move_MPC_wp)
+        self.but_MPC_wp_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=None)
+        self.but_MPC_wp_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=None)
+        self.but_MPC_wp_Read = tk.Button(frm_mpc_campaign_stages, text='Read', command=None)
+        self.but_MPC_wp_Move = tk.Button(frm_mpc_campaign_stages, text='Move', command=None)
 
         self.but_zaber_grating_Ini = tk.Button(frm_mpc_campaign_stages, text='Init', command=self.init_zaber_stage)
         self.but_zaber_grating_Home = tk.Button(frm_mpc_campaign_stages, text='Home', command=self.home_zaber_stage)
@@ -1394,9 +1392,9 @@ class HHGView(object):
                                           offvalue=0,
                                           command=None)
 
-        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background)
-        self.but_remove_background = tk.Button(frm_mcp_options, text='Remove Background',
-                                               command=self.remove_background)
+        self.but_get_background = tk.Button(frm_mcp_options, text='Record Background', command=self.get_background_mcp)
+        self.but_remove_background = tk.Button(frm_mcp_options, text='Reset Background',
+                                               command=self.reset_background_mcp)
 
         frm_mcp_options.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
         self.cb_fixyaxis.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
@@ -1655,21 +1653,6 @@ class HHGView(object):
         self.img1V.draw()
         self.ax1V_blit = self.figV.canvas.copy_from_bbox(self.ax1V.bbox)
 
-    def create_label(self, parent, text, row, column):
-        label = tk.Label(parent, text=text)
-        label.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
-        return label
-
-    def create_entry(self, parent, text_var, row, column):
-        entry = tk.Entry(parent, width=5, textvariable=text_var)
-        entry.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
-        return entry
-
-    def create_button(self, parent, text, command, row, column):
-        button = tk.Button(parent, text=text, command=command)
-        button.grid(row=row, column=column, padx=2, pady=2, sticky='nsew')
-        return button
-
     def hide_show_spectrometer(self):
         if self.frm_spcview_visible:
             self.frm_spcview.grid_remove()
@@ -1705,24 +1688,6 @@ class HHGView(object):
                            parameter2=self.current_power_array,
                            parameter3=self.current_grating_array,
                            energy_axis=self.current_E)
-
-    def open_h5_file(self):
-        filepath = tk.filedialog.askopenfilename()
-        message = f'Opening {filepath}'
-        self.insert_message(message)
-        hfr = h5py.File(filepath, 'r')
-        self.images = np.asarray(hfr.get('images'))
-        self.positions = np.asarray(hfr.get('positions'))
-        self.green_lens = np.asarray(hfr.get('green_lens'))
-        self.red_lens = np.asarray(hfr.get('red_lens'))
-        message = 'Success'
-        self.insert_message(message)
-        processed_images, som_x, som_y = self.process_images_dict()
-        zero_position = 8
-        zmin = (self.positions[0] - zero_position) * 1e-3
-        zmax = (self.positions[-1] - zero_position) * 1e-3
-        self.z_range = np.linspace(zmin, zmax, len(self.positions))
-        self.params_m2_x, self.params_m2_y = self.get_M_sq(som_x, som_y, self.z_range, 1030e-9, 3.45e-6)
 
     def init_pid_piezo(self):
         try:
@@ -1961,34 +1926,29 @@ class HHGView(object):
         self.plot_calibration_image(self.calibration_image)
 
     def calculate_com(self, im):
-        # Convert the image data to a NumPy array
         image_array = np.array(im)
-
-        # Create a grid of coordinates
         y_coords, x_coords = np.indices(image_array.shape)
-
-        # Calculate the weighted sum of x and y coordinates
         sum_x = np.sum(x_coords * image_array)
         sum_y = np.sum(y_coords * image_array)
-
-        # Calculate the total sum of pixel values
         total_sum = np.sum(image_array)
-
-        # Calculate the center of mass
         center_x = sum_x / total_sum
         center_y = sum_y / total_sum
         return center_x, center_y
 
-    def get_background(self):
-        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-        self.background = im
+    def get_background_mcp(self):
+        try:
+            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
+            self.background_mcp = im
+            logging.info("MCP Background has been taken")
+        except:
+            logging.warning("Impossible to take the MCP background")
 
-    def remove_background(self):
-        self.background = np.zeros([512, 512])
+    def reset_background_mcp(self):
+        self.background_mcp = np.zeros([512, 512])
+        logging.info("MCP Background has been reset")
 
     def fixyaxis(self):
         if self.var_fixyaxis.get() == 1:
-            # ymin, ymax = self.axHarmonics.get_ylim()
             self.ymin_harmonics = self.current_harmonics_profile_min
             self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
                     self.current_harmonics_profile_max - self.current_harmonics_profile_min)
@@ -2003,7 +1963,7 @@ class HHGView(object):
             self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
             self.ANDOR_cam = True
             self.name_cam = 'ANDOR_cam'
-            self.background = np.zeros([512, 512])
+            self.background_mcp = np.zeros([512, 512])
 
             self.update_camera_status_thread()
         print(f"ANDOR_cam: {self.ANDOR_cam}")
@@ -2034,31 +1994,10 @@ class HHGView(object):
         power = maxA / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * phase) + maxA / 2
         return power
 
-    def power_to_angle_new(self, power, amplitude, frequency, phase,offset):
-        return (-np.arccos((power-offset)/amplitude) + frequency*phase)/frequency
-
-    def angle_to_power_new(self, angle, amplitude, frequency, phase,offset):
-        return amplitude*np.cos(frequency*(angle-phase))+ offset
-
     def power_to_angle(self, power, maxA, phase):
         A = maxA / 2
         angle = -(45 * np.arccos(power / A - 1)) / np.pi + phase
         return angle
-
-    def calculate_energy_and_peak_intensity(self):
-
-        E_pulse = round(float(self.ent_power.get()) / (float(self.ent_rep_rate.get()) * 1e3) * 1e6, 3)  # in µJ
-        I_peak = round(0.94 * 2 * E_pulse * 1e-6 / ((float(self.ent_pulse_length.get()) * 1e-15 * np.pi) * (
-                float(self.ent_beam_radius.get()) * 1e-6) ** 2) * 1e-4 * 1e-14, 3)
-
-        U_p = 9.337 * 1.03 ** 2 * I_peak  # in eV
-        I_p_Argon = 15.7596  # in eV
-        E_cut = round(U_p * 3.2 + I_p_Argon, 3)  # in eV
-
-        self.strvar_pulse_energy.set(E_pulse)
-        self.strvar_peak_intensity.set(I_peak)
-        self.strvar_hhg_cutoff.set(E_cut)
-        self.strvar_hhg_cutoff_q.set(int(E_cut / 1.2))
 
     def init_zaber_stage(self):
         port = self.ent_zaber_grating_nr.get()
@@ -2099,18 +2038,16 @@ class HHGView(object):
             self.insert_message(message)
 
     def home_zaber_stage(self):
-        message = f'This feature is desactivated'
-        self.insert_message(message)
+        return logging.error(f"Not implemented yet")
 
     def initialize_motor(self, motor_attr, entry_widget, button_widget, motor_name):
         try:
             setattr(self, motor_attr, apt.Motor(int(entry_widget.get())))
             button_widget.config(fg='green')
-            message = f"{motor_name} connected"
+            logging.info(f"{motor_name} connected")
         except:
             button_widget.config(fg='red')
-            message = f"Not able to initialize {motor_name}"
-        self.insert_message(message)
+            logging.warning(f"Impossible to connect {motor_name}.")
 
     def home_motor(self, motor_attr, button_widget, motor_name):
         try:
@@ -2125,120 +2062,15 @@ class HHGView(object):
             message = f"Not able to home {motor_name}"
             self.insert_message(message)
 
-    def read_position(self, motor_attr, position_var, power_var=None, max_power=None):
-        try:
-            motor = getattr(self, motor_attr)
-            pos = motor.position
-            getattr(self, position_var).set(pos)
-            if power_var:
-                power = np.round(self.angle_to_power(pos), 3)
-                power = min(power, max_power) if max_power else power
-                getattr(self, power_var).set(power)
-        except:
-            message = f"Impossible to read {motor_attr} position"
-            self.insert_message(message)
+    def read_position(self, motor_attr):
+        return logging.error(f"Not implemented yet")
 
-    def move_motor(self, motor_attr, target_var, power_var=None, max_power=None):
-        try:
-            pos = float(getattr(self, target_var).get())
-            if power_var:
-                desired_power = float(getattr(self, power_var).get())
-                if max_power and desired_power > max_power:
-                    desired_power = max_power
-                    self.insert_message(f"Value above maximum, desired power set to maximum instead")
-                pos = self.power_to_angle(desired_power)
-            motor = getattr(self, motor_attr)
-            self.insert_message(f"{motor_attr} is moving...")
-            motor.move_to(pos, True)
-            self.insert_message(f"{motor_attr} moved to {motor.position}")
-            self.read_position(motor_attr, target_var)
-        except:
-            self.insert_message(f"Impossible to move {motor_attr}")
+    def move_motor(self, motor_attr):
+        return logging.error(f"Not implemented yet")
 
-    # WPR motor
-    def init_wp_1(self):
-        self.initialize_motor('WPR', self.ent_wp_1_nr, self.but_wp_1_init, 'WPR')
-
-    def home_wp_1(self):
-        self.home_motor('WPR', self.but_wp_1_home, 'WPR')
-
-    def read_wp_1(self):
-        self.read_position('WPR', 'strvar_WPR_is', 'strvar_red_current_power',
-                           max_power=float(self.ent_wp_1_power.get()))
-
-    def move_wp_1(self):
-        self.move_motor('WPR', 'strvar_WPR_should', 'strvar_WPR_should', max_power=float(self.ent_wp_1_power.get()))
-
-    def init_wp_2(self):
-        self.initialize_motor('WPG', self.ent_wp_2_nr, self.but_wp_2_init, 'WPG')
-
-    def home_wp_2(self):
-        message = "This feature is currently deactivated"
-        self.insert_message(message)
-
-    def read_wp_2(self):
-        self.read_position('WPG', 'strvar_WPG_is', 'strvar_green_current_power',
-                           max_power=float(self.ent_wp_2_power.get()))
-
-    def move_wp_2(self):
-        self.move_motor('WPG', 'strvar_WPG_should', 'strvar_WPG_should', max_power=float(self.ent_wp_2_power.get()))
-
-    # cam_stage Motor
-    def init_stage_1(self):
-        self.initialize_motor('cam_stage', self.ent_stage_1_nr, self.but_stage_1_init, 'cam_stage')
-
-    def home_stage_1(self):
-        self.home_motor('cam_stage', self.but_stage_1_home, 'cam_stage')
-
-    def read_stage_1(self):
-        self.read_position('cam_stage', 'strvar_cam_stage_is')
-
-    def move_stage_1(self):
-        self.move_motor('cam_stage', 'strvar_cam_stage_should')
-
-    # delay_stage Motor
-    def init_stage_2(self):
-        self.initialize_motor('delay_stage', self.ent_stage_2_nr, self.but_stage_2_init, 'delay_stage')
-
-    def home_stage_2(self):
-        self.home_motor('delay_stage', self.but_stage_2_home, 'delay_stage')
-
-    def read_stage_2(self):
-        self.read_position('delay_stage', 'strvar_delay_stage_is')
-
-    def move_stage_2(self):
-        self.move_motor('delay_stage', 'strvar_delay_stage_should')
-
-    # lens_stage Motor
-    def init_stage_3(self):
-        self.initialize_motor('lens_stage', self.ent_mpc_lens_nr, self.but_stage_3_init, 'lens_stage')
-
-    def home_stage_3(self):
-        self.home_motor('lens_stage', self.but_stage_3_home, 'lens_stage')
-
-    def read_stage_3(self):
-        self.read_position('lens_stage', 'strvar_mpc_lens_is')
-
-    def move_stage_3(self):
-        self.move_motor('lens_stage', 'strvar_mpc_lens_should')
-
-    # MPC_wp Motor
-    def init_MPC_wp(self):
-        self.initialize_motor('MPC_wp', self.ent_mpc_wp_nr, self.but_MPC_wp_Ini, 'MPC_wp')
-
-    def home_MPC_wp(self):
-        self.home_motor('MPC_wp', self.but_MPC_wp_Home, 'MPC_wp')
-
-    def read_MPC_wp(self):
-        self.read_position('MPC_wp', 'strvar_mpc_wp_is', 'strvar_mpc_currentpower',
-                           max_power=float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get()))
-
-    def move_MPC_wp(self):
-        self.move_motor('MPC_wp', 'strvar_mpc_wp_should', 'strvar_mpc_wp_should',
-                        max_power=float(self.ent_MPC_fitA.get()) + float(self.ent_MPC_fito.get()))
 
     def disable_motors(self):
-        motor_names = ['WPR', 'WPG', 'cam_stage', 'delay_stage', 'lens_stage', 'MPC_wp', 'MPC_grating']
+        motor_names = ['wp_1', 'wp_2', 'wp_3', 'wp_4', 'stage_1', 'stage_2', 'stage_3', 'stage_4']
 
         for motor_name in motor_names:
             motor = getattr(self, motor_name, None)
@@ -2247,9 +2079,9 @@ class HHGView(object):
                     motor.disable() if hasattr(motor, 'disable') else motor.close()
                     setattr(self, motor_name, None)
                 except Exception as e:
-                    self.insert_message(f"Error disabling {motor_name}: {str(e)}")
+                    logging.warning(f"Error disabling {motor_name}: {str(e)}")
 
-        self.insert_message("All stages are disconnected")
+        logging.info("All the motor are disabled")
 
     def enable_calibrator(self):
         self.stop_calib = False
@@ -2262,7 +2094,7 @@ class HHGView(object):
         Opens the waveplate calibrator, retrieves maximum power and offset values
         for each waveplate, and updates the corresponding Tkinter StringVars.
         """
-        self.calibrator = cal.WPCalib()
+        self.calibrator = WaveplateCalib.WPCalib()
         for i in range(1, 5):
             max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
             offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
@@ -2285,47 +2117,8 @@ class HHGView(object):
         except Exception as e:
             logging.error(f"An unexpected error occurred in open_calibrator_on_start: {e}")
 
-    def read_red_power(self):
-        """
-        Reads the corresponding red power if one knows the attenuation and the pulse picker on the Pharos.
-
-        Raises
-        ------
-        Exception
-            If the power cannot be read.
-
-        Returns
-        -------
-        None
-        """
-        try:
-            given_att = float(self.ent_laser_att.get())
-            given_pp = float(self.ent_laser_pp.get())
-            red_power_indice = np.where((self.pharos_att == given_att) & (self.pharos_pp == given_pp))
-            red_power = self.red_p[red_power_indice]
-            self.strvar_wp_1_power.set(str(red_power[0]))
-        except:
-            message = 'Impossible to read red power'
-            self.insert_message(message)
-
     def take_image(self, avgs):
-        """
-        Takes an image from the camera.
 
-        This method takes an image from the camera using the specified number of averages,
-        and returns the captured image.
-
-        Parameters
-        ----------
-        avgs : int
-            The number of images to average over.
-
-        Returns
-        -------
-        numpy.ndarray
-            The captured image.
-
-        """
         if self.ANDOR_cam is True:
             self.cam.set_exposure(float(self.mcp_controls['mcp_exposure_time']['var'].get()) * 1e-6)
             self.cam.setup_shutter('open')
@@ -2345,7 +2138,7 @@ class HHGView(object):
             message = 'No cam'
             self.insert_message(message)
 
-        return image - self.background
+        return image - self.background_mcp
 
     def save_h5(self):
         nr = self.get_start_image()
@@ -2426,53 +2219,6 @@ class HHGView(object):
             rl) + '\t' + str(
             rl_pos) + '\t' + timestamp + '\n'
         self.f.write(log_entry)
-
-    def split_threading(self):
-        total_steps = int(self.ent_ratio_steps.get())
-        inital_start = float(self.ent_ratio_from.get())
-        initial_end = float(self.ent_ratio_to.get())
-        # now, split WP positions in steps of 10!
-
-        all_steps = np.linspace(inital_start, initial_end, total_steps)
-        nr_blocks = int(np.ceil(total_steps / 10))
-        last_block_length = int(np.mod(total_steps, 10))
-        self.f.write(
-            '# this scan is split in {} blocks, from {} to {} with {} steps: \n'.format(nr_blocks, inital_start,
-                                                                                        initial_end, total_steps))
-        print("I will measure ", nr_blocks, " blocks")
-        if nr_blocks > 1:
-            for i in range(nr_blocks):
-                self.scan_is_done_threading.clear()
-                self.f.write('# PART {} \n'.format(i))
-                if i < (nr_blocks - 1):
-                    print("I am in the first block!")
-                    print(str(all_steps[int(i * 10)]))
-                    self.strvar_ratio_from.set(str(all_steps[int(i * 10)]))
-                    self.strvar_ratio_to.set(str(all_steps[int((i + 1) * 10 - 1)]))
-                    self.strvar_ratio_steps.set(str(10))
-                else:
-                    print("I am in the last block!")
-                    self.strvar_ratio_from.set(str(all_steps[int(i * 10)]))
-                    self.strvar_ratio_to.set(str(all_steps[-1]))
-                    if last_block_length == 0:
-                        self.strvar_ratio_steps.set(str(10))
-                    else:
-                        self.strvar_ratio_steps.set(str(last_block_length))
-
-                self.stop_mcp = False
-                self.mcp_thread = threading.Thread(target=self.measure_all)
-                self.mcp_thread.daemon = True
-                self.mcp_thread.start()
-                print("I started the measure_all thread ")
-                self.scan_is_done = False
-                # while not self.scan_is_done:
-                #    pass
-                self.scan_is_done_threading.wait()
-
-        self.strvar_ratio_from.set(str(inital_start))
-        self.strvar_ratio_to.set(str(initial_end))
-        self.strvar_ratio_steps.set(str(total_steps))
-        print("Measurement Done!!!")
 
     def enabl_mcp_live(self):
         self.live_is_pressed = not self.live_is_pressed
@@ -3397,7 +3143,7 @@ class HHGView(object):
         """
         if not hasattr(self, 'trace'):
             raise AttributeError('Take a spectrum to be used as background')
-        self.background = self.trace
+        self.background_mcp = self.trace
 
     def auto_scale_spec_axis(self):
         """

@@ -1,7 +1,6 @@
 import json
 import tkinter as tk
 from tkinter import ttk
-import os
 import logging
 
 import numpy as np
@@ -497,8 +496,6 @@ class DLabController:
             with open(filepath, 'r') as f:
                 dics = json.load(f)
 
-
-
             phase_refs = getattr(self, f"phase_refs_{color}")
             vars_ = getattr(self, f"vars_{color}")
             ent_scr = getattr(self, f"ent_scr_{color}")
@@ -521,7 +518,6 @@ class DLabController:
                 logging.warning(f"No screen position found in {color} settings file.")
 
             logging.info(f"{color.capitalize()} settings loaded successfully from {filepath}")
-
 
         except FileNotFoundError:
             logging.error(f"No settings file found at {filepath}")

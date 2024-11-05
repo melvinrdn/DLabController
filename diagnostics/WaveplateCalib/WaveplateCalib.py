@@ -26,7 +26,6 @@ class WPCalib:
         Initializes the WPCalib instance, setting up the Tkinter window,
         frames, and default calibration files.
         """
-        matplotlib.use("TkAgg")
         self.win = tk.Toplevel()
         self.win.title("D-Lab Controller - WP Calibration")
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)

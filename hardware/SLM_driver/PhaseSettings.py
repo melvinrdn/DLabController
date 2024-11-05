@@ -11,7 +11,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import logging
 from diagnostics.diagnostics_helpers import ColorFormatter
 import subprocess
-from PIL import Image, ImageTk
 
 handler = logging.StreamHandler()
 handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
@@ -656,7 +655,6 @@ class TypeBinary(BaseType):
 
         # Normalize to SLM bit depth and wrap phase
         phase_mat = (phase_mat % (2 * np.pi)) * (bit_depth / (2 * np.pi))
-        print("Phase matrix generated with angle:", angle_deg, "degrees")
         return phase_mat
 
     def save_(self):
