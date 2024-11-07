@@ -188,32 +188,6 @@ class WPCalib:
         getattr(self, f'strvar_wp_{wp_index}_max').set(f"{max_value:.2f}")
         getattr(self, f'strvar_wp_{wp_index}_offset').set(f"{phase:.2f}")
 
-    def auto_calibration(self):
-        # TODO: Autocalibration file writing using the powermeter.
-        """
-        # Scheme of the code:
-            - Connect and set up a waveplate. The waveplate may be already connected
-            - Connect and set up the powermeter
-            - Define an angle list, from 0 to 180 degrees with 90(?) points
-            - Start the loop, set an angle, measure the power, wait a tiny bit, change the angle and so on
-            - Store the result in an array and write at the end of the loop in a file
-            - The file should have the name wp_1_calib_YEAR_MONTH_DATE.txt, if two in the same day,
-                add a YEAR_MONTH_DATE_2
-            - Update the calibration data and plot for the concerned waveplate
-            - Update the json dictionary with the new path
-            - Disconnect from the waveplate, disconnect from the powermeter
-            - Proper logging and communication with the HHGView (especially the waveplate connection/disconnection)
-        # Scheme of the interface:
-            - Create a new sub part of the layout "calibration" where we moved the Selected WP
-            and Update selected WP calibration file
-            - Add a button "Automatic calibration". When this button is clicked the log ask the user to set up manually
-            the powermeter and the selected waveplate. Once this is done, the user had to push again the button to start
-            the procedure.
-            - Add an abort button which is stopping the process and disconnecting the hardware,
-            as well as logging the error
-        """
-        return logging.warning("Feature not implemented yet")
-
     def cos_func(self, x, amplitude, phase):
         """
         Cosine function used for fitting calibration data.
