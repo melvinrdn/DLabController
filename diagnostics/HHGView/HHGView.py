@@ -18,6 +18,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from matplotlib.colors import LogNorm
 from pylablib.devices import Andor
+import thorlabs_apt as apt
 #from simple_pid import PID
 import hardware.zaber_binary.zaber_binary as zb
 
@@ -25,10 +26,10 @@ import hardware.avaspec_driver._avs_py as avs
 import hardware.jena_piezo.jena_piezo_V3 as jena
 import hardware.SLM_driver._slm_py as slm
 import diagnostics.diagnostics_helpers as help
-#from hardware.thorlabs_apt_driver import core as apt
 from diagnostics.WaveplateCalib import WaveplateCalib
 from hardware.SLM_driver.SpatialLightModulator import slm_size, bit_depth
 import time
+
 from diagnostics.diagnostics_helpers import ColorFormatter
 handler = logging.StreamHandler()
 handler.setFormatter(ColorFormatter("from WPCalib: %(levelname)s: %(message)s"))
