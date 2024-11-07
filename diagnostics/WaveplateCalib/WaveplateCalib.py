@@ -228,13 +228,13 @@ class WPCalib:
         popt, _ = curve_fit(self.cos_func, x, y, p0=initial_guess)
         return popt
 
-    def wp_to_power(self, angle, wp_index):
+    def angle_to_power(self, angle, wp_index):
         """
         Computes power from waveplate angle using cosine fit parameters.
         """
         return self.cos_func(angle, getattr(self, f'max_wp_{wp_index}') / 2, getattr(self, f'offset_wp_{wp_index}'))
 
-    def power_to_wp_angle(self, power, wp_index):
+    def power_to_angle(self, power, wp_index):
         """
         Computes the waveplate angle for a given power.
         """

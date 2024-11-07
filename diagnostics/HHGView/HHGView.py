@@ -200,80 +200,50 @@ class HHGView(object):
         lbl_wp_1.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_1_is = tk.StringVar(self.win, '')
-        self.ent_wp_1_is = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_is)
+        self.ent_wp_1_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_1_is)
         self.ent_wp_1_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_1_should = tk.StringVar(self.win, '')
-        self.ent_wp_1_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_should)
+        self.ent_wp_1_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_should, state='disabled')
         self.ent_wp_1_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_wp_1_nr = tk.StringVar(self.win, '83837724')
+        self.strvar_wp_1_nr = tk.StringVar(self.win, '83837725')
         self.ent_wp_1_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_nr)
         self.ent_wp_1_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_1_power = tk.IntVar()
-        self.cb_wp_1_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_1_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.cb_wp_1_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_1_init = tk.Button(self.frm_waveplates, text='Init', command=None)
+        self.but_wp_1_init = tk.Button(self.frm_waveplates, text='Init', command=lambda: self.init_motor_thorlabs('wp_1'))
         self.but_wp_1_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_home = tk.Button(self.frm_waveplates, text='Home', command=None)
+        self.but_wp_1_home = tk.Button(self.frm_waveplates, text='Home', command=lambda: self.home_motor_thorlabs('wp_1'), state='disabled')
         self.but_wp_1_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_read = tk.Button(self.frm_waveplates, text='Read', command=None)
+        self.but_wp_1_read = tk.Button(self.frm_waveplates, text='Read', command=lambda: self.read_motor_thorlabs('wp_1'), state='disabled')
         self.but_wp_1_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_move = tk.Button(self.frm_waveplates, text='Move', command=None)
+        self.but_wp_1_move = tk.Button(self.frm_waveplates, text='Move', command=lambda: self.move_motor_thorlabs('wp_1', float(self.strvar_wp_1_should.get())), state='disabled')
         self.but_wp_1_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 2
-        lbl_wp_2 = tk.Label(self.frm_waveplates, text='2ω field', fg='green')
-        lbl_wp_2.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
+        self.var_wp_1_power = tk.IntVar()
+        self.cb_wp_1_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_1_power, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(f"Power mode on wp_1 set to: {self.var_wp_1_power.get()}"))
+        self.cb_wp_1_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_wp_2_is = tk.StringVar(self.win, '')
-        self.ent_wp_2_is = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_is)
-        self.ent_wp_2_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_2_should = tk.StringVar(self.win, '')
-        self.ent_wp_2_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_should)
-        self.ent_wp_2_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_2_nr = tk.StringVar(self.win, '83837714')
-        self.ent_wp_2_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
-        self.ent_wp_2_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
-
-        self.var_wp_2_power = tk.IntVar()
-        self.wb_wp_2_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_2_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=None)
-        self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=None)
-        self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=None)
-        self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=None)
-        self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_wp_1_disable = tk.Button(self.frm_waveplates, text='Disable', command=lambda: self.disable_motor_thorlabs('wp_1'), state='disabled')
+        self.but_wp_1_disable.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 2
         lbl_wp_2 = tk.Label(self.frm_waveplates, text='2ω field', fg='green')
         lbl_wp_2.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_2_is = tk.StringVar(self.win, '')
-        self.ent_wp_2_is = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_is)
+        self.ent_wp_2_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_2_is)
         self.ent_wp_2_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_should = tk.StringVar(self.win, '')
         self.ent_wp_2_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_should)
         self.ent_wp_2_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_wp_2_nr = tk.StringVar(self.win, '83837714')
+        self.strvar_wp_2_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_2_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
         self.ent_wp_2_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
 
@@ -299,7 +269,7 @@ class HHGView(object):
         lbl_wp_3.grid(row=3, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_3_is = tk.StringVar(self.win, '')
-        self.ent_wp_3_is = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_3_is)
+        self.ent_wp_3_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_3_is)
         self.ent_wp_3_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_should = tk.StringVar(self.win, '')
@@ -332,7 +302,7 @@ class HHGView(object):
         lbl_wp_4.grid(row=4, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_4_is = tk.StringVar(self.win, '')
-        self.ent_wp_4_is = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_4_is)
+        self.ent_wp_4_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_4_is)
         self.ent_wp_4_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_should = tk.StringVar(self.win, '')
@@ -378,14 +348,14 @@ class HHGView(object):
         lbl_stage_1.grid(row=3, column=0, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_1_is = tk.StringVar(self.win, '')
-        self.ent_stage_1_is = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_1_is)
+        self.ent_stage_1_is = tk.Entry(self.frm_stages, width=10, state='readonly', textvariable=self.strvar_stage_1_is)
         self.ent_stage_1_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_1_should = tk.StringVar(self.win, '')
         self.ent_stage_1_should = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_1_should)
         self.ent_stage_1_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_stage_1_nr = tk.StringVar(self.win, '83837725')
+        self.strvar_stage_1_nr = tk.StringVar(self.win, '000000')
         self.ent_stage_1_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_1_nr)
         self.ent_stage_1_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -406,14 +376,14 @@ class HHGView(object):
         lbl_stage_2.grid(row=4, column=0, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_2_is = tk.StringVar(self.win, '')
-        self.ent_stage_2_is = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_2_is)
+        self.ent_stage_2_is = tk.Entry(self.frm_stages, width=10, state='readonly', textvariable=self.strvar_stage_2_is)
         self.ent_stage_2_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_2_should = tk.StringVar(self.win, '')
         self.ent_stage_2_should = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_2_should)
         self.ent_stage_2_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_stage_2_nr = tk.StringVar(self.win, '83837719')
+        self.strvar_stage_2_nr = tk.StringVar(self.win, '000000')
         self.ent_stage_2_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_2_nr)
         self.ent_stage_2_nr.grid(row=4, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -434,14 +404,14 @@ class HHGView(object):
         lbl_stage_3.grid(row=5, column=0, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_3_is = tk.StringVar(self.win, '')
-        self.ent_stage_3_is = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_3_is)
+        self.ent_stage_3_is = tk.Entry(self.frm_stages, width=10, state='readonly', textvariable=self.strvar_stage_3_is)
         self.ent_stage_3_is.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_3_should = tk.StringVar(self.win, '')
         self.ent_stage_3_should = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_3_should)
         self.ent_stage_3_should.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_stage_3_nr = tk.StringVar(self.win, '83837719')
+        self.strvar_stage_3_nr = tk.StringVar(self.win, '000000')
         self.ent_stage_3_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_3_nr)
         self.ent_stage_3_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -462,14 +432,14 @@ class HHGView(object):
         lbl_stage_4.grid(row=6, column=0, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_4_is = tk.StringVar(self.win, '')
-        self.ent_stage_4_is = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_4_is)
+        self.ent_stage_4_is = tk.Entry(self.frm_stages, width=10, state='readonly', textvariable=self.strvar_stage_4_is)
         self.ent_stage_4_is.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_stage_4_should = tk.StringVar(self.win, '')
         self.ent_stage_4_should = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_4_should)
         self.ent_stage_4_should.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_stage_4_nr = tk.StringVar(self.win, '83837719')
+        self.strvar_stage_4_nr = tk.StringVar(self.win, '000000')
         self.ent_stage_4_nr = tk.Entry(self.frm_stages, width=10, validate='all', textvariable=self.strvar_stage_4_nr)
         self.ent_stage_4_nr.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
 
@@ -824,7 +794,7 @@ class HHGView(object):
                                                         onvalue=1,
                                                         offvalue=0,
                                                         command=None)
-
+        """
         lbl_Stage_MPC.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         lbl_MPC_wp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
@@ -836,9 +806,9 @@ class HHGView(object):
         self.ent_mpc_lens_nr.grid(row=5, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_lens_is.grid(row=5, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_mpc_lens_should.grid(row=5, column=3, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
-        self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+        #self.ent_mpc_wp_nr.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
+        #self.ent_mpc_wp_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+        #self.ent_mpc_wp_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
         self.ent_zaber_grating_nr.grid(row=3, column=1, padx=2, pady=2, sticky='nsew')
         self.ent_zaber_grating_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
         self.ent_zaber_grating_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
@@ -882,11 +852,11 @@ class HHGView(object):
         self.but_MPC_abort.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
         self.but_MPC_test_scan.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-        self.but_MPC_wp_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-        self.cb_mpc_wp_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+        #self.but_MPC_wp_Ini.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+        #self.but_MPC_wp_Home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+        #self.but_MPC_wp_Read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+        #self.but_MPC_wp_Move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+        #self.cb_mpc_wp_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
         self.but_zaber_grating_Ini.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
         self.but_zaber_grating_Home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
@@ -912,6 +882,8 @@ class HHGView(object):
         lbl_MPC_fitf.grid(row=6, column=1, padx=2, pady=2, sticky='nsew')
         lbl_MPC_fitph.grid(row=6, column=2, padx=2, pady=2, sticky='nsew')
         lbl_MPC_fito.grid(row=6, column=3, padx=2, pady=2, sticky='nsew')
+        
+        """
 
         self.strvar_MPC_fitA = tk.StringVar(self.win, '5')
         self.ent_MPC_fitA = tk.Entry(
@@ -1991,14 +1963,15 @@ class HHGView(object):
             message = f'Enter a reasonable value'
             self.insert_message(message)
 
-    def angle_to_power(self, angle, maxA, phase):
-        power = maxA / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * phase) + maxA / 2
+    def angle_to_power(self, angle, amplitude, offset):
+        power = amplitude / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * offset) + amplitude / 2
         return power
 
-    def power_to_angle(self, power, maxA, phase):
-        A = maxA / 2
-        angle = -(45 * np.arccos(power / A - 1)) / np.pi + phase
+    def power_to_angle(self, power, amplitude, offset):
+        A = amplitude / 2
+        angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
         return angle
+
 
     def init_zaber_stage(self):
         port = self.ent_zaber_grating_nr.get()
@@ -2041,48 +2014,146 @@ class HHGView(object):
     def home_zaber_stage(self):
         return logging.error(f"Not implemented yet")
 
-    def initialize_motor(self, motor_attr, entry_widget, button_widget, motor_name):
-        try:
-            setattr(self, motor_attr, apt.Motor(int(entry_widget.get())))
-            button_widget.config(fg='green')
-            logging.info(f"{motor_name} connected")
-        except:
-            button_widget.config(fg='red')
-            logging.warning(f"Impossible to connect {motor_name}.")
+    def init_motor_thorlabs(self, motor_attr):
+        motor = getattr(self, motor_attr, None)
+        if motor is not None:
+            logging.info(f"{motor_attr} is already initialized.")
+            return
 
-    def home_motor(self, motor_attr, button_widget, motor_name):
         try:
+            entry_widget = getattr(self, f"ent_{motor_attr}_nr", None)
+            button_widget = getattr(self, f"but_{motor_attr}_init", None)
+
+            logging.info(f"Attempting to connect to {motor_attr}...")
+
+            motor_id = entry_widget.get() if entry_widget else None
+            if motor_id is None:
+                raise ValueError(f"Motor ID for {motor_attr} is not specified.")
+
+            setattr(self, motor_attr, apt.Motor(int(motor_id)))
+
+            if button_widget:
+                button_widget.config(fg='green')
+            logging.info(f"{motor_attr} connected successfully.")
+
+            getattr(self, f"ent_{motor_attr}_should", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_home", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_read", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_move", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_disable", None).config(state='normal')
+            getattr(self, f"ent_{motor_attr}_nr", None).config(state='readonly')
+            getattr(self, f"but_{motor_attr}_init", None).config(state='disable')
+
+        except Exception as e:
+            logging.warning(f"Unexpected error connecting {motor_attr}: {e}")
+            if button_widget:
+                button_widget.config(fg='red')
+            return
+
+        position = self.read_motor_thorlabs(motor_attr)
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        if strvar is not None:
+            strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
+
+    def home_motor_thorlabs(self, motor_attr):
+        try:
+            logging.info(f"Homing {motor_attr}...")
             motor = getattr(self, motor_attr)
             motor.move_home(blocking=True)
-            button_widget.config(fg='green')
-            message = f"{motor_name} homed"
-            self.insert_message(message)
-            self.read_position(motor_attr, f"read_{motor_name.lower()}")
-        except:
-            button_widget.config(fg='red')
-            message = f"Not able to home {motor_name}"
-            self.insert_message(message)
+            logging.info(f"{motor_attr} homed")
+        except Exception as e:
+            logging.warning(f"Unable to home {motor_attr}: {e}")
 
-    def read_position(self, motor_attr):
-        return logging.error(f"Not implemented yet")
+        position = self.read_motor_thorlabs(motor_attr)
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        strvar.set(f"{position:.3f}")
 
-    def move_motor(self, motor_attr):
-        return logging.error(f"Not implemented yet")
+    def read_motor_thorlabs(self, motor_attr):
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.warning(f"{motor_attr} does not exist or is not initialized.")
+            return None
 
+        try:
+            position = motor.position
+            logging.info(f"{motor_attr} position: {position:.3f}")
+        except Exception as e:
+            logging.warning(f"Could not read position of {motor_attr}: {e}")
+            position = None
 
-    def disable_motors(self):
-        motor_names = ['wp_1', 'wp_2', 'wp_3', 'wp_4', 'stage_1', 'stage_2', 'stage_3', 'stage_4']
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
 
-        for motor_name in motor_names:
-            motor = getattr(self, motor_name, None)
-            if motor:
-                try:
-                    motor.disable() if hasattr(motor, 'disable') else motor.close()
-                    setattr(self, motor_name, None)
-                except Exception as e:
-                    logging.warning(f"Error disabling {motor_name}: {str(e)}")
+        amplitude = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
+        offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+        power = self.angle_to_power(position, amplitude, offset)
+        strvar_current_power = getattr(self, f"strvar_{motor_attr}_current_power", None)
+        strvar_current_power.set(f"{power :.3f}" if power is not None else "#ERROR")
 
-        logging.info("All the motor are disabled")
+        return position
+
+    def move_motor_thorlabs(self, motor_attr, target_position):
+        if not isinstance(target_position, (float, int)):
+            logging.warning(f"Invalid target position for {motor_attr}: {target_position}. Must be a number.")
+            return
+
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.warning(f"{motor_attr} does not exist or is not initialized.")
+            return
+
+        power_mode = getattr(self, f'var_{motor_attr}_power', None)
+        if power_mode.get() == 1:
+            try:
+                max_power = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
+                amplitude = max_power
+                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+                if target_position > max_power:
+                    logging.warning(
+                        f"Requested power {target_position:.3f} exceeds max of {max_power:.3f}. Setting to max.")
+                    target_position = max_power
+                target_position = self.power_to_angle(target_position, amplitude, offset) + 90
+                logging.info(f"Converted target position with power mode for {motor_attr}: {target_position:.3f}")
+
+            except (ValueError, AttributeError) as e:
+                logging.warning(f"Failed to convert power to angle for {motor_attr}: {e}")
+                return
+
+        try:
+            logging.info(f"Moving {motor_attr} to position: {target_position:.3f}")
+            motor.move_to(target_position, blocking=True)
+            logging.info(f"{motor_attr} moved to position {target_position:.3f}")
+            self.read_motor_thorlabs(motor_attr)
+
+        except Exception as e:
+            logging.warning(f"Could not move {motor_attr} to position {target_position}: {e}")
+            self.read_motor_thorlabs(motor_attr)
+
+    def disable_motor_thorlabs(self, motor_attr):
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.info(f"{motor_attr} is already disabled.")
+            return
+
+        try:
+            motor.disable() if hasattr(motor, 'disable') else motor.close()
+            setattr(self, motor_attr, None)
+            logging.info(f"{motor_attr} successfully disabled.")
+
+            button_widget = getattr(self, f"but_{motor_attr}_init", None)
+            if button_widget:
+                button_widget.config(fg='black')
+
+            getattr(self, f"ent_{motor_attr}_should", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_home", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_read", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_move", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_disable", None).config(state='disable')
+            getattr(self, f"but_{motor_attr}_init", None).config(state='normal')
+            getattr(self, f"ent_{motor_attr}_nr", None).config(state='normal')
+
+        except Exception as e:
+            logging.warning(f"Error disabling {motor_attr}: {str(e)}")
 
     def enable_calibrator(self):
         self.stop_calib = False
@@ -3606,9 +3677,7 @@ class HHGView(object):
 
     def on_close(self):
         self.f.close()
-        plt.close(self.figr)
-        plt.close(self.figp)
-        self.disable_motors()
+        self.disable_motor_thorlabs('wp_1')
         if self.cam is not None:
             self.cam.close()
         self.spec_deactivate()
