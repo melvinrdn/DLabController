@@ -283,7 +283,6 @@ class DLabController:
         canvas_widget = canvas.get_tk_widget()
         canvas_widget.grid(row=2, padx=2, pady=2, sticky='nsew')
 
-
         setattr(self, f"img_{color}", canvas)
 
     def hide_show_green_panel(self):
