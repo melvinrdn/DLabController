@@ -5,20 +5,16 @@ from collections import deque
 from datetime import date
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
-from tkinter.scrolledtext import ScrolledText
 import logging
 import cv2
 import h5py
 import numpy as np
 import pylablib as pll
-from PIL import Image
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-from matplotlib.colors import LogNorm
 from pylablib.devices import Andor
-import thorlabs_apt as apt
+#import thorlabs_apt as apt
 
-import hardware.SLM_driver._slm_py as slm
 import diagnostics.diagnostics_helpers as help
 from diagnostics.WaveplateCalib import WaveplateCalib
 import time
@@ -33,27 +29,24 @@ class HHGView(object):
     def __init__(self, parent):
 
         self.parent = parent
+
         self.initialize_window()
         self.initialize_variables()
         self.initialize_frames()
 
-        if self.ANDOR_cam is True:
-            self.name_cam = 'ANDOR_cam'
-
         self.open_calibrator_on_start()
 
+    ## Frames initialization
     def initialize_window(self):
         self.win = tk.Toplevel()
         self.win.title('D-Lab Controller - HHGView')
         self.win.protocol("WM_DELETE_WINDOW", self.on_close)
 
-    ## Frames initialization
     def initialize_variables(self):
         pll.par["devices/dlls/andor_sdk2"] = "hardware/andor_driver/"
         self.cam = None
-        self.slm_lib = slm
-        self.calibration_image = np.zeros([512, 512])
-        self.calibration_image_update = np.zeros([512, 512])
+        self.calib_image_mcp = np.zeros([512, 512])
+        self.calib_image_mcp_update = np.zeros([512, 512])
         self.calibration_image_update_energy = np.zeros([512, 512])
         self.eaxis = None
         self.eaxis_correct = None
@@ -558,12 +551,10 @@ class HHGView(object):
         self.tk_widget_figure_mcp_calib.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.image_mcp_calib.draw()
 
-        self.but_load_mcp_calib_image = tk.Button(frm_mcp_calibrate_options, text="Load Image",
-                                                  command=self.load_test_calibration_image_thread)
-        self.but_load_mcp_calib_image.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
+
         self.but_take_mcp_calib_image = tk.Button(frm_mcp_calibrate_options, text="Take Image",
-                                                  command=self.load_test_calibration_image_take_thread)
-        self.but_take_mcp_calib_image.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
+                                                  command=self.take_calib_image_mcp_thread)
+        self.but_take_mcp_calib_image.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         lbl_mcp_calib_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
         self.var_mcp_calib_shear_val = tk.StringVar(self.win, "0")
@@ -735,180 +726,6 @@ class HHGView(object):
         self.but_get_background_mcp_options.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
         self.but_remove_background_mcp_options.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
 
-    ##
-    def final_image_treatment(self, im):
-        bg = int(self.var_mcp_calib_background_val.get())
-        x1 = int(self.var_mcp_calib_roix_1_val.get())
-        x2 = int(self.var_mcp_calib_roix_2_val.get())
-        y1 = int(self.var_mcp_calib_roiy_1_val.get())
-        y2 = int(self.var_mcp_calib_roiy_2_val.get())
-        shear = float(self.var_mcp_calib_shear_val.get())
-        correct_E_axis, treated = help.treat_image_new(im, self.eaxis, x1, x2, y1, y2, bg, shear)
-        return correct_E_axis, treated
-
-    def export_mcp_treatment_parameters(self):
-        bg = int(self.var_mcp_calib_background_val.get())
-        x1 = int(self.var_mcp_calib_roix_1_val.get())
-        x2 = int(self.var_mcp_calib_roix_2_val.get())
-        y1 = int(self.var_mcp_calib_roiy_1_val.get())
-        y2 = int(self.var_mcp_calib_roiy_2_val.get())
-        shear = float(self.var_mcp_calib_shear_val.get())
-        energy_axis = self.eaxis_correct
-
-        try:
-            filepath = asksaveasfilename(
-                defaultextension='h5',
-                filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
-            )
-
-            filename = filepath
-
-            with h5py.File(filename, 'w') as hf:
-                hf.create_dataset('bg', data=bg)
-                hf.create_dataset('x1', data=x1)
-                hf.create_dataset('x2', data=x2)
-                hf.create_dataset('y1', data=y1)
-                hf.create_dataset('y2', data=y2)
-                hf.create_dataset('shear', data=shear)
-                hf.create_dataset('energy_axis', data=energy_axis)
-                hf.create_dataset('energy_axis_temp', data=self.eaxis)
-        except:
-            message = f'Exporting data failed'
-
-    def import_mcp_treatment_parameters(self):
-        filepath = askopenfilename(
-            filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
-        )
-        try:
-            hfr = h5py.File(filepath, 'r')
-            energy_axis = np.asarray(hfr.get('energy_axis'))
-            energy_axis_temp = np.asarray(hfr.get('energy_axis_temp'))
-            bg = int(np.asarray(hfr.get('bg')))
-            x1 = int(np.asarray(hfr.get('x1')))
-            x2 = int(np.asarray(hfr.get('x2')))
-            y1 = int(np.asarray(hfr.get('y1')))
-            y2 = int(np.asarray(hfr.get('y2')))
-            shear = float(np.asarray(hfr.get('shear')))
-
-            self.var_mcp_calib_background_val.set(bg)
-            self.var_mcp_calib_roix_1_val.set(x1)
-            self.var_mcp_calib_roix_2_val.set(x2)
-            self.var_mcp_calib_roiy_1_val.set(y1)
-            self.var_mcp_calib_roiy_2_val.set(y2)
-            self.var_mcp_calib_shear_val.set(shear)
-            self.eaxis_correct = energy_axis
-            self.eaxis = energy_axis_temp
-
-            self.but_import_image_treatment_parameters.config(fg='green')
-
-        except Exception as e:
-            message = f'Chose a proper filename'
-            self.but_import_image_treatment_parameters.config(fg='red')
-
-    def update_calib_energy_mcp(self):
-        im = np.flipud(self.calibration_image_update)
-        profile = np.sum(im, axis=1)
-        try:
-            smooth = int(self.var_mcp_calib_energy_smooth.get())
-            prom = int(self.var_mcp_calib_energy_prom.get())
-            order = int(self.var_mcp_calib_energy_order.get())
-            firstharmonic = int(self.var_mcp_calib_energy_first_harmonic.get())
-
-            data, peaks = help.fit_energy_calibration_peaks(profile, prom=prom, smoothing=smooth)
-            condition = (peaks > int(self.var_mcp_calib_energy_ignore_1.get())) & (
-                    peaks < int(self.var_mcp_calib_energy_ignore_2.get()))
-            peaks = peaks[condition]
-            try:
-                ignore_list = [int(x) for x in self.ent_mcp_calib_energy_ignore_list.get().split(',') if
-                               x.strip().isdigit()]
-                if ignore_list:
-                    for num in ignore_list:
-                        range_value = 5
-                        peaks = peaks[~((num - range_value <= peaks) & (peaks <= num + range_value))]
-
-
-
-            except:
-                a = 1
-            h = 6.62607015e-34
-            c = 299792458
-            qe = 1.60217662e-19
-            lam = 1030e-9
-            Eq = h * c / lam
-
-            first_harmonic = firstharmonic
-            E = np.ones_like(peaks) * first_harmonic * Eq / qe + np.arange(0, np.size(peaks)) * order * Eq / qe
-            p = np.polyfit(peaks, E, 3)
-            x_axis = np.arange(0, np.shape(im)[1])
-            scale_x_axis = np.polyval(p, x_axis)
-            E_axis = scale_x_axis
-            self.eaxis = E_axis
-
-            self.plot_calibration_image_energy(profile, data, peaks, E_axis)
-        except:
-            message = f'Enter odd number for smooth! and something reasonable for peak prominence!'
-
-    def update_calib_mcp(self):
-        im = self.calibration_image
-        try:
-            im = im - int(self.var_mcp_calib_background_val.get())
-        except:
-            message = f'Enter something reasonable for the background!!'
-
-        try:
-            im = help.shear_image(im, float(self.var_mcp_calib_shear_val.get()), axis=1)
-        except:
-            message = f'Enter a reasonable value for the shear!'
-        try:
-            x_cut1 = int(self.var_mcp_calib_roix_1_val.get())
-            x_cut2 = int(self.var_mcp_calib_roix_2_val.get())
-            y_cut1 = int(self.var_mcp_calib_roiy_1_val.get())
-            y_cut2 = int(self.var_mcp_calib_roiy_2_val.get())
-        except:
-            x_cut1 = 0
-            x_cut2 = 512
-            y_cut1 = 0
-            y_cut2 = 512
-        try:
-            mask = np.zeros_like(im)
-            mask[512 - x_cut2:512 - x_cut1, y_cut1:y_cut2] = 1
-            im = im * mask
-        except:
-            message = f'Enter a reasonable value for the ROI!'
-
-        self.calibration_image_update = im
-        self.plot_calibration_image(self.calibration_image_update)
-
-    def load_test_calibration_image_take_thread(self):
-        self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image_take)
-        self.load_calib_thread.daemon = True
-        self.load_calib_thread.start()
-
-    def load_test_calibration_image_thread(self):
-        self.load_calib_thread = threading.Thread(target=self.load_test_calibration_image)
-        self.load_calib_thread.daemon = True
-        self.load_calib_thread.start()
-
-    def load_test_calibration_image_take(self):
-        im_temp = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-        self.calibration_image = im_temp
-        self.plot_calibration_image(self.calibration_image)
-
-    def load_test_calibration_image(self):
-        file_path = askopenfilename(filetypes=[("TIFF files", "*.tiff;*.tif")])
-        im_temp = np.asarray(Image.open(file_path))
-        self.calibration_image = im_temp
-        self.plot_calibration_image(self.calibration_image)
-
-    def fix_y_axis_mcp(self):
-        if self.var_fixyaxis_mcp_options.get() == 1:
-            self.ymin_harmonics = self.current_harmonics_profile_min
-            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
-                    self.current_harmonics_profile_max - self.current_harmonics_profile_min)
-            self.ymin_harmonics_calibrate = self.current_harmonics_profile_min_calibrate
-            self.ymax_harmonics_calibrate = self.current_harmonics_profile_max_calibrate + 0.1 * (
-                    self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate)
-
     ## MCP Cam (ANDOR) communication
 
     def change_mcp_cam(self, event):
@@ -930,194 +747,6 @@ class HHGView(object):
     def reset_background_mcp(self):
         self.background_mcp = np.zeros([512, 512])
         logging.info("MCP Background has been reset")
-
-    ## Thorlabs Stage communication
-    def init_motor_thorlabs(self, motor_attr):
-        motor = getattr(self, motor_attr, None)
-        if motor is not None:
-            logging.info(f"{motor_attr} is already initialized.")
-            return
-
-        try:
-            entry_widget = getattr(self, f"ent_{motor_attr}_nr", None)
-            button_widget = getattr(self, f"but_{motor_attr}_init", None)
-
-            logging.info(f"Attempting to connect to {motor_attr}...")
-
-            motor_id = entry_widget.get() if entry_widget else None
-            if motor_id is None:
-                raise ValueError(f"Motor ID for {motor_attr} is not specified.")
-
-            setattr(self, motor_attr, apt.Motor(int(motor_id)))
-
-            if button_widget:
-                button_widget.config(fg='green')
-            logging.info(f"{motor_attr} connected successfully.")
-
-            getattr(self, f"ent_{motor_attr}_should", None).config(state='normal')
-            getattr(self, f"but_{motor_attr}_home", None).config(state='normal')
-            getattr(self, f"but_{motor_attr}_read", None).config(state='normal')
-            getattr(self, f"but_{motor_attr}_move", None).config(state='normal')
-            getattr(self, f"but_{motor_attr}_disable", None).config(state='normal')
-            getattr(self, f"ent_{motor_attr}_nr", None).config(state='readonly')
-            getattr(self, f"but_{motor_attr}_init", None).config(state='disable')
-
-        except Exception as e:
-            logging.warning(f"Unexpected error connecting {motor_attr}: {e}")
-            if button_widget:
-                button_widget.config(fg='red')
-            return
-
-        position = self.read_motor_thorlabs(motor_attr)
-        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
-        if strvar is not None:
-            strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
-
-    def home_motor_thorlabs(self, motor_attr):
-        try:
-            logging.info(f"Homing {motor_attr}...")
-            motor = getattr(self, motor_attr)
-            motor.move_home(blocking=True)
-            logging.info(f"{motor_attr} homed")
-        except Exception as e:
-            logging.warning(f"Unable to home {motor_attr}: {e}")
-
-        position = self.read_motor_thorlabs(motor_attr)
-        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
-        strvar.set(f"{position:.3f}")
-
-    def read_motor_thorlabs(self, motor_attr):
-        motor = getattr(self, motor_attr, None)
-        if motor is None:
-            logging.warning(f"{motor_attr} does not exist or is not initialized.")
-            return None
-
-        try:
-            position = motor.position
-            logging.info(f"{motor_attr} position: {position:.3f}")
-        except Exception as e:
-            logging.warning(f"Could not read position of {motor_attr}: {e}")
-            position = None
-
-        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
-        strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
-
-        amplitude = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
-        offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
-        power = self.angle_to_power(position, amplitude, offset)
-        strvar_current_power = getattr(self, f"strvar_{motor_attr}_current_power", None)
-        strvar_current_power.set(f"{power :.3f}" if power is not None else "#ERROR")
-
-        return position
-
-    def move_motor_thorlabs(self, motor_attr, target_position):
-        if not isinstance(target_position, (float, int)):
-            logging.warning(f"Invalid target position for {motor_attr}: {target_position}. Must be a number.")
-            return
-
-        motor = getattr(self, motor_attr, None)
-        if motor is None:
-            logging.warning(f"{motor_attr} does not exist or is not initialized.")
-            return
-
-        power_mode = getattr(self, f'var_{motor_attr}_power', None)
-        if power_mode.get() == 1:
-            try:
-                max_power = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
-                amplitude = max_power
-                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
-                if target_position > max_power:
-                    logging.warning(
-                        f"Requested power {target_position:.3f} exceeds max of {max_power:.3f}. Setting to max.")
-                    target_position = max_power
-                target_position = self.power_to_angle(target_position, amplitude, offset) + 90
-                logging.info(f"Converted target position with power mode for {motor_attr}: {target_position:.3f}")
-
-            except (ValueError, AttributeError) as e:
-                logging.warning(f"Failed to convert power to angle for {motor_attr}: {e}")
-                return
-
-        try:
-            logging.info(f"Moving {motor_attr} to position: {target_position:.3f}")
-            motor.move_to(target_position, blocking=True)
-            logging.info(f"{motor_attr} moved to position {target_position:.3f}")
-            self.read_motor_thorlabs(motor_attr)
-
-        except Exception as e:
-            logging.warning(f"Could not move {motor_attr} to position {target_position}: {e}")
-            self.read_motor_thorlabs(motor_attr)
-
-    def disable_motor_thorlabs(self, motor_attr):
-        motor = getattr(self, motor_attr, None)
-        if motor is None:
-            logging.info(f"{motor_attr} is already disabled.")
-            return
-
-        try:
-            motor.disable() if hasattr(motor, 'disable') else motor.close()
-            setattr(self, motor_attr, None)
-            logging.info(f"{motor_attr} successfully disabled.")
-
-            button_widget = getattr(self, f"but_{motor_attr}_init", None)
-            if button_widget:
-                button_widget.config(fg='black')
-
-            getattr(self, f"ent_{motor_attr}_should", None).config(state='disabled')
-            getattr(self, f"but_{motor_attr}_home", None).config(state='disabled')
-            getattr(self, f"but_{motor_attr}_read", None).config(state='disabled')
-            getattr(self, f"but_{motor_attr}_move", None).config(state='disabled')
-            getattr(self, f"but_{motor_attr}_disable", None).config(state='disable')
-            getattr(self, f"but_{motor_attr}_init", None).config(state='normal')
-            getattr(self, f"ent_{motor_attr}_nr", None).config(state='normal')
-
-        except Exception as e:
-            logging.warning(f"Error disabling {motor_attr}: {str(e)}")
-
-    ## Calibration of the waveplates
-    def enable_calibrator(self):
-        self.stop_calibrator = False
-        self.calibrator_thread = threading.Thread(target=self.open_calibrator)
-        self.calibrator_thread.daemon = True
-        self.calibrator_thread.start()
-
-    def open_calibrator(self):
-        """
-        Opens the waveplate calibrator, retrieves maximum power and offset values
-        for each waveplate, and updates the corresponding Tkinter StringVars.
-        """
-        self.calibrator = WaveplateCalib.WPCalib()
-        for i in range(1, 5):
-            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
-            offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
-            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
-            getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
-
-    def open_calibrator_on_start(self):
-        """
-        Opens the waveplate calibrator on startup, retrieves and updates the
-        maximum power and phase offset values for each waveplate, then closes
-        the calibrator. Logs information and errors during the process.
-        """
-        try:
-            self.open_calibrator()
-            self.calibrator.on_close()
-            logging.info("Waveplate calibrator values successfully loaded.")
-
-        except AttributeError as e:
-            logging.error(f"Failed to access waveplate attributes: {e}")
-        except Exception as e:
-            logging.error(f"An unexpected error occurred in open_calibrator_on_start: {e}")
-
-    def angle_to_power(self, angle, amplitude, offset):
-        power = amplitude / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * offset) + amplitude / 2
-        return power
-
-    def power_to_angle(self, power, amplitude, offset):
-        A = amplitude / 2
-        angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
-        return angle
-
-    ##
 
     def take_image(self, avgs):
         if self.ANDOR_cam is True:
@@ -1204,12 +833,10 @@ class HHGView(object):
         self.mcp_thread.daemon = True
         self.mcp_thread.start()
 
-
     def view_live_mcp_cam(self):
         while self.live_is_pressed:
             im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
             self.plot_MCP(im)
-
 
     def measure_simple(self):
         self.but_mcp_single_image.config(fg='red')
@@ -1220,10 +847,230 @@ class HHGView(object):
         self.but_mcp_single_image.config(fg='green')
 
     def treat_image_test(self):
-        im = self.calibration_image
+        im = self.calib_image_mcp
         E_new, im_new = self.final_image_treatment(im)
         self.eaxis_correct = E_new
         self.plot_treated_image(im_new)
+
+    def plot_MCP(self, mcpimage):
+
+        if self.ANDOR_cam is True:
+            self.ax_mcp.clear()
+            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T, cmap='turbo')
+            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
+
+            self.ax_mcp.set_xlabel("X (px)")
+            self.ax_mcp.set_ylabel("Y (px)")
+            self.ax_mcp.set_xlim(0, 512)
+            self.ax_mcp.set_ylim(0, 512)
+
+            self.ax_harmonics.clear()
+            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
+            self.ax_harmonics.set_xlabel("X (px)")
+            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
+
+            self.ax_harmonics.set_xlim(0, 512)
+            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
+            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
+            if self.var_fixyaxis_mcp_options.get() == 1:
+                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+
+            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
+            self.figure_mcp.tight_layout()
+            self.image_mcp.draw()
+            cbar.remove()
+        else:
+            self.ax_mcp.clear()
+            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T)
+            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
+
+            self.ax_mcp.set_xlabel("X (px)")
+            self.ax_mcp.set_ylabel("Y (px)")
+            self.ax_mcp.set_xlim(0, 512)
+            self.ax_mcp.set_ylim(0, 512)
+            self.ax_harmonics.clear()
+            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
+            self.ax_harmonics.set_xlabel("X (px)")
+            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
+
+            self.ax_harmonics.set_xlim(0, 512)
+            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
+            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
+            if self.var_fixyaxis_mcp_options.get() == 1:
+                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+
+            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
+            self.figure_mcp.tight_layout()
+            self.image_mcp.draw()
+            cbar.remove()
+
+
+            if self.var_show_treated_live.get() == 1:
+                Etemp, treated = self.final_image_treatment(mcpimage)
+                self.plot_treated_image(treated)
+
+    ## Calibration MCP
+    def export_mcp_treatment_parameters(self):
+        bg = int(self.var_mcp_calib_background_val.get())
+        x1 = int(self.var_mcp_calib_roix_1_val.get())
+        x2 = int(self.var_mcp_calib_roix_2_val.get())
+        y1 = int(self.var_mcp_calib_roiy_1_val.get())
+        y2 = int(self.var_mcp_calib_roiy_2_val.get())
+        shear = float(self.var_mcp_calib_shear_val.get())
+        energy_axis = self.eaxis_correct
+
+        try:
+            filepath = asksaveasfilename(
+                defaultextension='h5',
+                filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
+            )
+
+            filename = filepath
+
+            with h5py.File(filename, 'w') as hf:
+                hf.create_dataset('bg', data=bg)
+                hf.create_dataset('x1', data=x1)
+                hf.create_dataset('x2', data=x2)
+                hf.create_dataset('y1', data=y1)
+                hf.create_dataset('y2', data=y2)
+                hf.create_dataset('shear', data=shear)
+                hf.create_dataset('energy_axis', data=energy_axis)
+                hf.create_dataset('energy_axis_temp', data=self.eaxis)
+        except:
+            message = f'Exporting data failed'
+
+    def import_mcp_treatment_parameters(self):
+        filepath = askopenfilename(
+            filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
+        )
+        try:
+            hfr = h5py.File(filepath, 'r')
+            energy_axis = np.asarray(hfr.get('energy_axis'))
+            energy_axis_temp = np.asarray(hfr.get('energy_axis_temp'))
+            bg = int(np.asarray(hfr.get('bg')))
+            x1 = int(np.asarray(hfr.get('x1')))
+            x2 = int(np.asarray(hfr.get('x2')))
+            y1 = int(np.asarray(hfr.get('y1')))
+            y2 = int(np.asarray(hfr.get('y2')))
+            shear = float(np.asarray(hfr.get('shear')))
+
+            self.var_mcp_calib_background_val.set(bg)
+            self.var_mcp_calib_roix_1_val.set(x1)
+            self.var_mcp_calib_roix_2_val.set(x2)
+            self.var_mcp_calib_roiy_1_val.set(y1)
+            self.var_mcp_calib_roiy_2_val.set(y2)
+            self.var_mcp_calib_shear_val.set(shear)
+            self.eaxis_correct = energy_axis
+            self.eaxis = energy_axis_temp
+
+            self.but_import_image_treatment_parameters.config(fg='green')
+
+        except Exception as e:
+            message = f'Chose a proper filename'
+            self.but_import_image_treatment_parameters.config(fg='red')
+
+    def update_calib_energy_mcp(self):
+        im = np.flipud(self.calib_image_mcp_update)
+        profile = np.sum(im, axis=1)
+        try:
+            smooth = int(self.var_mcp_calib_energy_smooth.get())
+            prom = int(self.var_mcp_calib_energy_prom.get())
+            order = int(self.var_mcp_calib_energy_order.get())
+            firstharmonic = int(self.var_mcp_calib_energy_first_harmonic.get())
+
+            data, peaks = help.fit_energy_calibration_peaks(profile, prom=prom, smoothing=smooth)
+            condition = (peaks > int(self.var_mcp_calib_energy_ignore_1.get())) & (
+                    peaks < int(self.var_mcp_calib_energy_ignore_2.get()))
+            peaks = peaks[condition]
+            try:
+                ignore_list = [int(x) for x in self.ent_mcp_calib_energy_ignore_list.get().split(',') if
+                               x.strip().isdigit()]
+                if ignore_list:
+                    for num in ignore_list:
+                        range_value = 5
+                        peaks = peaks[~((num - range_value <= peaks) & (peaks <= num + range_value))]
+
+
+
+            except:
+                a = 1
+            h = 6.62607015e-34
+            c = 299792458
+            qe = 1.60217662e-19
+            lam = 1030e-9
+            Eq = h * c / lam
+
+            first_harmonic = firstharmonic
+            E = np.ones_like(peaks) * first_harmonic * Eq / qe + np.arange(0, np.size(peaks)) * order * Eq / qe
+            p = np.polyfit(peaks, E, 3)
+            x_axis = np.arange(0, np.shape(im)[1])
+            scale_x_axis = np.polyval(p, x_axis)
+            E_axis = scale_x_axis
+            self.eaxis = E_axis
+
+            self.plot_calibration_image_energy(profile, data, peaks, E_axis)
+        except:
+            message = f'Enter odd number for smooth! and something reasonable for peak prominence!'
+
+    def update_calib_mcp(self):
+        im = self.calib_image_mcp
+        try:
+            im = im - int(self.var_mcp_calib_background_val.get())
+        except:
+            message = f'Enter something reasonable for the background!!'
+
+        try:
+            im = help.shear_image(im, float(self.var_mcp_calib_shear_val.get()), axis=1)
+        except:
+            message = f'Enter a reasonable value for the shear!'
+        try:
+            x_cut1 = int(self.var_mcp_calib_roix_1_val.get())
+            x_cut2 = int(self.var_mcp_calib_roix_2_val.get())
+            y_cut1 = int(self.var_mcp_calib_roiy_1_val.get())
+            y_cut2 = int(self.var_mcp_calib_roiy_2_val.get())
+        except:
+            x_cut1 = 0
+            x_cut2 = 512
+            y_cut1 = 0
+            y_cut2 = 512
+        try:
+            mask = np.zeros_like(im)
+            mask[512 - x_cut2:512 - x_cut1, y_cut1:y_cut2] = 1
+            im = im * mask
+        except:
+            message = f'Enter a reasonable value for the ROI!'
+
+        self.calib_image_mcp_update = im
+        self.plot_calibration_image(self.calib_image_mcp_update)
+
+    def final_image_treatment(self, im):
+        bg = int(self.var_mcp_calib_background_val.get())
+        x1 = int(self.var_mcp_calib_roix_1_val.get())
+        x2 = int(self.var_mcp_calib_roix_2_val.get())
+        y1 = int(self.var_mcp_calib_roiy_1_val.get())
+        y2 = int(self.var_mcp_calib_roiy_2_val.get())
+        shear = float(self.var_mcp_calib_shear_val.get())
+        correct_E_axis, treated = help.treat_image_new(im, self.eaxis, x1, x2, y1, y2, bg, shear)
+        return correct_E_axis, treated
+
+    def take_calib_image_mcp_thread(self):
+        self.take_calib_image_mcp_thread = threading.Thread(target=self.take_calib_image_mcp)
+        self.take_calib_image_mcp_thread.daemon = True
+        self.take_calib_image_mcp_thread.start()
+
+    def take_calib_image_mcp(self):
+        im_temp = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
+        self.calib_image_mcp = im_temp
+        self.plot_calibration_image(self.calib_image_mcp)
+
+    def fix_y_axis_mcp(self):
+        if self.var_fixyaxis_mcp_options.get() == 1:
+            self.ymin_harmonics = self.current_harmonics_profile_min
+            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
+                    self.current_harmonics_profile_max - self.current_harmonics_profile_min)
+            self.ymin_harmonics_calibrate = self.current_harmonics_profile_min_calibrate
+            self.ymax_harmonics_calibrate = self.current_harmonics_profile_max_calibrate + 0.1 * (
+                    self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate)
 
     def plot_treated_image(self, image):
         self.ax_mcp_treated.clear()
@@ -1287,83 +1134,318 @@ class HHGView(object):
         self.figure_mcp_calib_energy.tight_layout()
         self.image_mcp_calib_energy.draw()
 
-    def plot_MCP(self, mcpimage):
+    ## Thorlabs Stage communication
+    def init_motor_thorlabs(self, motor_attr):
+        """
+        Initializes a Thorlabs motor with the specified attribute name.
 
-        if self.ANDOR_cam is True:
-            self.ax_mcp.clear()
-            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T, cmap='turbo')
-            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
+        Checks if the motor is already initialized. If not, retrieves the motor ID
+        from the entry widget, attempts to connect to the motor, and updates the
+        GUI button and entry states. If connection fails, logs the error and updates
+        the button color to indicate failure.
 
-            self.ax_mcp.set_xlabel("X (px)")
-            self.ax_mcp.set_ylabel("Y (px)")
-            self.ax_mcp.set_xlim(0, 512)
-            self.ax_mcp.set_ylim(0, 512)
+        Args:
+            motor_attr (str): The attribute name of the motor.
+        """
+        motor = getattr(self, motor_attr, None)
+        if motor is not None:
+            logging.info(f"{motor_attr} is already initialized.")
+            return
 
-            self.ax_harmonics.clear()
-            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
-            self.ax_harmonics.set_xlabel("X (px)")
-            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
+        try:
+            entry_widget = getattr(self, f"ent_{motor_attr}_nr", None)
+            button_widget = getattr(self, f"but_{motor_attr}_init", None)
 
-            self.ax_harmonics.set_xlim(0, 512)
-            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
-            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
-            if self.var_fixyaxis_mcp_options.get() == 1:
-                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+            logging.info(f"Attempting to connect to {motor_attr}...")
 
-            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
-            self.figure_mcp.tight_layout()
-            self.image_mcp.draw()
-            cbar.remove()
-        else:
-            self.ax_mcp.clear()
-            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T)
-            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
+            motor_id = entry_widget.get() if entry_widget else None
+            if motor_id is None:
+                raise ValueError(f"Motor ID for {motor_attr} is not specified.")
 
-            self.ax_mcp.set_xlabel("X (px)")
-            self.ax_mcp.set_ylabel("Y (px)")
-            self.ax_mcp.set_xlim(0, 512)
-            self.ax_mcp.set_ylim(0, 512)
-            self.ax_harmonics.clear()
-            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
-            self.ax_harmonics.set_xlabel("X (px)")
-            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
+            setattr(self, motor_attr, apt.Motor(int(motor_id)))
 
-            self.ax_harmonics.set_xlim(0, 512)
-            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
-            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
-            if self.var_fixyaxis_mcp_options.get() == 1:
-                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+            if button_widget:
+                button_widget.config(fg='green')
+            logging.info(f"{motor_attr} connected successfully.")
 
-            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
-            self.figure_mcp.tight_layout()
-            self.image_mcp.draw()
-            cbar.remove()
+            getattr(self, f"ent_{motor_attr}_should", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_home", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_read", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_move", None).config(state='normal')
+            getattr(self, f"but_{motor_attr}_disable", None).config(state='normal')
+            getattr(self, f"ent_{motor_attr}_nr", None).config(state='readonly')
+            getattr(self, f"but_{motor_attr}_init", None).config(state='disable')
 
+        except Exception as e:
+            logging.warning(f"Unexpected error connecting {motor_attr}: {e}")
+            if button_widget:
+                button_widget.config(fg='red')
+            return
 
-            if self.var_show_treated_live.get() == 1:
-                Etemp, treated = self.final_image_treatment(mcpimage)
-                self.plot_treated_image(treated)
+        position = self.read_motor_thorlabs(motor_attr)
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        if strvar is not None:
+            strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
 
-    # Autolog file writting
+    def home_motor_thorlabs(self, motor_attr):
+        """
+        Homes a Thorlabs motor to its reference position.
 
-    def get_start_image_from_autolog(self):
-        self.f.seek(0)
-        lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", unpack=False, usecols=(0,))
-        if lines.size > 0:
+        Sends a command to home the specified motor, and updates the displayed
+        position on the GUI once the homing operation completes.
+
+        Args:
+            motor_attr (str): The attribute name of the motor to home.
+        """
+        try:
+            logging.info(f"Homing {motor_attr}...")
+            motor = getattr(self, motor_attr)
+            motor.move_home(blocking=True)
+            logging.info(f"{motor_attr} homed")
+        except Exception as e:
+            logging.warning(f"Unable to home {motor_attr}: {e}")
+
+        position = self.read_motor_thorlabs(motor_attr)
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        strvar.set(f"{position:.3f}")
+
+    def read_motor_thorlabs(self, motor_attr):
+        """
+        Reads the current position of a Thorlabs motor and updates the display.
+
+        Retrieves and logs the motor’s position and converts it to power if the
+        GUI is in power mode. Updates the GUI with the motor’s position and power.
+
+        Args:
+            motor_attr (str): The attribute name of the motor to read.
+
+        Returns:
+            float: The position of the motor, or None if reading fails.
+        """
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.warning(f"{motor_attr} does not exist or is not initialized.")
+            return None
+
+        try:
+            position = motor.position
+            logging.info(f"{motor_attr} position: {position:.3f}")
+        except Exception as e:
+            logging.warning(f"Could not read position of {motor_attr}: {e}")
+            position = None
+
+        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
+        strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
+
+        amplitude = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
+        offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+        power = self.angle_to_power(position, amplitude, offset)
+        strvar_current_power = getattr(self, f"strvar_{motor_attr}_current_power", None)
+        strvar_current_power.set(f"{power :.3f}" if power is not None else "#ERROR")
+
+        return position
+
+    def move_motor_thorlabs(self, motor_attr, target_position):
+        """
+        Moves a Thorlabs motor to a specified position or power level.
+
+        Checks if the target position is valid. If the motor is in power mode,
+        converts the target power to an angle. Then moves the motor to the target
+        position, logs the movement, and updates the GUI with the new position.
+
+        Args:
+            motor_attr (str): The attribute name of the motor to move.
+            target_position (float): The target position or power level for the motor.
+        """
+        if not isinstance(target_position, (float, int)):
+            logging.warning(f"Invalid target position for {motor_attr}: {target_position}. Must be a number.")
+            return
+
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.warning(f"{motor_attr} does not exist or is not initialized.")
+            return
+
+        power_mode = getattr(self, f'var_{motor_attr}_power', None)
+        if power_mode.get() == 1:
             try:
-                start_image = lines[-1] + 1
-            except:
-                start_image = lines + 1
-            message = "The last image had index " + str(int(start_image - 1))
-        else:
+                max_power = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
+                amplitude = max_power
+                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+                if target_position > max_power:
+                    logging.warning(
+                        f"Requested power {target_position:.3f} exceeds max of {max_power:.3f}. Setting to max.")
+                    target_position = max_power
+                target_position = self.power_to_angle(target_position, amplitude, offset) + 90
+                logging.info(f"Converted target position with power mode for {motor_attr}: {target_position:.3f}")
+
+            except (ValueError, AttributeError) as e:
+                logging.warning(f"Failed to convert power to angle for {motor_attr}: {e}")
+                return
+
+        try:
+            logging.info(f"Moving {motor_attr} to position: {target_position:.3f}")
+            motor.move_to(target_position, blocking=True)
+            logging.info(f"{motor_attr} moved to position {target_position:.3f}")
+            self.read_motor_thorlabs(motor_attr)
+
+        except Exception as e:
+            logging.warning(f"Could not move {motor_attr} to position {target_position}: {e}")
+            self.read_motor_thorlabs(motor_attr)
+
+    def disable_motor_thorlabs(self, motor_attr):
+        """
+        Disables a Thorlabs motor and resets the GUI to its default state.
+
+        Checks if the motor is already disabled. If not, disables the motor or
+        closes the connection, updates the GUI button and entry states, and logs
+        the operation.
+
+        Args:
+            motor_attr (str): The attribute name of the motor to disable.
+        """
+        motor = getattr(self, motor_attr, None)
+        if motor is None:
+            logging.info(f"{motor_attr} is already disabled.")
+            return
+
+        try:
+            motor.disable() if hasattr(motor, 'disable') else motor.close()
+            setattr(self, motor_attr, None)
+            logging.info(f"{motor_attr} successfully disabled.")
+
+            button_widget = getattr(self, f"but_{motor_attr}_init", None)
+            if button_widget:
+                button_widget.config(fg='black')
+
+            getattr(self, f"ent_{motor_attr}_should", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_home", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_read", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_move", None).config(state='disabled')
+            getattr(self, f"but_{motor_attr}_disable", None).config(state='disable')
+            getattr(self, f"but_{motor_attr}_init", None).config(state='normal')
+            getattr(self, f"ent_{motor_attr}_nr", None).config(state='normal')
+
+        except Exception as e:
+            logging.warning(f"Error disabling {motor_attr}: {str(e)}")
+
+    ## Calibration of the waveplates
+    # TODO fix thread to only allow one calibrator at the time
+    def enable_calibrator(self):
+        """
+        Enables the waveplate calibrator by creating and starting a new thread.
+
+        Sets a flag to indicate the calibrator should run, then starts a
+        daemon thread that executes the calibration process.
+        """
+        self.stop_calibrator = False
+        self.calibrator_thread = threading.Thread(target=self.open_calibrator)
+        self.calibrator_thread.daemon = True
+        self.calibrator_thread.start()
+
+    def open_calibrator(self):
+        """
+        Opens the waveplate calibrator and loads maximum power and offset values.
+
+        Initializes the waveplate calibrator object and retrieves max power and
+        offset values for each waveplate (1 to 4). These values are displayed
+        in the corresponding GUI elements.
+        """
+        self.calibrator = WaveplateCalib.WPCalib()
+        for i in range(1, 5):
+            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
+            offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
+            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
+            getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
+
+    def open_calibrator_on_start(self):
+        """
+        Loads waveplate calibrator values at startup and handles any errors.
+
+        Attempts to open the calibrator and retrieve waveplate values,
+        then closes the calibrator. Logs an error if there is an issue
+        accessing waveplate attributes.
+        """
+        try:
+            self.open_calibrator()
+            self.calibrator.on_close()
+            logging.info("Waveplate calibrator values successfully loaded.")
+
+        except AttributeError as e:
+            logging.error(f"Failed to access waveplate attributes: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in open_calibrator_on_start: {e}")
+
+    def angle_to_power(self, angle, amplitude, offset):
+        """
+        Converts an angle to power based on amplitude and offset values.
+
+        Args:
+            angle (float): The angle of the waveplate in degrees.
+            amplitude (float): The maximum amplitude of power.
+            offset (float): The offset angle for calibration.
+
+        Returns:
+            float: The calculated power corresponding to the angle.
+        """
+        power = amplitude / 2 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * offset) + amplitude / 2
+        return power
+
+    def power_to_angle(self, power, amplitude, offset):
+        """
+        Converts a power value to the corresponding waveplate angle.
+
+        Args:
+            power (float): The desired power level.
+            amplitude (float): The maximum amplitude of power.
+            offset (float): The offset angle for calibration.
+
+        Returns:
+            float: The calculated angle corresponding to the power.
+        """
+        A = amplitude / 2
+        angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
+        return angle
+
+
+    ## Autolog file writting
+    def get_start_image_from_autolog(self):
+        """
+        Retrieves the next image index from the autolog file, based on the last recorded index.
+
+        Reads the autolog file to find the last recorded image index. If the autolog file is empty,
+        or if an error occurs, defaults to 0. Logs the index of the last image.
+
+        Returns:
+            int: The next image index to start from.
+        """
+        self.f.seek(0)  # Ensure reading from the start of the file
+
+        try:
+            # Load the first column from the autolog file
+            lines = np.loadtxt(self.autolog, comments="#", delimiter="\t", usecols=(0,))
+
+            if lines.size > 0:
+                # Use the last index + 1 if there are entries
+                start_image = int(lines[-1]) + 1
+                logging.info(f"The last image had index {start_image - 1}")
+            else:
+                # Default to 0 if no entries found
+                start_image = 0
+                logging.info("No previous images found. Starting from index 0.")
+
+        except Exception as e:
+            # Log the error and default to 0 in case of issues
+            logging.error(f"Error reading autolog: {e}")
             start_image = 0
+
         return start_image
 
+    ## Closing routine
     def on_close(self):
         self.f.close()
         self.disable_motor_thorlabs('wp_1')
         if self.cam is not None:
             self.cam.close()
-        self.spec_deactivate()
         self.win.destroy()
-        self.parent.feedback_win = None
+        self.parent.HHGView_win = None
