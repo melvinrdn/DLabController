@@ -12,7 +12,7 @@ INFLUXDB_TOKEN = "TCFR-UwJzE8b52u2wRK3LXrDMfKomqCQRLtWqGolrDyV8s0JDMYPPdd_SCad74
 INFLUXDB_URL = "http://localhost:8086"
 ORG = "DLab"
 BUCKET = "pressure_data"
-UPDATE_INTERVAL = 5  # seconds
+UPDATE_INTERVAL = 1  # seconds
 ERROR_RETRY_INTERVAL = 30  # seconds
 
 mg = None

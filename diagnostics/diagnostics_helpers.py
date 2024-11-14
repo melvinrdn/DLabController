@@ -20,7 +20,6 @@ colors = [
 
 custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=512)
 
-
 me = 9.1e-31
 h = 6.62607015e-34
 c = 299792458
@@ -43,7 +42,6 @@ class ColorFormatter(logging.Formatter):
             record.msg = f"{GREEN}{record.msg}{RESET}"
         return super().format(record)
 
-
 def shear_image(image_old, val, axis=0):
     if axis == 0:  # Shear along the x-axis
         T = np.float32([[1, val / 100, 0], [0, 1, 0]])
@@ -52,7 +50,6 @@ def shear_image(image_old, val, axis=0):
     size_T = (image_old.shape[1], image_old.shape[0])
     image_new = cv2.warpAffine(image_old, T, size_T)
     return image_new
-
 
 def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     r"""Smooth (and optionally differentiate) data with a Savitzky-Golay filter.
@@ -126,7 +123,6 @@ def savitzky_golay(y, window_size, order, deriv=0, rate=1):
     y = np.concatenate((firstvals, y, lastvals))
     return np.convolve(m[::-1], y, mode='valid')
 
-
 def fit_energy_calibration_peaks(prof, prom=2000, roi=[0, 512], smoothing=5):
     dat = prof
     dat[0: roi[0]] = 0
@@ -135,7 +131,6 @@ def fit_energy_calibration_peaks(prof, prom=2000, roi=[0, 512], smoothing=5):
     peak, _ = find_peaks(calibration, prominence=prom)
     return calibration, peak
 
-
 def cut_image(old_image, x1, x2, y1, y2, bg):
     mask = np.zeros_like(old_image)
     mask[512 - x2:512 - x1, y1:y2] = 1
@@ -143,30 +138,15 @@ def cut_image(old_image, x1, x2, y1, y2, bg):
     new[new<0] = 0
     return new * mask
 
-
 def redistribute_image(sheared_image, E_axis):
     im = sheared_image.T
-    Jacobian_vect = h * c / (E_axis ** 2)
     Jacobian_vect = (E_axis ** 2)
     Jacobian_vect_norm = Jacobian_vect / np.max(Jacobian_vect)
     Jacobian_mat = np.tile(Jacobian_vect_norm, [np.shape(im)[0], 1])
     redistributed_image = np.multiply(im, Jacobian_mat)
     return redistributed_image.T
 
-
-def treat_image(image_old, energy_axis, shear_parameter=-2.5):
-    sheared_image = shear_image(image_old, shear_parameter)
-    redistributed_image = redistribute_image(sheared_image, energy_axis)
-    y_axis = np.arange(0, np.shape(sheared_image)[0])
-    correct_E_axis = np.arange(energy_axis[0], energy_axis[-1],
-                               abs((energy_axis[0] - energy_axis[-1]) / np.shape(redistributed_image)[1]))
-    interp_func = interp1d(energy_axis, np.flip(redistributed_image, 1), axis=1, kind='linear')
-    image_new = interp_func(correct_E_axis)
-
-    return image_new
-
-
-def treat_image_new(image_old, energy_axis, x1, x2, y1, y2, bg, shear_parameter=-2.5):
+def treat_mcp_image(image_old, energy_axis, x1, x2, y1, y2, bg, shear_parameter=-2.5):
     sheared_image = shear_image(image_old, shear_parameter, axis=1)
     cutted_image = np.flip(cut_image(sheared_image, x1, x2, y1, y2, bg),axis = 0)
     redistributed_image = redistribute_image(cutted_image, energy_axis)
@@ -175,20 +155,5 @@ def treat_image_new(image_old, energy_axis, x1, x2, y1, y2, bg, shear_parameter=
                                abs((energy_axis[0] - energy_axis[-1]) / np.shape(redistributed_image)[1]))
     interp_func = interp1d(energy_axis, redistributed_image, axis=0, kind='linear')
     image_new = interp_func(correct_E_axis)
-    #image_new = cutted_image
     return correct_E_axis, image_new
-
-
-# Define the Gaussian function
-def gaussian(x, A, mu, sigma, B):
-    return A * np.exp(-(x - mu)**2 / (2 * sigma**2)) + B
-
-
-def fit_gaussian(x_data,y_data):
-    initial_guess = [np.max(y_data), np.argmax(y_data), 20, 0]  # Initial guess for parameters [A, mu, sigma]
-    params, covariance = curve_fit(gaussian, x_data, y_data, p0=initial_guess)
-    # Extract the fitted parameters
-    A_fit, mu_fit, sigma_fit, B_fit = params
-    return A_fit, mu_fit, sigma_fit, B_fit
-
 
