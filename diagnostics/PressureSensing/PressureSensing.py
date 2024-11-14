@@ -50,7 +50,6 @@ def update_pressure():
                     .field("pressure_3", sensor_3.pressure if sensor_3.status in [0, 1, 2] else None)
                 )
                 write_api.write(bucket=BUCKET, org=ORG, record=point)
-                logging.info("Pressure data updated successfully.")
                 time.sleep(UPDATE_INTERVAL)
 
             except MaxiGaugeError as e:
