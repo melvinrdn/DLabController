@@ -8,7 +8,7 @@ from influxdb_client import InfluxDBClient, Point, WriteOptions
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 COM_PORT = 'COM9'
-INFLUXDB_TOKEN = "YOUR_TOKEN"
+INFLUXDB_TOKEN = "TCFR-UwJzE8b52u2wRK3LXrDMfKomqCQRLtWqGolrDyV8s0JDMYPPdd_SCad745t_dnnzK47oYK6DO9S_WL0rA=="
 INFLUXDB_URL = "http://localhost:8086"
 ORG = "DLab"
 BUCKET = "pressure_data"
