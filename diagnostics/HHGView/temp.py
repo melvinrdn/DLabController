@@ -1866,7 +1866,7 @@ class HHGView(object):
         y1 = int(self.var_mcp_calibration_ROIY1_val.get())
         y2 = int(self.var_mcp_calibration_ROIY2_val.get())
         shear = float(self.var_mcp_calibration_shear_val.get())
-        correct_E_axis, treated = help.treat_image_new(im, self.eaxis, x1, x2, y1, y2, bg, shear)
+        correct_E_axis, treated = help.treat_mcp_image(im, self.eaxis, x1, x2, y1, y2, bg, shear)
         return correct_E_axis, treated
 
     def export_mcp_treatment_parameters(self):
@@ -4337,3 +4337,16 @@ class HHGView(object):
         self.win.destroy()
         self.parent.feedback_win = None
         print('Feedbacker closed')
+
+
+# Define the Gaussian function
+def gaussian(x, A, mu, sigma, B):
+    return A * np.exp(-(x - mu)**2 / (2 * sigma**2)) + B
+
+
+def fit_gaussian(x_data,y_data):
+    initial_guess = [np.max(y_data), np.argmax(y_data), 20, 0]  # Initial guess for parameters [A, mu, sigma]
+    params, covariance = curve_fit(gaussian, x_data, y_data, p0=initial_guess)
+    # Extract the fitted parameters
+    A_fit, mu_fit, sigma_fit, B_fit = params
+    return A_fit, mu_fit, sigma_fit, B_fit

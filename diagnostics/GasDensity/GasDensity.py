@@ -282,8 +282,8 @@ class GasDensity:
 
         else:
             while not self.optimized:
-                im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                                   int(self.strvar_cam_avg.get()))
+                im = self.daheng_camera.take_image_mcp(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                       int(self.strvar_cam_avg.get()))
                 self.plot_daheng(im)
                 rel = self.relevant_image
                 if np.max(rel) > 254:
@@ -292,8 +292,8 @@ class GasDensity:
                 else:
                     new_exposure = 255 / np.max(rel) * 0.8 * int(self.strvar_cam_exp.get())
                     self.strvar_cam_exp.set(str(int(new_exposure)))
-                    im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                                       int(self.strvar_cam_avg.get()))
+                    im = self.daheng_camera.take_image_mcp(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                           int(self.strvar_cam_avg.get()))
                     self.plot_daheng(im)
                     self.optimized = True
                     self.insert_message(f"Exposure is optimized at {new_exposure} µs.")
@@ -301,8 +301,8 @@ class GasDensity:
     def live_daheng(self):
         if self.daheng_camera is not None:
             while self.daheng_is_live:
-                im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                                   int(self.strvar_cam_avg.get()))
+                im = self.daheng_camera.take_image_mcp(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                       int(self.strvar_cam_avg.get()))
                 self.current_daheng_image = im
                 self.plot_daheng(im)
 
@@ -314,8 +314,8 @@ class GasDensity:
 
     def take_single_image_daheng(self):
         if self.daheng_camera is not None:
-            im = self.daheng_camera.take_image(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
-                                               int(self.strvar_cam_avg.get()))
+            im = self.daheng_camera.take_image_mcp(int(self.strvar_cam_exp.get()), int(self.strvar_cam_gain.get()),
+                                                   int(self.strvar_cam_avg.get()))
             message = "Single image taken"
             self.insert_message(message)
             self.current_daheng_image = im

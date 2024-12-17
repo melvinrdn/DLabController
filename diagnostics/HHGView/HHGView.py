@@ -1,7 +1,6 @@
 import datetime
 import threading
 import tkinter as tk
-from collections import deque
 from datetime import date
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfile, askopenfilename, asksaveasfilename
@@ -48,8 +47,8 @@ class HHGView(object):
         self.calib_image_mcp = np.zeros([512, 512])
         self.calib_image_mcp_update = np.zeros([512, 512])
         self.calibration_image_update_energy = np.zeros([512, 512])
-        self.eaxis = None
-        self.eaxis_correct = None
+        self.e_axis_not_interpolated = None
+        self.e_axis_interpolated = None
         self.roix = [0, 512]
         self.roiy = [0, 512]
         self.live_is_pressed = False
@@ -80,8 +79,8 @@ class HHGView(object):
         frm_control_panel_1 = ttk.LabelFrame(self.frm_control, text='Acquisition control')
 
         # Create buttons
-        self.but_mcp_single_image = tk.Button(frm_control_panel_1, text='Single Image', command=self.enabl_mcp_simple)
-        self.but_mcp_liveview = tk.Button(frm_control_panel_1, text='Live View', command=self.enabl_mcp_live)
+        self.but_mcp_single_image = tk.Button(frm_control_panel_1, text='Single Image', command=self.enable_take_image_mcp_routine_thread)
+        self.but_mcp_liveview = tk.Button(frm_control_panel_1, text='Live View', command=self.enable_live_mcp_routine_thread)
 
         # Dictionary to hold StringVars, Entries, and Labels
         self.mcp_controls = {
@@ -397,7 +396,7 @@ class HHGView(object):
         self.but_stage_4_move.grid(row=6, column=7, padx=2, pady=2, sticky='nsew')
 
         # Power calibration tab
-        self.but_open_calibrator = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator)
+        self.but_open_calibrator = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator_thread)
         self.but_open_calibrator.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         # Laser parameter
@@ -551,14 +550,13 @@ class HHGView(object):
         self.tk_widget_figure_mcp_calib.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
         self.image_mcp_calib.draw()
 
-
         self.but_take_mcp_calib_image = tk.Button(frm_mcp_calibrate_options, text="Take Image",
-                                                  command=self.take_calib_image_mcp_thread)
+                                                  command=self.enable_take_calib_image_mcp_routine_thread)
         self.but_take_mcp_calib_image.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         lbl_mcp_calib_shear_val = tk.Label(frm_mcp_calibrate_options, text="Shear:")
         self.var_mcp_calib_shear_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calib_shear_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_shear_val.trace_add("write", self.update_calib_spatial_mcp)
         self.ent_mcp_calib_shear_val = tk.Entry(frm_mcp_calibrate_options,
                                                 textvariable=self.var_mcp_calib_shear_val,
                                                 width=4, validate='all')
@@ -567,9 +565,9 @@ class HHGView(object):
 
         lbl_mcp_calib_roix_val = tk.Label(frm_mcp_calibrate_options, text="ROIX:")
         self.var_mcp_calib_roix_1_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calib_roix_1_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_roix_1_val.trace_add("write", self.update_calib_spatial_mcp)
         self.var_mcp_calib_roix_2_val = tk.StringVar(self.win, "512")
-        self.var_mcp_calib_roix_2_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_roix_2_val.trace_add("write", self.update_calib_spatial_mcp)
         self.ent_mcp_calib_roix_1_val = tk.Entry(frm_mcp_calibrate_options,
                                                  textvariable=self.var_mcp_calib_roix_1_val,
                                                  width=4, validate='all')
@@ -582,9 +580,9 @@ class HHGView(object):
 
         lbl_mcp_calib_roiy_val = tk.Label(frm_mcp_calibrate_options, text="ROIY:")
         self.var_mcp_calib_roiy_1_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calib_roiy_1_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_roiy_1_val.trace_add("write", self.update_calib_spatial_mcp)
         self.var_mcp_calib_roiy_2_val = tk.StringVar(self.win, "512")
-        self.var_mcp_calib_roiy_2_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_roiy_2_val.trace_add("write", self.update_calib_spatial_mcp)
         self.ent_mcp_calib_roiy_1_val = tk.Entry(frm_mcp_calibrate_options,
                                                  textvariable=self.var_mcp_calib_roiy_1_val,
                                                  width=4, validate='all')
@@ -597,7 +595,7 @@ class HHGView(object):
 
         lbl_mcp_calib_background_val = tk.Label(frm_mcp_calibrate_options, text="Background:")
         self.var_mcp_calib_background_val = tk.StringVar(self.win, "0")
-        self.var_mcp_calib_background_val.trace_add("write", self.update_calib_mcp)
+        self.var_mcp_calib_background_val.trace_add("write", self.update_calib_spatial_mcp)
         self.ent_mcp_calib_background_val = tk.Entry(frm_mcp_calibrate_options,
                                                      textvariable=self.var_mcp_calib_background_val,
                                                      width=6, validate='all')
@@ -696,11 +694,11 @@ class HHGView(object):
         self.cb_show_treated_live.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
         self.but_show_treated_image = tk.Button(frm_mcp_treated_options, text="Show Treated Image",
-                                                command=self.treat_image_test)
+                                                command=self.treat_mcp_image_routine)
 
         self.but_export_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
                                                                text="Export treatment parameters",
-                                                               command=self.export_mcp_treatment_parameters)
+                                                               command=self.save_mcp_treatment_parameters)
         self.but_import_image_treatment_parameters = tk.Button(frm_mcp_treated_options,
                                                                text="Import treatment parameters",
                                                                command=self.import_mcp_treatment_parameters)
@@ -728,206 +726,293 @@ class HHGView(object):
 
     ## MCP Cam (ANDOR) communication
 
+    # Base functions
     def change_mcp_cam(self, event):
-        selected_value = self.mcp_controls['mcp_cam_choice']['var'].get()
-        if selected_value == 'Andor':
-            self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
-            self.ANDOR_cam = True
-            self.name_cam = 'ANDOR_cam'
-            self.background_mcp = np.zeros([512, 512])
+        """
+        Updates the MCP camera based on the selected option.
 
-    def get_background_mcp(self):
+        Checks the selected camera choice in `mcp_cam_choice`. If 'Andor' is selected, 
+        initializes the Andor camera with specific settings, sets camera attributes, and 
+        creates a default background array. Logs each step and handles errors if initialization fails.
+
+        Args:
+            event: The event that triggers the camera change.
+        """
+        selected_cam = self.mcp_controls['mcp_cam_choice']['var'].get()
+
+        if selected_cam == 'Andor':
+            try:
+                logging.info("Initializing Andor camera...")
+                self.cam = Andor.AndorSDK2Camera(fan_mode="full", amp_mode=None)
+                self.ANDOR_cam = True
+                self.name_cam = 'ANDOR_cam'
+                self.background_mcp = np.zeros([512, 512])
+                logging.info("Andor camera successfully initialized.")
+            except Exception as e:
+                logging.error(f"Failed to initialize Andor camera: {e}")
+                self.ANDOR_cam = False
+                self.cam = None
+
+    def take_image_mcp(self, avgs):
+        """
+        Captures an averaged image from the mcp camera.
+
+        Sets the exposure time, opens the shutter, and starts acquisition. Captures
+        the specified number of frames, averages them, and subtracts the MCP background.
+
+        Args:
+            avgs (int): The number of frames to average.
+
+        Returns:
+            ndarray: The averaged image with the MCP background subtracted, or None if capture fails.
+        """
+        if not self.ANDOR_cam:
+            logging.warning("Camera not available.")
+            return None
+
         try:
-            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-            self.background_mcp = im
-            logging.info("MCP Background has been taken")
-        except:
-            logging.warning("Impossible to take the MCP background")
-
-    def reset_background_mcp(self):
-        self.background_mcp = np.zeros([512, 512])
-        logging.info("MCP Background has been reset")
-
-    def take_image(self, avgs):
-        if self.ANDOR_cam is True:
-            self.cam.set_exposure(float(self.mcp_controls['mcp_exposure_time']['var'].get()) * 1e-6)
+            # Set up the camera with specified exposure time
+            exposure_time = float(self.mcp_controls['mcp_exposure_time']['var'].get()) * 1e-6
+            self.cam.set_exposure(exposure_time)
             self.cam.setup_shutter('open')
-            self.d_phase = deque()
+
+            # Initialize image and acquisition
             image = np.zeros([512, 512])
             self.cam.start_acquisition()
+
+            # Capture and accumulate frames
             for i in range(avgs):
                 self.cam.wait_for_frame(timeout=20)
                 frame = self.cam.read_oldest_image()
                 image += frame
+
+            # Average the image
             image /= avgs
+
+            # Stop acquisition and close the shutter
             self.cam.stop_acquisition()
-        else:
-            message = 'No cam'
 
-        return image - self.background_mcp
+            # Subtract background
+            return image - self.background_mcp
 
-    def save_im(self, image):
+        except Exception as e:
+            logging.error(f"Error during image acquisition: {e}")
+            return None
 
-        nr = self.get_start_image_from_autolog()
-        filename = self.saving_folder + '-' + str(int(nr)) + '.tif'
+    def get_background_mcp(self):
+        """
+        Captures and sets the MCP background image.
 
-        image_16bit = image.astype(np.uint16)
-        cv2.imwrite(filename, image_16bit, [cv2.IMWRITE_PXM_BINARY, 1])
-
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        Uses the specified number of averages from `mcp_controls` to capture an averaged
+        image as the MCP background. If the capture fails, logs an error and resets the
+        background to a default empty state.
+        """
         try:
-            if self.parent.vars_red[1].get() == 1:
-                rl = np.round(float(self.lens_red.strvar_ben.get()), 3)
-                rl_pos = np.round(float(self.lens_red.strvar_focus_position.get()), 3)
-            else:
-                rl = 0
-                rl_pos = 0
-        except:
-            rl = np.nan
-            rl_pos = np.nan
+            avg_count = int(self.mcp_controls['mcp_avgs']['var'].get())
+            logging.info(f"Capturing MCP background with {avg_count} averages...")
+            im_background = self.take_image_mcp(avg_count)
+            self.background_mcp = im_background
+            logging.info("MCP background successfully captured.")
+        except Exception as e:
+            logging.error(f"Failed to capture MCP background: {e}")
+            logging.warning("Resetting MCP background to default state.")
+            self.reset_background_mcp()
 
+    def reset_background_mcp(self):
+        """
+        Resets the MCP background image to a default empty state.
+
+        Sets the MCP background to a 512x512 array of zeros and logs the reset action.
+        """
         try:
-            if self.parent.vars_green[1].get() == 1:
-                gl = np.round(float(self.lens_green.strvar_ben.get()), 3)
-                gl_pos = np.round(float(self.lens_green.strvar_focus_position.get()), 3)
-            else:
-                gl = 0
-                gl_pos = 0
-        except:
-            gl = np.nan
-            gl_pos = np.nan
+            self.background_mcp = np.zeros([512, 512])
+            logging.info("MCP background has been reset to default (512x512 zeros).")
+        except Exception as e:
+            logging.error(f"Failed to reset MCP background: {e}")
 
-        log_entry = str(
-            int(nr)) + '\t' + self.ent_wp_1_current_power.get() + '\t' + self.ent_wp_2_current_power.get() + '\t' + str(
-            np.round(float(self.strvar_setp.get()), 2)) + '\t' + str(
-            np.round(np.mean(np.unwrap(self.d_phase)), 2)) + '\t' + str(
-            np.round(np.std(np.unwrap(self.d_phase)),
-                     2)) + '\t' + self.mcp_controls['mcp_voltage']['var'].get() + '\t' + str(
-            self.name_cam) + '\t' + self.mcp_controls['mcp_avgs']['var'].get() + '\t' + self.mcp_controls['mcp_exposure_time']['var'].get() + '\t' + str(
-            gl) + '\t' + str(
-            gl_pos) + '\t' + str(
-            rl) + '\t' + str(
-            rl_pos) + '\t' + timestamp + '\n'
-        self.f.write(log_entry)
+    def plot_mcp_image(self, image):
+        """
+        Plots the MCP image and its harmonics profile.
 
-    def enabl_mcp_live(self):
+        Clears previous plots and creates a new pcolormesh for the MCP image. Plots the
+        summed counts along the x-axis in a separate harmonics profile. Adjusts the y-axis
+        limits if fixed-axis mode is enabled. If live treatment display is enabled, applies
+        additional image treatment and plots the treated image.
+
+        Args:
+            image (ndarray): 2D array representing the MCP image.
+        """
+        # Clear and plot MCP image
+        self.ax_mcp.clear()
+        pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), image.T, cmap='turbo')
+        cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
+
+        # Label and set limits for MCP image plot
+        self.ax_mcp.set_xlabel("X (px)")
+        self.ax_mcp.set_ylabel("Y (px)")
+        self.ax_mcp.set_xlim(0, 512)
+        self.ax_mcp.set_ylim(0, 512)
+
+        # Clear and plot harmonics profile
+        self.ax_harmonics.clear()
+        summed_counts = np.sum(image, axis=1)
+        self.ax_harmonics.plot(np.arange(512), summed_counts)
+        self.ax_harmonics.set_xlabel("X (px)")
+        self.ax_harmonics.set_ylabel("Counts (arb.u.)")
+        self.ax_harmonics.set_xlim(0, 512)
+
+        # Update profile min and max, apply fixed y-axis if enabled
+        self.current_harmonics_profile_max = np.max(summed_counts)
+        self.current_harmonics_profile_min = np.min(summed_counts)
+        if self.var_fixyaxis_mcp_options.get() == 1:
+            self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
+
+        # Set harmonics title with sum and max values
+        total_sum = int(np.sum(summed_counts))
+        max_value = int(np.max(image))
+        self.ax_harmonics.set_title(f"Sum: {total_sum}, Max: {max_value}")
+
+        # Adjust layout and draw
+        self.figure_mcp.tight_layout()
+        self.image_mcp.draw()
+        cbar.remove()
+
+        # Apply additional treatment if live display is enabled
+        if self.var_show_treated_live.get() == 1:
+            _, treated_image = self.treat_mcp_image(image)
+            self.plot_treated_image(treated_image)
+
+    def fix_y_axis_mcp(self):
+        """
+        Sets the fixed y-axis limits for MCP harmonics plots based on current profile data.
+
+        If the fix-y-axis option is enabled, updates the min and max y-axis limits
+        for both harmonics and calibrated harmonics plots, adding a 10% margin to
+        the max values for better visualization.
+        """
+        if self.var_fixyaxis_mcp_options.get() == 1:
+            # Calculate y-axis limits for harmonics profile
+            self.ymin_harmonics = self.current_harmonics_profile_min
+            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
+                    self.current_harmonics_profile_max - self.current_harmonics_profile_min
+            )
+
+            # Calculate y-axis limits for calibrated harmonics profile
+            self.ymin_harmonics_calibrate = self.current_harmonics_profile_min_calibrate
+            self.ymax_harmonics_calibrate = self.current_harmonics_profile_max_calibrate + 0.1 * (
+                    self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate
+            )
+
+    # Routines and threads
+    def enable_take_image_mcp_routine_thread(self):
+        """
+        Starts a new thread to execute the MCP image capture routine.
+
+        Sets a flag to indicate that the MCP routine should run, creates a daemon
+        thread for capturing the MCP image, and starts the thread.
+        """
+        self.stop_mcp = False
+        self.take_image_mcp_routine_thread = threading.Thread(target=self.take_image_mcp_routine)
+        self.take_image_mcp_routine_thread.daemon = True
+        self.take_image_mcp_routine_thread.start()
+
+    def take_image_mcp_routine(self):
+        """
+        Executes the routine to capture, save, and plot an MCP image.
+
+        Temporarily sets the button color to red while capturing a single image,
+        takes an image based on the specified averages,saves and plots the image,
+        then restores the button color to green.
+        """
+        try:
+            self.but_mcp_single_image.config(fg='red')
+            comment = self.mcp_controls['comment']['var'].get()
+            self.f.write(f"# SingleImage, {comment}\n")
+            logging.info(f"Taking MCP image with comment: '{comment}'")
+            avg_count = int(self.mcp_controls['mcp_avgs']['var'].get())
+            im = self.take_image_mcp(avg_count)
+            self.write_in_autolog_file(im)
+            self.plot_mcp_image(im)
+        except Exception as e:
+            logging.error(f"Error during MCP image routine: {e}")
+        finally:
+            self.but_mcp_single_image.config(fg='green')
+
+    def update_live_but_mcp(self):
+        """
+        Updates the appearance of the MCP live view button based on its state.
+
+        If live view is active, sets the button to a sunken relief and red text.
+        Otherwise, sets it to a raised relief and green text.
+        """
+        state_config = {
+            "relief": "sunken" if self.live_is_pressed else "raised",
+            "fg": "red" if self.live_is_pressed else "green"
+        }
+        self.but_mcp_liveview.config(**state_config)
+
+    def enable_live_mcp_routine_thread(self):
+        """
+        Toggles and starts the live MCP routine in a new thread.
+
+        Switches the `live_is_pressed` state, updates the live button appearance, and
+        starts a daemon thread to continuously capture and plot MCP images while live
+        mode is active.
+        """
         self.live_is_pressed = not self.live_is_pressed
         self.update_live_but_mcp()
 
         self.stop_mcp = False
-        self.mcp_thread = threading.Thread(target=self.view_live_mcp_cam)
-        self.mcp_thread.daemon = True
-        self.mcp_thread.start()
+        self.take_image_mcp_routine_thread = threading.Thread(target=self.view_live_mcp_routine)
+        self.take_image_mcp_routine_thread.daemon = True
+        self.take_image_mcp_routine_thread.start()
 
-    def update_live_but_mcp(self):
-        if self.live_is_pressed:
-            self.but_mcp_liveview.config(relief="sunken")
-            self.but_mcp_liveview.config(fg='red')
-        else:
-            self.but_mcp_liveview.config(relief="raised")
-            self.but_mcp_liveview.config(fg='green')
+    def view_live_mcp_routine(self):
+        """
+        Continuously captures and plots MCP images while live mode is active.
 
-    def enabl_mcp_simple(self):
-        self.stop_mcp = False
-        self.mcp_thread = threading.Thread(target=self.measure_simple)
-        self.mcp_thread.daemon = True
-        self.mcp_thread.start()
-
-    def view_live_mcp_cam(self):
-        while self.live_is_pressed:
-            im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-            self.plot_MCP(im)
-
-    def measure_simple(self):
-        self.but_mcp_single_image.config(fg='red')
-        self.f.write("# SingleImage, " + self.mcp_controls['comment']['var'].get() + '\n')
-        im = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-        self.save_im(im)
-        self.plot_MCP(im)
-        self.but_mcp_single_image.config(fg='green')
-
-    def treat_image_test(self):
-        im = self.calib_image_mcp
-        E_new, im_new = self.final_image_treatment(im)
-        self.eaxis_correct = E_new
-        self.plot_treated_image(im_new)
-
-    def plot_MCP(self, mcpimage):
-
-        if self.ANDOR_cam is True:
-            self.ax_mcp.clear()
-            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T, cmap='turbo')
-            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
-
-            self.ax_mcp.set_xlabel("X (px)")
-            self.ax_mcp.set_ylabel("Y (px)")
-            self.ax_mcp.set_xlim(0, 512)
-            self.ax_mcp.set_ylim(0, 512)
-
-            self.ax_harmonics.clear()
-            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
-            self.ax_harmonics.set_xlabel("X (px)")
-            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
-
-            self.ax_harmonics.set_xlim(0, 512)
-            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
-            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
-            if self.var_fixyaxis_mcp_options.get() == 1:
-                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
-
-            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
-            self.figure_mcp.tight_layout()
-            self.image_mcp.draw()
-            cbar.remove()
-        else:
-            self.ax_mcp.clear()
-            pcm = self.ax_mcp.pcolormesh(np.arange(0, 512), np.arange(0, 512), mcpimage.T)
-            cbar = self.figure_mcp.colorbar(pcm, ax=self.ax_mcp)
-
-            self.ax_mcp.set_xlabel("X (px)")
-            self.ax_mcp.set_ylabel("Y (px)")
-            self.ax_mcp.set_xlim(0, 512)
-            self.ax_mcp.set_ylim(0, 512)
-            self.ax_harmonics.clear()
-            self.ax_harmonics.plot(np.arange(512), np.sum(mcpimage, 1))
-            self.ax_harmonics.set_xlabel("X (px)")
-            self.ax_harmonics.set_ylabel("Counts (arb.u.)")
-
-            self.ax_harmonics.set_xlim(0, 512)
-            self.current_harmonics_profile_max = np.max(np.sum(mcpimage, 1))
-            self.current_harmonics_profile_min = np.min(np.sum(mcpimage, 1))
-            if self.var_fixyaxis_mcp_options.get() == 1:
-                self.ax_harmonics.set_ylim(self.ymin_harmonics, self.ymax_harmonics)
-
-            self.ax_harmonics.set_title("Sum: {}, Max: {}".format(int(np.sum(np.sum(mcpimage))), int(np.max(mcpimage))))
-            self.figure_mcp.tight_layout()
-            self.image_mcp.draw()
-            cbar.remove()
-
-
-            if self.var_show_treated_live.get() == 1:
-                Etemp, treated = self.final_image_treatment(mcpimage)
-                self.plot_treated_image(treated)
+        Runs in a loop while `live_is_pressed` is True, capturing images and plotting
+        them in real-time. Stops if `live_is_pressed` is toggled off.
+        """
+        try:
+            while self.live_is_pressed:
+                avg_count = int(self.mcp_controls['mcp_avgs']['var'].get())
+                im = self.take_image_mcp(avg_count)
+                self.plot_mcp_image(im)
+        except Exception as e:
+            logging.error(f"Error during live MCP routine: {e}")
+        finally:
+            logging.info("Live MCP is no longer active.")
 
     ## Calibration MCP
-    def export_mcp_treatment_parameters(self):
+
+    def save_mcp_treatment_parameters(self):
+        """
+        Saves MCP treatment parameters to an HDF5 (.h5) file.
+
+        The parameters include background, ROI coordinates, shear, and energy axes.
+        Prompts the user for a filename and handles potential file-saving errors.
+        """
         bg = int(self.var_mcp_calib_background_val.get())
         x1 = int(self.var_mcp_calib_roix_1_val.get())
         x2 = int(self.var_mcp_calib_roix_2_val.get())
         y1 = int(self.var_mcp_calib_roiy_1_val.get())
         y2 = int(self.var_mcp_calib_roiy_2_val.get())
         shear = float(self.var_mcp_calib_shear_val.get())
-        energy_axis = self.eaxis_correct
+        energy_axis = self.e_axis_interpolated
+        energy_axis_not_interpolated = self.e_axis_not_interpolated
+
+        filepath = asksaveasfilename(
+            defaultextension='h5',
+            filetypes=[('HDF5 Files', '*.h5'), ('All Files', '*.*')]
+        )
+
+        if not filepath:
+            logging.warning("File save operation canceled by the user.")
+            return
 
         try:
-            filepath = asksaveasfilename(
-                defaultextension='h5',
-                filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
-            )
-
-            filename = filepath
-
-            with h5py.File(filename, 'w') as hf:
+            with h5py.File(filepath, 'w') as hf:
                 hf.create_dataset('bg', data=bg)
                 hf.create_dataset('x1', data=x1)
                 hf.create_dataset('x2', data=x2)
@@ -935,161 +1020,125 @@ class HHGView(object):
                 hf.create_dataset('y2', data=y2)
                 hf.create_dataset('shear', data=shear)
                 hf.create_dataset('energy_axis', data=energy_axis)
-                hf.create_dataset('energy_axis_temp', data=self.eaxis)
-        except:
-            message = f'Exporting data failed'
+                hf.create_dataset('energy_axis_temp', data=energy_axis_not_interpolated)
+            logging.info(f"MCP treatment parameters successfully saved to {filepath}")
+        except Exception as e:
+            logging.error(f"Failed to save MCP treatment parameters: {e}")
 
     def import_mcp_treatment_parameters(self):
+        """
+        Imports MCP treatment parameters from an HDF5 (.h5) file.
+
+        Reads parameters including background, ROI coordinates, shear, and energy axes,
+        then updates the respective variables. Provides feedback on success or failure.
+        """
         filepath = askopenfilename(
-            filetypes=[('h5 Files', '*.h5'), ('All Files', '*.*')]
+            filetypes=[('HDF5 Files', '*.h5'), ('All Files', '*.*')]
         )
+
+        if not filepath:
+            logging.warning("File open operation canceled by the user.")
+            return
+
         try:
-            hfr = h5py.File(filepath, 'r')
-            energy_axis = np.asarray(hfr.get('energy_axis'))
-            energy_axis_temp = np.asarray(hfr.get('energy_axis_temp'))
-            bg = int(np.asarray(hfr.get('bg')))
-            x1 = int(np.asarray(hfr.get('x1')))
-            x2 = int(np.asarray(hfr.get('x2')))
-            y1 = int(np.asarray(hfr.get('y1')))
-            y2 = int(np.asarray(hfr.get('y2')))
-            shear = float(np.asarray(hfr.get('shear')))
+            with h5py.File(filepath, 'r') as hfr:
+                energy_axis = np.asarray(hfr.get('energy_axis'))
+                energy_axis_not_interpolated = np.asarray(hfr.get('energy_axis_temp'))
+                bg = int(np.asarray(hfr.get('bg')))
+                x1 = int(np.asarray(hfr.get('x1')))
+                x2 = int(np.asarray(hfr.get('x2')))
+                y1 = int(np.asarray(hfr.get('y1')))
+                y2 = int(np.asarray(hfr.get('y2')))
+                shear = float(np.asarray(hfr.get('shear')))
 
-            self.var_mcp_calib_background_val.set(bg)
-            self.var_mcp_calib_roix_1_val.set(x1)
-            self.var_mcp_calib_roix_2_val.set(x2)
-            self.var_mcp_calib_roiy_1_val.set(y1)
-            self.var_mcp_calib_roiy_2_val.set(y2)
-            self.var_mcp_calib_shear_val.set(shear)
-            self.eaxis_correct = energy_axis
-            self.eaxis = energy_axis_temp
+                self.var_mcp_calib_background_val.set(bg)
+                self.var_mcp_calib_roix_1_val.set(x1)
+                self.var_mcp_calib_roix_2_val.set(x2)
+                self.var_mcp_calib_roiy_1_val.set(y1)
+                self.var_mcp_calib_roiy_2_val.set(y2)
+                self.var_mcp_calib_shear_val.set(shear)
+                self.e_axis_interpolated = energy_axis
+                self.e_axis_not_interpolated = energy_axis_not_interpolated
 
-            self.but_import_image_treatment_parameters.config(fg='green')
-
+                self.but_import_image_treatment_parameters.config(fg='green')
+                logging.info(f"MCP treatment parameters successfully imported from {filepath}")
         except Exception as e:
-            message = f'Chose a proper filename'
+            logging.error(f"Failed to import MCP treatment parameters: {e}")
             self.but_import_image_treatment_parameters.config(fg='red')
 
-    def update_calib_energy_mcp(self):
-        im = np.flipud(self.calib_image_mcp_update)
-        profile = np.sum(im, axis=1)
+    def take_calib_image_mcp_routine(self):
+        """
+        Captures and plots a calibration image for the MCP.
+
+        Takes an MCP image with specified averaging, saves it as the calibration image,
+        and plots it for reference.
+        """
         try:
-            smooth = int(self.var_mcp_calib_energy_smooth.get())
-            prom = int(self.var_mcp_calib_energy_prom.get())
-            order = int(self.var_mcp_calib_energy_order.get())
-            firstharmonic = int(self.var_mcp_calib_energy_first_harmonic.get())
+            avg_count = int(self.mcp_controls['mcp_avgs']['var'].get())
+            im_temp = self.take_image_mcp(avg_count)
+            self.calib_image_mcp = im_temp
+            self.plot_calib_image_spatial_mcp(self.calib_image_mcp)
+            logging.info("Calibration image for MCP successfully captured and plotted.")
+        except Exception as e:
+            logging.error(f"Failed to capture or plot calibration image for MCP: {e}")
 
-            data, peaks = help.fit_energy_calibration_peaks(profile, prom=prom, smoothing=smooth)
-            condition = (peaks > int(self.var_mcp_calib_energy_ignore_1.get())) & (
-                    peaks < int(self.var_mcp_calib_energy_ignore_2.get()))
-            peaks = peaks[condition]
-            try:
-                ignore_list = [int(x) for x in self.ent_mcp_calib_energy_ignore_list.get().split(',') if
-                               x.strip().isdigit()]
-                if ignore_list:
-                    for num in ignore_list:
-                        range_value = 5
-                        peaks = peaks[~((num - range_value <= peaks) & (peaks <= num + range_value))]
+    def enable_take_calib_image_mcp_routine_thread(self):
+        """
+        Initiates a separate thread to capture the MCP calibration image.
 
+        Spawns a daemon thread to execute the calibration image capture and plotting
+        routine without blocking the main program.
+        """
+        self.take_calib_image_mcp_thread = threading.Thread(target=self.take_calib_image_mcp_routine)
+        self.take_calib_image_mcp_thread.daemon = True
+        self.take_calib_image_mcp_thread.start()
 
+    def update_calib_spatial_mcp(self):
+        """
+        Updates the MCP calibration image with background subtraction, shear, and region masking.
 
-            except:
-                a = 1
-            h = 6.62607015e-34
-            c = 299792458
-            qe = 1.60217662e-19
-            lam = 1030e-9
-            Eq = h * c / lam
-
-            first_harmonic = firstharmonic
-            E = np.ones_like(peaks) * first_harmonic * Eq / qe + np.arange(0, np.size(peaks)) * order * Eq / qe
-            p = np.polyfit(peaks, E, 3)
-            x_axis = np.arange(0, np.shape(im)[1])
-            scale_x_axis = np.polyval(p, x_axis)
-            E_axis = scale_x_axis
-            self.eaxis = E_axis
-
-            self.plot_calibration_image_energy(profile, data, peaks, E_axis)
-        except:
-            message = f'Enter odd number for smooth! and something reasonable for peak prominence!'
-
-    def update_calib_mcp(self):
+        This function processes the calibration image by subtracting background, applying a shear
+        transformation, and masking the specified ROI. It then displays the updated calibration image.
+        """
         im = self.calib_image_mcp
+
+        # Background subtraction
         try:
             im = im - int(self.var_mcp_calib_background_val.get())
-        except:
-            message = f'Enter something reasonable for the background!!'
+        except Exception as e:
+            logging.error(f"Failed to subtract background: {e}")
+            logging.warning("Provide a valid integer for background subtraction.")
 
+        # Shear transformation
         try:
             im = help.shear_image(im, float(self.var_mcp_calib_shear_val.get()), axis=1)
-        except:
-            message = f'Enter a reasonable value for the shear!'
+        except Exception as e:
+            logging.error(f"Failed to apply shear transformation: {e}")
+            logging.warning("Provide a valid float value for shear.")
+
+        # ROI masking
         try:
             x_cut1 = int(self.var_mcp_calib_roix_1_val.get())
             x_cut2 = int(self.var_mcp_calib_roix_2_val.get())
             y_cut1 = int(self.var_mcp_calib_roiy_1_val.get())
             y_cut2 = int(self.var_mcp_calib_roiy_2_val.get())
-        except:
-            x_cut1 = 0
-            x_cut2 = 512
-            y_cut1 = 0
-            y_cut2 = 512
+        except Exception as e:
+            logging.warning(f"Error in ROI coordinates input, using default values: {e}")
+            x_cut1, x_cut2, y_cut1, y_cut2 = 0, 512, 0, 512
+
+        # Apply ROI mask
         try:
             mask = np.zeros_like(im)
             mask[512 - x_cut2:512 - x_cut1, y_cut1:y_cut2] = 1
             im = im * mask
-        except:
-            message = f'Enter a reasonable value for the ROI!'
+        except Exception as e:
+            logging.error(f"Failed to apply ROI mask: {e}")
+            logging.warning("Provide reasonable ROI values for mask application.")
 
         self.calib_image_mcp_update = im
-        self.plot_calibration_image(self.calib_image_mcp_update)
+        self.plot_calib_image_spatial_mcp(self.calib_image_mcp_update)
 
-    def final_image_treatment(self, im):
-        bg = int(self.var_mcp_calib_background_val.get())
-        x1 = int(self.var_mcp_calib_roix_1_val.get())
-        x2 = int(self.var_mcp_calib_roix_2_val.get())
-        y1 = int(self.var_mcp_calib_roiy_1_val.get())
-        y2 = int(self.var_mcp_calib_roiy_2_val.get())
-        shear = float(self.var_mcp_calib_shear_val.get())
-        correct_E_axis, treated = help.treat_image_new(im, self.eaxis, x1, x2, y1, y2, bg, shear)
-        return correct_E_axis, treated
-
-    def take_calib_image_mcp_thread(self):
-        self.take_calib_image_mcp_thread = threading.Thread(target=self.take_calib_image_mcp)
-        self.take_calib_image_mcp_thread.daemon = True
-        self.take_calib_image_mcp_thread.start()
-
-    def take_calib_image_mcp(self):
-        im_temp = self.take_image(int(self.mcp_controls['mcp_avgs']['var'].get()))
-        self.calib_image_mcp = im_temp
-        self.plot_calibration_image(self.calib_image_mcp)
-
-    def fix_y_axis_mcp(self):
-        if self.var_fixyaxis_mcp_options.get() == 1:
-            self.ymin_harmonics = self.current_harmonics_profile_min
-            self.ymax_harmonics = self.current_harmonics_profile_max + 0.1 * (
-                    self.current_harmonics_profile_max - self.current_harmonics_profile_min)
-            self.ymin_harmonics_calibrate = self.current_harmonics_profile_min_calibrate
-            self.ymax_harmonics_calibrate = self.current_harmonics_profile_max_calibrate + 0.1 * (
-                    self.current_harmonics_profile_max_calibrate - self.current_harmonics_profile_min_calibrate)
-
-    def plot_treated_image(self, image):
-        self.ax_mcp_treated.clear()
-        pcm = self.ax_mcp_treated.pcolormesh(self.eaxis_correct, np.arange(0, 512), image.T)
-        cbar = self.figure_mcp_treated.colorbar(pcm, ax=self.ax_mcp_treated)
-        self.ax_mcp_treated.set_xlim(20, 45)
-        self.ax_mcp_treated.set_xlabel("Energy (eV)")
-        self.ax_mcp_treated.set_ylabel(" y (px) ")
-        self.ax_harmonics_treated.clear()
-        self.ax_harmonics_treated.plot(self.eaxis_correct, np.sum(image, 1), color='k')
-        for har in np.arange(15, 35):
-            self.ax_harmonics_treated.axvline(har * 1.2037300291262136, color='r', alpha=0.4)
-        self.ax_harmonics_treated.set_xlim(20, 45)
-        self.ax_harmonics_treated.set_xlabel("Energy (eV)")
-        self.figure_mcp_treated.tight_layout()
-        self.image_mcp_treated.draw()
-        cbar.remove()
-
-    def plot_calibration_image(self, image):
+    def plot_calib_image_spatial_mcp(self, image):
         image = np.flipud(image)
         self.ax_mcp_calib.clear()
         self.ax_mcp_calib.imshow(image.T, cmap='turbo')
@@ -1115,7 +1164,59 @@ class HHGView(object):
         self.figure_mcp_calib.tight_layout()
         self.image_mcp_calib.draw()
 
-    def plot_calibration_image_energy(self, profile, data, peaks, E_axis):
+    def update_calib_energy_mcp(self):
+        """
+        Updates the energy calibration for the MCP by processing the calibration image.
+
+        This function calculates and fits the energy calibration peaks, applies smoothing,
+        and filters peaks based on specified conditions. The resulting energy axis is then
+        plotted along with the processed profile.
+        """
+        im = np.flipud(self.calib_image_mcp_update)
+        profile = np.sum(im, axis=1)
+
+        try:
+            smooth = int(self.var_mcp_calib_energy_smooth.get())
+            prom = int(self.var_mcp_calib_energy_prom.get())
+            order = int(self.var_mcp_calib_energy_order.get())
+            firstharmonic = int(self.var_mcp_calib_energy_first_harmonic.get())
+
+            data, peaks = help.fit_energy_calibration_peaks(profile, prom=prom, smoothing=smooth)
+            condition = (peaks > int(self.var_mcp_calib_energy_ignore_1.get())) & (
+                    peaks < int(self.var_mcp_calib_energy_ignore_2.get()))
+            peaks = peaks[condition]
+
+            # Filter out specified ignore list peaks
+            try:
+                ignore_list = [int(x) for x in self.ent_mcp_calib_energy_ignore_list.get().split(',') if
+                               x.strip().isdigit()]
+                if ignore_list:
+                    range_value = 5
+                    for num in ignore_list:
+                        peaks = peaks[~((num - range_value <= peaks) & (peaks <= num + range_value))]
+            except Exception as e:
+                logging.warning(f"Error processing ignore list for peaks: {e}")
+
+            # Physical constants and energy axis computation
+            h = 6.62607015e-34  # Planck's constant
+            c = 299792458  # Speed of light
+            qe = 1.60217662e-19  # Elementary charge
+            lam = 1030e-9  # Laser wavelength
+            Eq = h * c / lam
+
+            E = np.ones_like(peaks) * firstharmonic * Eq / qe + np.arange(0, np.size(peaks)) * order * Eq / qe
+            p = np.polyfit(peaks, E, 3)
+            x_axis = np.arange(0, np.shape(im)[1])
+            scale_x_axis = np.polyval(p, x_axis)
+            E_axis = scale_x_axis
+            self.e_axis_not_interpolated = E_axis
+
+            self.plot_calib_image_energy_mcp(profile, data, peaks, E_axis)
+        except Exception as e:
+            logging.error(f"Failed to update MCP energy calibration: {e}")
+            logging.warning("Ensure 'smooth' is odd and 'prom' has a reasonable value.")
+
+    def plot_calib_image_energy_mcp(self, profile, data, peaks, E_axis):
 
         self.ax_harmonics_calib_energy_1.clear()
         self.ax_harmonics_calib_energy_1.plot(np.arange(512), profile, color='g')
@@ -1133,6 +1234,40 @@ class HHGView(object):
         self.ax_harmonics_calib_energy_2.set_ylabel("Counts (arb.u.)")
         self.figure_mcp_calib_energy.tight_layout()
         self.image_mcp_calib_energy.draw()
+
+    # Full mcp image treatment methods
+    def treat_mcp_image(self, image):
+        bg = int(self.var_mcp_calib_background_val.get())
+        x1 = int(self.var_mcp_calib_roix_1_val.get())
+        x2 = int(self.var_mcp_calib_roix_2_val.get())
+        y1 = int(self.var_mcp_calib_roiy_1_val.get())
+        y2 = int(self.var_mcp_calib_roiy_2_val.get())
+        shear = float(self.var_mcp_calib_shear_val.get())
+        e_axis_interpolated, treated_image = help.treat_mcp_image(image, self.e_axis_not_interpolated, x1, x2, y1, y2, bg, shear)
+        return e_axis_interpolated, treated_image
+
+    def plot_treated_image(self, image):
+        self.ax_mcp_treated.clear()
+        pcm = self.ax_mcp_treated.pcolormesh(self.e_axis_interpolated, np.arange(0, 512), image.T)
+        cbar = self.figure_mcp_treated.colorbar(pcm, ax=self.ax_mcp_treated)
+        self.ax_mcp_treated.set_xlim(20, 45)
+        self.ax_mcp_treated.set_xlabel("Energy (eV)")
+        self.ax_mcp_treated.set_ylabel(" y (px) ")
+        self.ax_harmonics_treated.clear()
+        self.ax_harmonics_treated.plot(self.e_axis_interpolated, np.sum(image, 1), color='k')
+        for har in np.arange(15, 35):
+            self.ax_harmonics_treated.axvline(har * 1.2037300291262136, color='r', alpha=0.4)
+        self.ax_harmonics_treated.set_xlim(20, 45)
+        self.ax_harmonics_treated.set_xlabel("Energy (eV)")
+        self.figure_mcp_treated.tight_layout()
+        self.image_mcp_treated.draw()
+        cbar.remove()
+
+    def treat_mcp_image_routine(self):
+        im = self.calib_image_mcp
+        E_new, im_new = self.treat_mcp_image(im)
+        self.e_axis_interpolated = E_new
+        self.plot_treated_image(im_new)
 
     ## Thorlabs Stage communication
     def init_motor_thorlabs(self, motor_attr):
@@ -1330,8 +1465,7 @@ class HHGView(object):
             logging.warning(f"Error disabling {motor_attr}: {str(e)}")
 
     ## Calibration of the waveplates
-    # TODO fix thread to only allow one calibrator at the time
-    def enable_calibrator(self):
+    def enable_calibrator_thread(self):
         """
         Enables the waveplate calibrator by creating and starting a new thread.
 
@@ -1408,7 +1542,7 @@ class HHGView(object):
         return angle
 
 
-    ## Autolog file writting
+    ## Autolog file
     def get_start_image_from_autolog(self):
         """
         Retrieves the next image index from the autolog file, based on the last recorded index.
@@ -1441,9 +1575,39 @@ class HHGView(object):
 
         return start_image
 
+    def write_in_autolog_file(self):
+        """
+        Writes an entry to the autolog with image information.
+
+        Retrieves the next image index, current camera settings, and timestamp,
+        then formats this information into a log entry and writes it to the autolog.
+        """
+        # TODO add more relevant stuff into he autolog
+        try:
+            # Get the next image index and current timestamp
+            nr = self.get_start_image_from_autolog()
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+
+            # Prepare log entry with formatted details
+            log_entry = (
+                f"{int(nr)}\t{self.name_cam}\t"
+                f"{self.mcp_controls['mcp_voltage']['var'].get()}\t"
+                f"{self.mcp_controls['mcp_avgs']['var'].get()}\t"
+                f"{self.mcp_controls['mcp_exposure_time']['var'].get()}\t"
+                f"{timestamp}\n"
+            )
+
+            # Write log entry to file
+            self.f.write(log_entry)
+            logging.info("Autolog entry written successfully.")
+
+        except Exception as e:
+            logging.error(f"Failed to write entry to autolog: {e}")
+
     ## Closing routine
     def on_close(self):
         self.f.close()
+        # TODO proper closing of all possible stages
         self.disable_motor_thorlabs('wp_1')
         if self.cam is not None:
             self.cam.close()
