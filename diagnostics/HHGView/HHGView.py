@@ -13,7 +13,7 @@ import pylablib as pll
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from pylablib.devices import Andor
-#import thorlabs_apt as apt
+import thorlabs_apt as apt
 
 import diagnostics.diagnostics_helpers as help
 from diagnostics.WaveplateCalib import WaveplateCalib

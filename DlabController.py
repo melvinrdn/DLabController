@@ -24,6 +24,7 @@ add a new Type.
 """
 
 
+
 class DLabController:
     """
     A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components

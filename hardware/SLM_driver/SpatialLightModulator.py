@@ -1,5 +1,11 @@
 import numpy as np
 import hardware.SLM_driver._slm_py as slm_driver
+from diagnostics.diagnostics_helpers import ColorFormatter
+import logging
+
+handler = logging.StreamHandler()
+handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 ## SLM-300 Santec
 slm_size = (1200, 1920)
@@ -83,11 +89,11 @@ class SpatialLightModulator:
         try:
             slm_driver.SLM_Disp_Open(self.screen_num)
             slm_driver.SLM_Disp_Data(self.screen_num, self.phase, self.slm_size[1], self.slm_size[0])
-            print(f'Published to the {self.color} SLM.')
+            logging.info(f'Published to the {self.color} SLM.')
         except Exception as e:
-            print(f'Error publishing to the {self.color} SLM: {e}.')
+            logging.error(f'Error publishing to the {self.color} SLM: {e}.')
         finally:
-            print('---------')
+            logging.info('---------')
 
     def close(self):
         """
@@ -101,10 +107,10 @@ class SpatialLightModulator:
         if self.screen_num is not None:
             try:
                 slm_driver.SLM_Disp_Close(self.screen_num)
-                print(f'Connection to the {self.color} SLM has been closed.')
+                logging.info(f'Connection to the {self.color} SLM has been closed.')
             except Exception as e:
-                print(f'Error closing the {self.color} SLM: {e}')
+                logging.error(f'Error closing the {self.color} SLM: {e}')
             finally:
                 self.screen_num = None
         else:
-            print(f'No open connection to close for {self.color} SLM.')
+            logging.info(f'No open connection to close for {self.color} SLM.')
