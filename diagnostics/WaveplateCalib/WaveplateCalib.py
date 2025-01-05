@@ -14,13 +14,14 @@ handler = logging.StreamHandler()
 handler.setFormatter(ColorFormatter("from HHGView: %(levelname)s: %(message)s"))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
+COLORS = ['r', 'g', 'b', 'k', 'c', 'm', 'y']
+CONFIG_FILE = './diagnostics/WaveplateCalib/calib_path.json'  # JSON file to store calibration paths
+NUM_WAVEPLATES = 7
+
 class WPCalib:
     """
     A graphical interface for waveplate calibration using Tkinter and Matplotlib.
     """
-    colors = ['r', 'g', 'b', 'k']
-    config_file = './diagnostics/WaveplateCalib/calib_path.json'  # JSON file to store calibration paths
-
     def __init__(self):
         """
         Initializes the WPCalib instance, setting up the Tkinter window,
@@ -39,12 +40,14 @@ class WPCalib:
         self.initialize_variables()
         self.create_figures()
         self.create_widgets()
+
+        self.config_file = CONFIG_FILE
         self.default_calib = self.load_config()
         self.load_default_calibrations()
 
     def initialize_variables(self):
         """Initializes waveplate maximum and offset values and associated Tkinter StringVars."""
-        for i in range(1, 5):
+        for i in range(1, NUM_WAVEPLATES + 1):
             setattr(self, f'max_wp_{i}', 0)
             setattr(self, f'offset_wp_{i}', 0)
             setattr(self, f'strvar_wp_{i}_max', tk.StringVar(value="0"))
@@ -52,9 +55,9 @@ class WPCalib:
 
     def create_figures(self):
         """Creates the Matplotlib figure and axes for each waveplate plot."""
-        self.fig, self.axes = Figure(figsize=(4, 3), dpi=100), []
-        for i in range(4):
-            ax = self.fig.add_subplot(4, 1, i + 1)
+        self.fig, self.axes = Figure(figsize=(4, 6), dpi=100), []
+        for i in range(NUM_WAVEPLATES):
+            ax = self.fig.add_subplot(NUM_WAVEPLATES , 1, i + 1)
             self.axes.append(ax)
 
         self.img = FigureCanvasTkAgg(self.fig, self.frm_plot)
@@ -68,23 +71,24 @@ class WPCalib:
 
         self.selected_wp = tk.StringVar(self.win)
         self.selected_wp.set("Select WP")
-        self.wp_dropdown = tk.OptionMenu(self.frm_options, self.selected_wp, "1", "2", "3", "4")
-        self.wp_dropdown.grid(row=9, column=0, padx=2, pady=2, sticky='nsew')
+        options = [str(i) for i in range(1, NUM_WAVEPLATES + 1)]
+        self.wp_dropdown = tk.OptionMenu(self.frm_options, self.selected_wp, *options)
+        self.wp_dropdown.grid(row=2*NUM_WAVEPLATES + 1, column=0, padx=2, pady=2, sticky='nsew')
 
         self.btn_update_calib = tk.Button(
-            self.frm_options, text='Update Selected WP Calibration File',
+            self.frm_options, text='Update WP Calibration File',
             command=self.update_selected_calibration_file
         )
-        self.btn_update_calib.grid(row=9, column=1, padx=2, pady=2, sticky='nsew')
+        self.btn_update_calib.grid(row=2*NUM_WAVEPLATES + 1, column=1, padx=2, pady=2, sticky='nsew')
 
         self.btn_exit = tk.Button(
             self.frm_options, text='Exit', command=self.on_close
         )
-        self.btn_exit.grid(row=10, column=0, columnspan=2, padx=2, pady=10, sticky='nsew')
+        self.btn_exit.grid(row=2*NUM_WAVEPLATES + 2, column=0, columnspan=2, padx=2, pady=10, sticky='nsew')
 
     def create_option_labels(self):
         """Generates labels and entries for each waveplate's maximum and offset values."""
-        for i in range(1, 5):
+        for i in range(1, NUM_WAVEPLATES + 1):
             max_label = f"Max WP{i} (W):" if i != 2 else f"Max WP{i} (mW):"
             offset_label = f"WP{i} offset phase (deg):"
             row_offset = (i - 1) * 2
@@ -103,10 +107,10 @@ class WPCalib:
         """Adds buttons for loading calibration files for each waveplate."""
         tk.Label(self.frm_options, text='Open calibration file:').grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
-        for i in range(1, 5):
+        for i in range(1, NUM_WAVEPLATES + 1):
             button = tk.Button(
                 self.frm_options, text=f'Update WP{i}',
-                command=lambda i=i: self.open_calibration_file(i, self.axes[i - 1], self.colors[i - 1])
+                command=lambda i=i: self.open_calibration_file(i, self.axes[i - 1], COLORS[i - 1])
             )
             button.grid(row=i, column=0, padx=2, pady=2, sticky='nsew')
             setattr(self, f'but_calibration_power_wp_{i}', button)
@@ -146,7 +150,7 @@ class WPCalib:
         """Loads calibration data from default files for each waveplate based on current default_calib."""
         for wp_index_str, filepath in self.default_calib.items():
             wp_index = int(wp_index_str)  # Convert key to integer
-            self.open_calibration_file(wp_index, self.axes[wp_index - 1], self.colors[wp_index - 1])
+            self.open_calibration_file(wp_index, self.axes[wp_index - 1], COLORS[wp_index - 1])
 
     def save_config(self):
         """Saves the current calibration configuration to a JSON file."""
@@ -157,7 +161,7 @@ class WPCalib:
     def update_selected_calibration_file(self):
         """Updates the calibration file path for the selected waveplate."""
         wp_index = self.selected_wp.get()
-        if wp_index not in {"1", "2", "3", "4"}:
+        if wp_index not in {"1", "2", "3", "4", "5", "6", "7"}:
             logging.warning("Please select a valid waveplate number.")
             return
 
@@ -173,7 +177,7 @@ class WPCalib:
         """Plots waveplate calibration data."""
         axis.clear()
         axis.plot(angles, powers, f'{color}o')
-        x = np.linspace(0, 180, 100)
+        x = np.linspace(0, 360, 361)
         axis.plot(x, self.cos_func(x, amplitude, phase), color)
         self.img.draw()
 

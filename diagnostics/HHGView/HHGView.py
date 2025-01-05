@@ -12,7 +12,7 @@ import pylablib as pll
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from pylablib.devices import Andor
-import thorlabs_apt as apt
+#import thorlabs_apt as apt
 
 import diagnostics.diagnostics_helpers as help
 from diagnostics.WaveplateCalib import WaveplateCalib
@@ -114,161 +114,275 @@ class HHGView(object):
 
     def initialize_control_panel_2(self):
         self.frm_control_panel_2 = ttk.Notebook(self.frm_control)
-        self.frm_waveplates = ttk.Frame(self.frm_control)
+        self.frm_amplitude = ttk.Frame(self.frm_control)
+        self.frm_ratio = ttk.Frame(self.frm_control)
         self.frm_stages = ttk.Frame(self.frm_control)
         frm_wp_power_cal = ttk.Frame(self.frm_control)
-        self.frm_control_panel_2.add(self.frm_waveplates, text="Waveplate control")
+        self.frm_control_panel_2.add(self.frm_amplitude, text="Individual amplitude control")
+        self.frm_control_panel_2.add(self.frm_ratio, text="Ratio control")
         self.frm_control_panel_2.add(self.frm_stages, text="Stage control")
         self.frm_control_panel_2.add(frm_wp_power_cal, text="Power calibration")
         self.frm_control_panel_2.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate control tab
-        lbl_waveplate = tk.Label(self.frm_waveplates, text='Waveplate')
+        # Individual amplitude control tab
+        lbl_waveplate = tk.Label(self.frm_amplitude, text='Waveplate')
         lbl_waveplate.grid(row=0, column=0, pady=2, padx=2, sticky='nsew')
 
-        lbl_nr = tk.Label(self.frm_waveplates, text='#')
+        lbl_nr = tk.Label(self.frm_amplitude, text='#')
         lbl_nr.grid(row=0, column=1, pady=2, padx=2, sticky='nsew')
 
-        lbl_is = tk.Label(self.frm_waveplates, text='is (deg)')
+        lbl_is = tk.Label(self.frm_amplitude, text='is (deg)')
         lbl_is.grid(row=0, column=2, pady=2, padx=2, sticky='nsew')
 
-        lbl_should = tk.Label(self.frm_waveplates, text='should')
+        lbl_should = tk.Label(self.frm_amplitude, text='should')
         lbl_should.grid(row=0, column=3, pady=2, padx=2, sticky='nsew')
 
-        # Waveplate 1
-        lbl_wp_1 = tk.Label(self.frm_waveplates, text='ω field', fg='red')
+        # Waveplate 1 omega
+        lbl_wp_1 = tk.Label(self.frm_amplitude, text='ω field', fg='red')
         lbl_wp_1.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_1_is = tk.StringVar(self.win, '')
-        self.ent_wp_1_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_1_is)
+        self.ent_wp_1_is = tk.Entry(self.frm_amplitude, width=10, state='readonly', textvariable=self.strvar_wp_1_is)
         self.ent_wp_1_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_1_should = tk.StringVar(self.win, '')
-        self.ent_wp_1_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_should, state='disabled')
+        self.ent_wp_1_should = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_1_should, state='disabled')
         self.ent_wp_1_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_1_nr = tk.StringVar(self.win, '83837725')
-        self.ent_wp_1_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_1_nr)
+        self.ent_wp_1_nr = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_1_nr)
         self.ent_wp_1_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.but_wp_1_init = tk.Button(self.frm_waveplates, text='Init', command=lambda: self.init_motor_thorlabs('wp_1'))
+        self.but_wp_1_init = tk.Button(self.frm_amplitude, text='Init', command=lambda: self.init_motor_thorlabs('wp_1'))
         self.but_wp_1_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_home = tk.Button(self.frm_waveplates, text='Home', command=lambda: self.home_motor_thorlabs('wp_1'), state='disabled')
+        self.but_wp_1_home = tk.Button(self.frm_amplitude, text='Home', command=lambda: self.home_motor_thorlabs('wp_1'), state='disabled')
         self.but_wp_1_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_read = tk.Button(self.frm_waveplates, text='Read', command=lambda: self.read_motor_thorlabs('wp_1'), state='disabled')
+        self.but_wp_1_read = tk.Button(self.frm_amplitude, text='Read', command=lambda: self.read_motor_thorlabs('wp_1'), state='disabled')
         self.but_wp_1_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_move = tk.Button(self.frm_waveplates, text='Move', command=lambda: self.move_motor_thorlabs('wp_1', float(self.strvar_wp_1_should.get())), state='disabled')
+        self.but_wp_1_move = tk.Button(self.frm_amplitude, text='Move', command=lambda: self.move_motor_thorlabs('wp_1', float(self.strvar_wp_1_should.get())), state='disabled')
         self.but_wp_1_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
 
         self.var_wp_1_power = tk.IntVar()
-        self.cb_wp_1_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_1_power, onvalue=1,
+        self.cb_wp_1_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_1_power, onvalue=1,
                                             offvalue=0, command=lambda: logging.info(f"Power mode on wp_1 set to: {self.var_wp_1_power.get()}"))
         self.cb_wp_1_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_1_disable = tk.Button(self.frm_waveplates, text='Disable', command=lambda: self.disable_motor_thorlabs('wp_1'), state='disabled')
+        self.but_wp_1_disable = tk.Button(self.frm_amplitude, text='Disable', command=lambda: self.disable_motor_thorlabs('wp_1'), state='disabled')
         self.but_wp_1_disable.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 2
-        lbl_wp_2 = tk.Label(self.frm_waveplates, text='2ω field', fg='green')
+        # Waveplate 2 omega
+        lbl_wp_2 = tk.Label(self.frm_amplitude, text='2ω field', fg='green')
         lbl_wp_2.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_2_is = tk.StringVar(self.win, '')
-        self.ent_wp_2_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_2_is)
+        self.ent_wp_2_is = tk.Entry(self.frm_amplitude, width=10, state='readonly', textvariable=self.strvar_wp_2_is)
         self.ent_wp_2_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_should = tk.StringVar(self.win, '')
-        self.ent_wp_2_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_should)
+        self.ent_wp_2_should = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_2_should)
         self.ent_wp_2_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_nr = tk.StringVar(self.win, '0000000')
-        self.ent_wp_2_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
+        self.ent_wp_2_nr = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
         self.ent_wp_2_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
 
         self.var_wp_2_power = tk.IntVar()
-        self.wb_wp_2_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_2_power, onvalue=1,
+        self.wb_wp_2_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_2_power, onvalue=1,
                                             offvalue=0, command=None)
         self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_init = tk.Button(self.frm_waveplates, text='Init', command=None)
+        self.but_wp_2_init = tk.Button(self.frm_amplitude, text='Init', command=None)
         self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_home = tk.Button(self.frm_waveplates, text='Home', command=None)
+        self.but_wp_2_home = tk.Button(self.frm_amplitude, text='Home', command=None)
         self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_read = tk.Button(self.frm_waveplates, text='Read', command=None)
+        self.but_wp_2_read = tk.Button(self.frm_amplitude, text='Read', command=None)
         self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_move = tk.Button(self.frm_waveplates, text='Move', command=None)
+        self.but_wp_2_move = tk.Button(self.frm_amplitude, text='Move', command=None)
         self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 3
-        lbl_wp_3 = tk.Label(self.frm_waveplates, text='3ω field', fg='blue')
+        # Waveplate 3 omega
+        lbl_wp_3 = tk.Label(self.frm_amplitude, text='3ω field', fg='blue')
         lbl_wp_3.grid(row=3, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_3_is = tk.StringVar(self.win, '')
-        self.ent_wp_3_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_3_is)
+        self.ent_wp_3_is = tk.Entry(self.frm_amplitude, width=10, state='readonly', textvariable=self.strvar_wp_3_is)
         self.ent_wp_3_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_should = tk.StringVar(self.win, '')
-        self.ent_wp_3_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_3_should)
+        self.ent_wp_3_should = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_3_should)
         self.ent_wp_3_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_nr = tk.StringVar(self.win, '0000000')
-        self.ent_wp_3_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_3_nr)
+        self.ent_wp_3_nr = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_3_nr)
         self.ent_wp_3_nr.grid(row=3, column=1, pady=2, padx=2, sticky='nsew')
 
         self.var_wp_3_power = tk.IntVar()
-        self.wb_wp_3_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_3_power, onvalue=1,
+        self.wb_wp_3_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_3_power, onvalue=1,
                                             offvalue=0, command=None)
         self.wb_wp_3_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_init = tk.Button(self.frm_waveplates, text='Init', command=None)
+        self.but_wp_3_init = tk.Button(self.frm_amplitude, text='Init', command=None)
         self.but_wp_3_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_home = tk.Button(self.frm_waveplates, text='Home', command=None)
+        self.but_wp_3_home = tk.Button(self.frm_amplitude, text='Home', command=None)
         self.but_wp_3_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_read = tk.Button(self.frm_waveplates, text='Read', command=None)
+        self.but_wp_3_read = tk.Button(self.frm_amplitude, text='Read', command=None)
         self.but_wp_3_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_move = tk.Button(self.frm_waveplates, text='Move', command=None)
+        self.but_wp_3_move = tk.Button(self.frm_amplitude, text='Move', command=None)
         self.but_wp_3_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 4
-        lbl_wp_4 = tk.Label(self.frm_waveplates, text='Waveplate 4')
-        lbl_wp_4.grid(row=4, column=0, pady=2, padx=2, sticky='nsew')
+        # Individual amplitude control tab
+        lbl_waveplate = tk.Label(self.frm_ratio, text='Waveplate')
+        lbl_waveplate.grid(row=0, column=0, pady=2, padx=2, sticky='nsew')
+
+        lbl_nr = tk.Label(self.frm_ratio, text='#')
+        lbl_nr.grid(row=0, column=1, pady=2, padx=2, sticky='nsew')
+
+        lbl_is = tk.Label(self.frm_ratio, text='is (deg)')
+        lbl_is.grid(row=0, column=2, pady=2, padx=2, sticky='nsew')
+
+        lbl_should = tk.Label(self.frm_ratio, text='should')
+        lbl_should.grid(row=0, column=3, pady=2, padx=2, sticky='nsew')
+
+        # Waveplate 4 (w vs 2w/3w)
+        lbl_wp_4 = tk.Label(self.frm_ratio, text='ω/(2ω,3ω)')
+        lbl_wp_4.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
 
         self.strvar_wp_4_is = tk.StringVar(self.win, '')
-        self.ent_wp_4_is = tk.Entry(self.frm_waveplates, width=10, state='readonly', textvariable=self.strvar_wp_4_is)
-        self.ent_wp_4_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_4_is = tk.Entry(self.frm_ratio, width=10, state='readonly', textvariable=self.strvar_wp_4_is)
+        self.ent_wp_4_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_should = tk.StringVar(self.win, '')
-        self.ent_wp_4_should = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_4_should)
-        self.ent_wp_4_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+        self.ent_wp_4_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_should)
+        self.ent_wp_4_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_nr = tk.StringVar(self.win, '0000000')
-        self.ent_wp_4_nr = tk.Entry(self.frm_waveplates, width=10, validate='all', textvariable=self.strvar_wp_4_nr)
-        self.ent_wp_4_nr.grid(row=4, column=1, pady=2, padx=2, sticky='nsew')
+        self.ent_wp_4_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_nr)
+        self.ent_wp_4_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
 
         self.var_wp_4_power = tk.IntVar()
-        self.wb_wp_4_power = tk.Checkbutton(self.frm_waveplates, text='Power', variable=self.var_wp_4_power, onvalue=1,
+        self.wb_wp_4_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_4_power, onvalue=1,
                                             offvalue=0, command=None)
-        self.wb_wp_4_power.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+        self.wb_wp_4_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_init = tk.Button(self.frm_waveplates, text='Init', command=None)
-        self.but_wp_4_init.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+        self.but_wp_4_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_4_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_home = tk.Button(self.frm_waveplates, text='Home', command=None)
-        self.but_wp_4_home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+        self.but_wp_4_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_4_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_read = tk.Button(self.frm_waveplates, text='Read', command=None)
-        self.but_wp_4_read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+        self.but_wp_4_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_4_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_move = tk.Button(self.frm_waveplates, text='Move', command=None)
-        self.but_wp_4_move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
+        self.but_wp_4_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_4_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+
+        # Waveplate 5 (2ω,3ω)/3ω
+        lbl_wp_5 = tk.Label(self.frm_ratio, text='(2ω,3ω)/3ω')
+        lbl_wp_5.grid(row=2, column=0, pady=2, padx=2, sticky='nsew')
+
+        self.strvar_wp_5_is = tk.StringVar(self.win, '')
+        self.ent_wp_5_is = tk.Entry(self.frm_ratio, width=10, state='readonly', textvariable=self.strvar_wp_5_is)
+        self.ent_wp_5_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_5_should = tk.StringVar(self.win, '')
+        self.ent_wp_5_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_5_should)
+        self.ent_wp_5_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_5_nr = tk.StringVar(self.win, '0000000')
+        self.ent_wp_5_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_5_nr)
+        self.ent_wp_5_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
+
+        self.var_wp_5_power = tk.IntVar()
+        self.wb_wp_5_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_5_power, onvalue=1,
+                                            offvalue=0, command=None)
+        self.wb_wp_5_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_5_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_5_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_5_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_5_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_5_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_5_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_5_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_5_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+
+        # Waveplate 6 3w/2w
+        lbl_wp_6 = tk.Label(self.frm_ratio, text='3ω/2ω')
+        lbl_wp_6.grid(row=3, column=0, pady=2, padx=2, sticky='nsew')
+
+        self.strvar_wp_6_is = tk.StringVar(self.win, '')
+        self.ent_wp_6_is = tk.Entry(self.frm_ratio, width=10, state='readonly', textvariable=self.strvar_wp_6_is)
+        self.ent_wp_6_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_6_should = tk.StringVar(self.win, '')
+        self.ent_wp_6_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_6_should)
+        self.ent_wp_6_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_6_nr = tk.StringVar(self.win, '0000000')
+        self.ent_wp_6_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_6_nr)
+        self.ent_wp_6_nr.grid(row=3, column=1, pady=2, padx=2, sticky='nsew')
+
+        self.var_wp_6_power = tk.IntVar()
+        self.wb_wp_6_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_6_power, onvalue=1,
+                                            offvalue=0, command=None)
+        self.wb_wp_6_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_6_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_6_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_6_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_6_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_6_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_6_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_6_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_6_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
+
+        # Waveplate 7 (3w Adjuster)
+        lbl_wp_7 = tk.Label(self.frm_ratio, text='3ω Adjustor')
+        lbl_wp_7.grid(row=4, column=0, pady=2, padx=2, sticky='nsew')
+
+        self.strvar_wp_7_is = tk.StringVar(self.win, '')
+        self.ent_wp_7_is = tk.Entry(self.frm_ratio, width=10, state='readonly', textvariable=self.strvar_wp_7_is)
+        self.ent_wp_7_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_7_should = tk.StringVar(self.win, '')
+        self.ent_wp_7_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_7_should)
+        self.ent_wp_7_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
+
+        self.strvar_wp_7_nr = tk.StringVar(self.win, '0000000')
+        self.ent_wp_7_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_7_nr)
+        self.ent_wp_7_nr.grid(row=4, column=1, pady=2, padx=2, sticky='nsew')
+
+        self.var_wp_7_power = tk.IntVar()
+        self.wb_wp_7_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_7_power, onvalue=1,
+                                            offvalue=0, command=None)
+        self.wb_wp_7_power.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_7_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_7_init.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_7_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_7_home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_7_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_7_read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_7_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_7_move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
 
         # Stage control tab
         lbl_stage = tk.Label(self.frm_stages, text='Stage')
