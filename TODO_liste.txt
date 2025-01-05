@@ -1,0 +1,8 @@
+Calibration des waveplates pour ratio effectifs:
+pour w c'est ok
+pour 3w
+- wp_7 doit servir de correction de telle sorte a avoir le meme flux de photon pour w et 2w, cad P_w = 2*P_2w
+  2w sera le facteur limitant, donc calibration de 3w faite par rapport a la puissance P_2w tout en ajustant P_w auto.
+  Donc en tourant wp6 et en ajustant wp7.
+pour 2w
+- ...

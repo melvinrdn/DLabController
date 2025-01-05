@@ -1673,8 +1673,6 @@ class HHGView(object):
         """
         Calculate the effective ratio for the second harmonic (2ω) component.
 
-        TODO: Calibration of the SH Power in function of w power
-
         Returns:
             float: The effective ratio for the second harmonic component.
         """
@@ -1683,8 +1681,6 @@ class HHGView(object):
     def calculate_effective_ratio_third_harmonic(self):
         """
         Calculate the effective ratio for the third harmonic (3ω) component.
-
-        TODO: Calibration of the TH Power in function of SH and w power
 
         Returns:
             tuple: Two terms representing contributions to the third harmonic.
