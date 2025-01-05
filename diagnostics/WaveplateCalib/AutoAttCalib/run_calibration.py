@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from auto_att_calib import AutoAttCalib
+# TODO add wavelength dependency with .sense.correction.wavelength
 
 # Settings
 motor_id = '83837725'

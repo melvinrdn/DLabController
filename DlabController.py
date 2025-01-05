@@ -23,15 +23,14 @@ and the associated function.
 add a new Type. 
 """
 
-
+# The path to the preferred settings are stored into the JSON file
+CONFIG_FILE = './ressources/saved_settings/default_settings_path.json'
 
 class DLabController:
     """
     A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
     in the D-lab.
     """
-    config_file = './ressources/saved_settings/default_settings_path.json'
-
     def __init__(self, parent):
         """
         Initializes the D-Lab Controller interface and sets up the main window components.
@@ -44,6 +43,8 @@ class DLabController:
         logging.info('Initialisation of the interface...')
         self.main_win = parent
         self.style = ttk.Style()
+
+        self.config_file = CONFIG_FILE
 
         self.HHGView_win = None
         self.GasDensity_win = None

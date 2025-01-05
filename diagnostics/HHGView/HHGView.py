@@ -12,7 +12,7 @@ import pylablib as pll
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 from pylablib.devices import Andor
-#import thorlabs_apt as apt
+import thorlabs_apt as apt
 
 import diagnostics.diagnostics_helpers as help
 from diagnostics.WaveplateCalib import WaveplateCalib
@@ -182,29 +182,41 @@ class HHGView(object):
         self.ent_wp_2_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_should = tk.StringVar(self.win, '')
-        self.ent_wp_2_should = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_2_should)
+        self.ent_wp_2_should = tk.Entry(self.frm_amplitude, width=10, validate='all',
+                                        textvariable=self.strvar_wp_2_should, state='disabled')
         self.ent_wp_2_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_2_nr = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_2_nr)
         self.ent_wp_2_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_2_power = tk.IntVar()
-        self.wb_wp_2_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_2_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_2_init = tk.Button(self.frm_amplitude, text='Init', command=None)
+        self.but_wp_2_init = tk.Button(self.frm_amplitude, text='Init',
+                                       command=lambda: self.init_motor_thorlabs('wp_2'))
         self.but_wp_2_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_home = tk.Button(self.frm_amplitude, text='Home', command=None)
+        self.but_wp_2_home = tk.Button(self.frm_amplitude, text='Home',
+                                       command=lambda: self.home_motor_thorlabs('wp_2'), state='disabled')
         self.but_wp_2_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_read = tk.Button(self.frm_amplitude, text='Read', command=None)
+        self.but_wp_2_read = tk.Button(self.frm_amplitude, text='Read',
+                                       command=lambda: self.read_motor_thorlabs('wp_2'), state='disabled')
         self.but_wp_2_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_2_move = tk.Button(self.frm_amplitude, text='Move', command=None)
+        self.but_wp_2_move = tk.Button(self.frm_amplitude, text='Move', command=lambda: self.move_motor_thorlabs('wp_2',
+                                                                                                                 float(
+                                                                                                                     self.strvar_wp_2_should.get())),
+                                       state='disabled')
         self.but_wp_2_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.var_wp_2_power = tk.IntVar()
+        self.cb_wp_2_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_2_power, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Power mode on wp_2 set to: {self.var_wp_2_power.get()}"))
+        self.cb_wp_2_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_2_disable = tk.Button(self.frm_amplitude, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_2'), state='disabled')
+        self.but_wp_2_disable.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 3 omega
         lbl_wp_3 = tk.Label(self.frm_amplitude, text='3ω field', fg='blue')
@@ -215,31 +227,46 @@ class HHGView(object):
         self.ent_wp_3_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_should = tk.StringVar(self.win, '')
-        self.ent_wp_3_should = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_3_should)
+        self.ent_wp_3_should = tk.Entry(self.frm_amplitude, width=10, validate='all',
+                                        textvariable=self.strvar_wp_3_should, state='disabled')
         self.ent_wp_3_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_3_nr = tk.Entry(self.frm_amplitude, width=10, validate='all', textvariable=self.strvar_wp_3_nr)
         self.ent_wp_3_nr.grid(row=3, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_3_power = tk.IntVar()
-        self.wb_wp_3_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_3_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_3_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_3_init = tk.Button(self.frm_amplitude, text='Init', command=None)
+        self.but_wp_3_init = tk.Button(self.frm_amplitude, text='Init',
+                                       command=lambda: self.init_motor_thorlabs('wp_3'))
         self.but_wp_3_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_home = tk.Button(self.frm_amplitude, text='Home', command=None)
+        self.but_wp_3_home = tk.Button(self.frm_amplitude, text='Home',
+                                       command=lambda: self.home_motor_thorlabs('wp_3'), state='disabled')
         self.but_wp_3_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_read = tk.Button(self.frm_amplitude, text='Read', command=None)
+        self.but_wp_3_read = tk.Button(self.frm_amplitude, text='Read',
+                                       command=lambda: self.read_motor_thorlabs('wp_3'), state='disabled')
         self.but_wp_3_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_3_move = tk.Button(self.frm_amplitude, text='Move', command=None)
+        self.but_wp_3_move = tk.Button(self.frm_amplitude, text='Move', command=lambda: self.move_motor_thorlabs('wp_3',
+                                                                                                                 float(
+                                                                                                                     self.strvar_wp_3_should.get())),
+                                       state='disabled')
         self.but_wp_3_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Individual amplitude control tab
+        self.var_wp_3_power = tk.IntVar()
+        self.cb_wp_3_power = tk.Checkbutton(self.frm_amplitude, text='Power', variable=self.var_wp_3_power, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Power mode on wp_3 set to: {self.var_wp_3_power.get()}"))
+        self.cb_wp_3_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_3_disable = tk.Button(self.frm_amplitude, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_3'), state='disabled')
+        self.but_wp_3_disable.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
+
+        lbl_wp_3_ratio = tk.Label(self.frm_amplitude, text='3ω field', fg='blue')
+        lbl_wp_3.grid(row=3, column=0, pady=2, padx=2, sticky='nsew')
+
+        # Ratio control tab
         lbl_waveplate = tk.Label(self.frm_ratio, text='Waveplate')
         lbl_waveplate.grid(row=0, column=0, pady=2, padx=2, sticky='nsew')
 
@@ -252,7 +279,7 @@ class HHGView(object):
         lbl_should = tk.Label(self.frm_ratio, text='should')
         lbl_should.grid(row=0, column=3, pady=2, padx=2, sticky='nsew')
 
-        # Waveplate 4 (w vs 2w/3w)
+        # Waveplate 4 omega/(2ω,3ω)
         lbl_wp_4 = tk.Label(self.frm_ratio, text='ω/(2ω,3ω)')
         lbl_wp_4.grid(row=1, column=0, pady=2, padx=2, sticky='nsew')
 
@@ -261,29 +288,40 @@ class HHGView(object):
         self.ent_wp_4_is.grid(row=1, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_should = tk.StringVar(self.win, '')
-        self.ent_wp_4_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_should)
+        self.ent_wp_4_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_should,
+                                        state='disabled')
         self.ent_wp_4_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_4_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_nr)
         self.ent_wp_4_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_4_power = tk.IntVar()
-        self.wb_wp_4_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_4_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_4_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_4_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_4_init = tk.Button(self.frm_ratio, text='Init', command=lambda: self.init_motor_thorlabs('wp_4'))
         self.but_wp_4_init.grid(row=1, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_4_home = tk.Button(self.frm_ratio, text='Home', command=lambda: self.home_motor_thorlabs('wp_4'),
+                                       state='disabled')
         self.but_wp_4_home.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_4_read = tk.Button(self.frm_ratio, text='Read', command=lambda: self.read_motor_thorlabs('wp_4'),
+                                       state='disabled')
         self.but_wp_4_read.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_4_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_4_move = tk.Button(self.frm_ratio, text='Move', command=lambda: self.move_motor_thorlabs('wp_4',
+                                                                                                             float(
+                                                                                                                 self.strvar_wp_4_should.get())),
+                                       state='disabled')
         self.but_wp_4_move.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
+
+        self.var_wp_4_ratio = tk.IntVar(value=1)
+        self.cb_wp_4_ratio = tk.Checkbutton(self.frm_ratio, text='Ratio', variable=self.var_wp_4_ratio, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Ratio mode on wp_4 set to: {self.var_wp_4_ratio.get()}"))
+        self.cb_wp_4_ratio.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_4_disable = tk.Button(self.frm_ratio, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_4'), state='disabled')
+        self.but_wp_4_disable.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
 
         # Waveplate 5 (2ω,3ω)/3ω
         lbl_wp_5 = tk.Label(self.frm_ratio, text='(2ω,3ω)/3ω')
@@ -294,31 +332,42 @@ class HHGView(object):
         self.ent_wp_5_is.grid(row=2, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_5_should = tk.StringVar(self.win, '')
-        self.ent_wp_5_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_5_should)
+        self.ent_wp_5_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_5_should,
+                                        state='disabled')
         self.ent_wp_5_should.grid(row=2, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_5_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_5_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_5_nr)
         self.ent_wp_5_nr.grid(row=2, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_5_power = tk.IntVar()
-        self.wb_wp_5_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_5_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_5_power.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_5_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_5_init = tk.Button(self.frm_ratio, text='Init', command=lambda: self.init_motor_thorlabs('wp_5'))
         self.but_wp_5_init.grid(row=2, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_5_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_5_home = tk.Button(self.frm_ratio, text='Home', command=lambda: self.home_motor_thorlabs('wp_5'),
+                                       state='disabled')
         self.but_wp_5_home.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_5_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_5_read = tk.Button(self.frm_ratio, text='Read', command=lambda: self.read_motor_thorlabs('wp_5'),
+                                       state='disabled')
         self.but_wp_5_read.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_5_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_5_move = tk.Button(self.frm_ratio, text='Move', command=lambda: self.move_motor_thorlabs('wp_5',
+                                                                                                             float(
+                                                                                                                 self.strvar_wp_5_should.get())),
+                                       state='disabled')
         self.but_wp_5_move.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 6 3w/2w
+        self.var_wp_5_ratio = tk.IntVar(value=1)
+        self.cb_wp_5_ratio = tk.Checkbutton(self.frm_ratio, text='Ratio', variable=self.var_wp_5_ratio, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Ratio mode on wp_5 set to: {self.var_wp_5_ratio.get()}"))
+        self.cb_wp_5_ratio.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_5_disable = tk.Button(self.frm_ratio, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_5'), state='disabled')
+        self.but_wp_5_disable.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
+
+        # Waveplate 6 3ω/2ω
         lbl_wp_6 = tk.Label(self.frm_ratio, text='3ω/2ω')
         lbl_wp_6.grid(row=3, column=0, pady=2, padx=2, sticky='nsew')
 
@@ -327,31 +376,42 @@ class HHGView(object):
         self.ent_wp_6_is.grid(row=3, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_6_should = tk.StringVar(self.win, '')
-        self.ent_wp_6_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_6_should)
+        self.ent_wp_6_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_6_should,
+                                        state='disabled')
         self.ent_wp_6_should.grid(row=3, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_6_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_6_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_6_nr)
         self.ent_wp_6_nr.grid(row=3, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_6_power = tk.IntVar()
-        self.wb_wp_6_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_6_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_6_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_6_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_6_init = tk.Button(self.frm_ratio, text='Init', command=lambda: self.init_motor_thorlabs('wp_6'))
         self.but_wp_6_init.grid(row=3, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_6_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_6_home = tk.Button(self.frm_ratio, text='Home', command=lambda: self.home_motor_thorlabs('wp_6'),
+                                       state='disabled')
         self.but_wp_6_home.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_6_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_6_read = tk.Button(self.frm_ratio, text='Read', command=lambda: self.read_motor_thorlabs('wp_6'),
+                                       state='disabled')
         self.but_wp_6_read.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_6_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_6_move = tk.Button(self.frm_ratio, text='Move', command=lambda: self.move_motor_thorlabs('wp_6',
+                                                                                                             float(
+                                                                                                                 self.strvar_wp_6_should.get())),
+                                       state='disabled')
         self.but_wp_6_move.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
 
-        # Waveplate 7 (3w Adjuster)
+        self.var_wp_6_ratio = tk.IntVar(value=1)
+        self.cb_wp_6_ratio = tk.Checkbutton(self.frm_ratio, text='Ratio', variable=self.var_wp_6_ratio, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Ratio mode on wp_6 set to: {self.var_wp_6_ratio.get()}"))
+        self.cb_wp_6_ratio.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_6_disable = tk.Button(self.frm_ratio, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_6'), state='disabled')
+        self.but_wp_6_disable.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
+
+        # Waveplate 7 (3ω Adjustor)
         lbl_wp_7 = tk.Label(self.frm_ratio, text='3ω Adjustor')
         lbl_wp_7.grid(row=4, column=0, pady=2, padx=2, sticky='nsew')
 
@@ -360,30 +420,40 @@ class HHGView(object):
         self.ent_wp_7_is.grid(row=4, column=2, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_7_should = tk.StringVar(self.win, '')
-        self.ent_wp_7_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_7_should)
+        self.ent_wp_7_should = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_7_should,
+                                        state='disabled')
         self.ent_wp_7_should.grid(row=4, column=3, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_7_nr = tk.StringVar(self.win, '0000000')
         self.ent_wp_7_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_7_nr)
         self.ent_wp_7_nr.grid(row=4, column=1, pady=2, padx=2, sticky='nsew')
 
-        self.var_wp_7_power = tk.IntVar()
-        self.wb_wp_7_power = tk.Checkbutton(self.frm_ratio, text='Power', variable=self.var_wp_7_power, onvalue=1,
-                                            offvalue=0, command=None)
-        self.wb_wp_7_power.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.but_wp_7_init = tk.Button(self.frm_ratio, text='Init', command=None)
+        self.but_wp_7_init = tk.Button(self.frm_ratio, text='Init', command=lambda: self.init_motor_thorlabs('wp_7'))
         self.but_wp_7_init.grid(row=4, column=4, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_7_home = tk.Button(self.frm_ratio, text='Home', command=None)
+        self.but_wp_7_home = tk.Button(self.frm_ratio, text='Home', command=lambda: self.home_motor_thorlabs('wp_7'),
+                                       state='disabled')
         self.but_wp_7_home.grid(row=4, column=5, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_7_read = tk.Button(self.frm_ratio, text='Read', command=None)
+        self.but_wp_7_read = tk.Button(self.frm_ratio, text='Read', command=lambda: self.read_motor_thorlabs('wp_7'),
+                                       state='disabled')
         self.but_wp_7_read.grid(row=4, column=6, padx=2, pady=2, sticky='nsew')
 
-        self.but_wp_7_move = tk.Button(self.frm_ratio, text='Move', command=None)
+        self.but_wp_7_move = tk.Button(self.frm_ratio, text='Move', command=lambda: self.move_motor_thorlabs('wp_7',
+                                                                                                             float(
+                                                                                                                 self.strvar_wp_7_should.get())),
+                                       state='disabled')
         self.but_wp_7_move.grid(row=4, column=7, padx=2, pady=2, sticky='nsew')
 
+        self.var_wp_7_ratio = tk.IntVar(value=1)
+        self.cb_wp_7_ratio = tk.Checkbutton(self.frm_ratio, text='Ratio', variable=self.var_wp_7_ratio, onvalue=1,
+                                            offvalue=0, command=lambda: logging.info(
+                f"Ratio mode on wp_7 set to: {self.var_wp_7_ratio.get()}"))
+        self.cb_wp_7_ratio.grid(row=4, column=8, padx=2, pady=2, sticky='nsew')
+
+        self.but_wp_7_disable = tk.Button(self.frm_ratio, text='Disable',
+                                          command=lambda: self.disable_motor_thorlabs('wp_7'), state='disabled')
+        self.but_wp_7_disable.grid(row=4, column=9, padx=2, pady=2, sticky='nsew')
         # Stage control tab
         lbl_stage = tk.Label(self.frm_stages, text='Stage')
         lbl_stage.grid(row=0, column=0, pady=2, padx=2, sticky='nsew')
@@ -513,97 +583,20 @@ class HHGView(object):
         self.but_open_calibrator = tk.Button(frm_wp_power_cal, text='Open calibrator', command=self.enable_calibrator_thread)
         self.but_open_calibrator.grid(row=0, column=0, padx=2, pady=2, sticky='nsew')
 
-        # Laser parameter
-        lbl_laser_param = tk.Label(frm_wp_power_cal, text='Laser')
-        lbl_laser_param.grid(row=0, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_laser_att = tk.Label(frm_wp_power_cal, text='Attenuation:')
-        lbl_laser_att.grid(row=1, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_laser_att = tk.StringVar(self.win, '100')
-        self.ent_laser_att = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_laser_att)
-        self.ent_laser_att.grid(row=1, column=1, padx=2, pady=2, sticky='nsew')
-
-        lbl_laser_pp = tk.Label(frm_wp_power_cal, text='Pulse picker:')
-        lbl_laser_pp.grid(row=2, column=0, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_laser_pp = tk.StringVar(self.win, '1')
-        self.ent_laser_pp = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_laser_pp)
-        self.ent_laser_pp.grid(row=2, column=1, padx=2, pady=2, sticky='nsew')
-
-        # Power parameter
-        lbl_omega_power = tk.Label(frm_wp_power_cal, text='Max power (W):')
-        lbl_omega_power.grid(row=1, column=5, padx=2, pady=2, sticky='nsew')
-
-        lbl_omega_offset = tk.Label(frm_wp_power_cal, text='Offset phase (deg):')
-        lbl_omega_offset.grid(row=2, column=5, padx=2, pady=2, sticky='nsew')
-
-        lbl_omega_current_power = tk.Label(frm_wp_power_cal, text='Current power (W):')
-        lbl_omega_current_power.grid(row=3, column=5, padx=2, pady=2, sticky='nsew')
-
-        # Omega
-        lbl_omega = tk.Label(frm_wp_power_cal, text='ω field', fg='red')
-        lbl_omega.grid(row=0, column=6, padx=2, pady=2, sticky='nsew')
-
+        # Init variable calibration
         self.strvar_wp_1_power = tk.StringVar(self.win, '0')
-        self.ent_wp_1_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_power)
-        self.ent_wp_1_power.grid(row=1, column=6, padx=2, pady=2, sticky='nsew')
-
         self.strvar_wp_1_offset = tk.StringVar(self.win, '0')
-        self.ent_wp_1_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_offset)
-        self.ent_wp_1_offset.grid(row=2, column=6, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_1_current_power = tk.StringVar(self.win, '0')
-        self.ent_wp_1_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_1_current_power)
-        self.ent_wp_1_current_power.grid(row=3, column=6, padx=2, pady=2, sticky='nsew')
-
-        # 2 Omega
-        lbl_2omega = tk.Label(frm_wp_power_cal, text='2ω field', fg='green')
-        lbl_2omega.grid(row=0, column=7, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_2_power = tk.StringVar(self.win, '0')
-        self.ent_wp_2_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_power)
-        self.ent_wp_2_power.grid(row=1, column=7, padx=2, pady=2, sticky='nsew')
-
         self.strvar_wp_2_offset = tk.StringVar(self.win, '0')
-        self.ent_wp_2_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_offset)
-        self.ent_wp_2_offset.grid(row=2, column=7, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_2_current_power = tk.StringVar(self.win, '0')
-        self.ent_wp_2_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_2_current_power)
-        self.ent_wp_2_current_power.grid(row=3, column=7, padx=2, pady=2, sticky='nsew')
-
-        # 3 Omega
-        lbl_3omega = tk.Label(frm_wp_power_cal, text='3ω field', fg='blue')
-        lbl_3omega.grid(row=0, column=8, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_3_power = tk.StringVar(self.win, '0')
-        self.ent_wp_3_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_power)
-        self.ent_wp_3_power.grid(row=1, column=8, padx=2, pady=2, sticky='nsew')
-
         self.strvar_wp_3_offset = tk.StringVar(self.win, '0')
-        self.ent_wp_3_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_offset)
-        self.ent_wp_3_offset.grid(row=2, column=8, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_3_current_power = tk.StringVar(self.win, '0')
-        self.ent_wp_3_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_3_current_power)
-        self.ent_wp_3_current_power.grid(row=3, column=8, padx=2, pady=2, sticky='nsew')
-
-        # Waveplate 4
-        lbl_wp_4_calib = tk.Label(frm_wp_power_cal, text='Waveplate 4')
-        lbl_wp_4_calib.grid(row=0, column=9, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_4_power = tk.StringVar(self.win, '0')
-        self.ent_wp_4_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_4_power)
-        self.ent_wp_4_power.grid(row=1, column=9, padx=2, pady=2, sticky='nsew')
 
         self.strvar_wp_4_offset = tk.StringVar(self.win, '0')
-        self.ent_wp_4_offset = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_4_offset)
-        self.ent_wp_4_offset.grid(row=2, column=9, padx=2, pady=2, sticky='nsew')
-
-        self.strvar_wp_4_current_power = tk.StringVar(self.win, '0')
-        self.ent_wp_4_current_power = tk.Entry(frm_wp_power_cal, width=10, validate='all', textvariable=self.strvar_wp_4_current_power)
-        self.ent_wp_4_current_power.grid(row=3, column=9, padx=2, pady=2, sticky='nsew')
+        self.strvar_wp_5_offset = tk.StringVar(self.win, '0')
+        self.strvar_wp_6_offset = tk.StringVar(self.win, '0')
+        self.strvar_wp_7_offset = tk.StringVar(self.win, '0')
 
     def initialize_control_panel_3(self):
         self.frm_control_panel_3 = ttk.Notebook(self.frm_control)
@@ -1431,10 +1424,7 @@ class HHGView(object):
                 button_widget.config(fg='red')
             return
 
-        position = self.read_motor_thorlabs(motor_attr)
-        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
-        if strvar is not None:
-            strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
+        self.read_motor_thorlabs(motor_attr)
 
     def home_motor_thorlabs(self, motor_attr):
         """
@@ -1454,16 +1444,12 @@ class HHGView(object):
         except Exception as e:
             logging.warning(f"Unable to home {motor_attr}: {e}")
 
-        position = self.read_motor_thorlabs(motor_attr)
-        strvar = getattr(self, f"strvar_{motor_attr}_is", None)
-        strvar.set(f"{position:.3f}")
+        self.read_motor_thorlabs(motor_attr)
 
     def read_motor_thorlabs(self, motor_attr):
         """
         Reads the current position of a Thorlabs motor and updates the display.
-
-        Retrieves and logs the motor’s position and converts it to power if the
-        GUI is in power mode. Updates the GUI with the motor’s position and power.
+        Retrieves and logs the motor’s position and converts it to power.
 
         Args:
             motor_attr (str): The attribute name of the motor to read.
@@ -1486,25 +1472,19 @@ class HHGView(object):
         strvar = getattr(self, f"strvar_{motor_attr}_is", None)
         strvar.set(f"{position:.3f}" if position is not None else "#ERROR")
 
-        amplitude = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
-        offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
-        power = self.angle_to_power(position, amplitude, offset)
-        strvar_current_power = getattr(self, f"strvar_{motor_attr}_current_power", None)
-        strvar_current_power.set(f"{power :.3f}" if power is not None else "#ERROR")
-
         return position
 
     def move_motor_thorlabs(self, motor_attr, target_position):
         """
-        Moves a Thorlabs motor to a specified position or power level.
+        Moves a Thorlabs motor to a specified position, power level, or ratio.
 
-        Checks if the target position is valid. If the motor is in power mode,
-        converts the target power to an angle. Then moves the motor to the target
-        position, logs the movement, and updates the GUI with the new position.
+        Checks if the target position is valid. If the motor is in power or ratio mode,
+        converts the target value to an angle. Then moves the motor to the target position,
+        logs the movement, and updates the GUI with the new position.
 
         Args:
             motor_attr (str): The attribute name of the motor to move.
-            target_position (float): The target position or power level for the motor.
+            target_position (float): The target position, power level, or ratio for the motor.
         """
         if not isinstance(target_position, (float, int)):
             logging.warning(f"Invalid target position for {motor_attr}: {target_position}. Must be a number.")
@@ -1515,9 +1495,12 @@ class HHGView(object):
             logging.warning(f"{motor_attr} does not exist or is not initialized.")
             return
 
-        power_mode = getattr(self, f'var_{motor_attr}_power', None)
-        if power_mode.get() == 1:
-            try:
+        try:
+            power_mode = getattr(self, f'var_{motor_attr}_power', None)
+            ratio_mode = getattr(self, f'var_{motor_attr}_ratio', None)
+
+            if power_mode and power_mode.get() == 1:
+                # Convert power to angle
                 max_power = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
                 amplitude = max_power
                 offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
@@ -1528,19 +1511,25 @@ class HHGView(object):
                 target_position = self.power_to_angle(target_position, amplitude, offset) + 90
                 logging.info(f"Converted target position with power mode for {motor_attr}: {target_position:.3f}")
 
-            except (ValueError, AttributeError) as e:
-                logging.warning(f"Failed to convert power to angle for {motor_attr}: {e}")
-                return
+            elif ratio_mode and ratio_mode.get() == 1:
+                # Convert ratio to angle
+                if not (0 <= target_position <= 1):
+                    logging.warning(
+                        f"Requested ratio {target_position:.3f} is out of bounds [0, 1]. Clamping to valid range.")
+                    target_position = max(0, min(1, target_position))
+                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+                target_position = self.ratio_to_angle(target_position, offset) + 90
+                logging.info(f"Converted target position with ratio mode for {motor_attr}: {target_position:.3f}")
 
-        try:
+            # Move the motor
             logging.info(f"Moving {motor_attr} to position: {target_position:.3f}")
             motor.move_to(target_position, blocking=True)
             logging.info(f"{motor_attr} moved to position {target_position:.3f}")
             self.read_motor_thorlabs(motor_attr)
 
-        except Exception as e:
-            logging.warning(f"Could not move {motor_attr} to position {target_position}: {e}")
-            self.read_motor_thorlabs(motor_attr)
+        except (ValueError, AttributeError) as e:
+            logging.warning(f"Failed to process target position for {motor_attr}: {e}")
+
 
     def disable_motor_thorlabs(self, motor_attr):
         """
@@ -1596,15 +1585,12 @@ class HHGView(object):
         Opens the waveplate calibrator and loads maximum power and offset values.
 
         Initializes the waveplate calibrator object and retrieves max power and
-        offset values for each waveplate (1 to 4). These values are displayed
-        in the corresponding GUI elements.
+        offset values for each waveplate.
         """
         self.calibrator = WaveplateCalib.WPCalib()
-        for i in range(1, 5):
-            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
-            offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
-            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
-            getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
+        for i in range(1, 8):
+            round(getattr(self.calibrator, f"max_wp_{i}"), 2)
+            round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
 
     def open_calibrator_on_start(self):
         """
@@ -1623,6 +1609,87 @@ class HHGView(object):
             logging.error(f"Failed to access waveplate attributes: {e}")
         except Exception as e:
             logging.error(f"An unexpected error occurred in open_calibrator_on_start: {e}")
+
+    def angle_to_ratio(self, angle, offset):
+        """
+        Converts an angle to a normalized ratio based on amplitude and offset values.
+        Ensures the output is between 0 and 1, with 1 at the maximum.
+
+        The measurement need to be made on the S polarization branch, as the ratio is defined to be S_pol/P_pol
+
+        Args:
+            angle (float): The angle in degrees.
+            offset (float): The offset angle for calibration in degrees.
+
+        Returns:
+            float: The calculated ratio corresponding to the angle.
+        """
+        ratio = 0.5 * np.cos(2 * np.pi / 90 * angle - 2 * np.pi / 90 * offset) + 0.5
+        return ratio
+
+
+    def ratio_to_angle(self, ratio, offset):
+        """
+        Converts a normalized ratio [0, 1] back to the corresponding waveplate angle.
+
+        Args:
+            ratio (float): The normalized ratio [0, 1].
+            offset (float): The offset angle for calibration in degrees.
+
+        Returns:
+            float: The calculated angle in degrees corresponding to the ratio.
+        """
+        if not (0 <= ratio <= 1):
+            raise ValueError("Ratio must be between 0 and 1.")
+        return (45 / np.pi) * np.arccos(2 * (ratio - 0.5)) + offset
+
+    def calculate_ratio_from_position_and_offset(self, motor_attr):
+        """
+        Calculate the ratio based on the position and offset of a motor attribute.
+
+        Args:
+            motor_attr (str): The name of the motor attribute.
+
+        Returns:
+            float: The calculated ratio.
+        """
+        position = float(getattr(self, f"strvar_{motor_attr}_is", None))
+        offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+        return self.angle_to_ratio(position, offset)
+
+    def calculate_effective_ratio_fundamental(self):
+        """
+        Calculate the effective ratio for the fundamental (ω) component.
+
+        The ratio of a wave plate (WP) is defined between 0 and 1, where 1 corresponds to
+        all light going to the S-polarization and nothing to the P-polarization.
+
+        Returns:
+            float: The effective ratio for the fundamental component.
+        """
+        return self.calculate_ratio_from_position_and_offset('wp_4')
+
+    def calculate_effective_ratio_second_harmonic(self):
+        """
+        Calculate the effective ratio for the second harmonic (2ω) component.
+
+        TODO: Calibration of the SH Power in function of w power
+
+        Returns:
+            float: The effective ratio for the second harmonic component.
+        """
+        return NotImplemented
+
+    def calculate_effective_ratio_third_harmonic(self):
+        """
+        Calculate the effective ratio for the third harmonic (3ω) component.
+
+        TODO: Calibration of the TH Power in function of SH and w power
+
+        Returns:
+            tuple: Two terms representing contributions to the third harmonic.
+        """
+        return NotImplemented
 
     def angle_to_power(self, angle, amplitude, offset):
         """
@@ -1654,7 +1721,6 @@ class HHGView(object):
         A = amplitude / 2
         angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
         return angle
-
 
     ## Autolog file
     def get_start_image_from_autolog(self):
