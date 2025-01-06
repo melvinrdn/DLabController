@@ -1583,17 +1583,18 @@ class HHGView(object):
 
     def open_calibrator(self):
         """
-        Opens the waveplate calibrator and loads maximum power and offset values.
+        Opens the waveplate calibrator and sets values.
 
-        Initializes the waveplate calibrator object and retrieves max power and
-        offset values for each waveplate.
+        Sets maximum power and offset for waveplates 1, 2, and 3, and only offset
+        for waveplates 4, 5, 6, and 7.
         """
         self.calibrator = WaveplateCalib.WPCalib()
         for i in range(1, 8):
-            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
             offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
-            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
             getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
+            if i <= 3:  # Set power for waveplates 1, 2, and 3
+                max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
+                getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
 
     def open_calibrator_on_start(self):
         """
