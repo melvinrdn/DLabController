@@ -1590,8 +1590,10 @@ class HHGView(object):
         """
         self.calibrator = WaveplateCalib.WPCalib()
         for i in range(1, 8):
-            round(getattr(self.calibrator, f"max_wp_{i}"), 2)
-            round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
+            max_power = round(getattr(self.calibrator, f"max_wp_{i}"), 2)
+            offset = round(getattr(self.calibrator, f"offset_wp_{i}"), 2)
+            getattr(self, f"strvar_wp_{i}_power").set(str(max_power))
+            getattr(self, f"strvar_wp_{i}_offset").set(str(offset))
 
     def open_calibrator_on_start(self):
         """
