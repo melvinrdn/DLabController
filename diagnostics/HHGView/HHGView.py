@@ -1501,9 +1501,10 @@ class HHGView(object):
 
             if power_mode and power_mode.get() == 1:
                 # Convert power to angle
-                max_power = float(getattr(self, f'ent_{motor_attr}_power', 0).get())
+                max_power = float(getattr(self, f'strvar_{motor_attr}_power', None).get())
+                print(max_power)
                 amplitude = max_power
-                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+                offset = float(getattr(self, f'strvar_{motor_attr}_offset', None).get())
                 if target_position > max_power:
                     logging.warning(
                         f"Requested power {target_position:.3f} exceeds max of {max_power:.3f}. Setting to max.")
@@ -1517,7 +1518,7 @@ class HHGView(object):
                     logging.warning(
                         f"Requested ratio {target_position:.3f} is out of bounds [0, 1]. Clamping to valid range.")
                     target_position = max(0, min(1, target_position))
-                offset = float(getattr(self, f'ent_{motor_attr}_offset', 0).get())
+                offset = float(getattr(self, f'strvar_{motor_attr}_offset', None).get())
                 target_position = self.ratio_to_angle(target_position, offset) + 90
                 logging.info(f"Converted target position with ratio mode for {motor_attr}: {target_position:.3f}")
 
