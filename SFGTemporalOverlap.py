@@ -1,36 +1,38 @@
 import sys
 import os
 import time
-import numpy as np
-import thorlabs_apt as apt
-import hardware.avaspec_driver._avs_py as avs
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import datetime
+
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QMessageBox, QTextEdit, QLineEdit, QLabel, \
     QHBoxLayout, QComboBox, QSplitter, QCheckBox
 from PyQt5.QtCore import QThread, pyqtSignal
-import datetime
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+from AvaspecController import AvaspecController
+from ThorlabsController import ThorlabsController
 
 
 class MeasurementThread(QThread):
     log_signal = pyqtSignal(str)
     plot_signal = pyqtSignal(object, object)
 
-    def __init__(self, motor, active_spec_handle, positions, int_time, no_avg, save_data):
+    def __init__(self, motor_id, spec_handle, positions, int_time, no_avg, save_data):
         super().__init__()
-        self.motor = motor
-        self.active_spec_handle = active_spec_handle
+        self.thorlabs_controller = ThorlabsController(motor_id)
+        self.avaspec_controller = AvaspecController(spec_handle)
         self.positions = positions
         self.int_time = int_time
         self.no_avg = no_avg
+        self.save_data = save_data
         self.running = True
         self.spectrum_data = []
-        self.save_data = save_data
 
     def run(self):
         try:
-            wavelength = avs.AVS_GetLambda(self.active_spec_handle)
-            num_pixels = len(wavelength)
+            wavelength = self.avaspec_controller.wavelength
             start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             for position in self.positions:
@@ -38,44 +40,52 @@ class MeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     return
 
-                log_message = f"Moving to position {position:.3f}"
-                self.log_signal.emit(log_message)
-                self.motor.move_to(position, blocking=True)
+                self.log_signal.emit(f"Moving to position {position:.3f}")
+                self.thorlabs_controller.move_to(position, blocking=True)
                 time.sleep(0.5)
-                self.log_signal.emit(f"Reached position {position:.3f}")
+                current_pos = self.thorlabs_controller.get_position()
+                self.log_signal.emit(f"Reached position {current_pos:.3f}")
 
-                avs.AVS_StopMeasure(self.active_spec_handle)
-                time.sleep(0.5)
-                avs.set_measure_params(self.active_spec_handle, self.int_time, self.no_avg)
-                avs.AVS_Measure(self.active_spec_handle)
-                timestamp, data = avs.get_spectrum(self.active_spec_handle)
+                timestamp, data = self.avaspec_controller.measure_spectrum(self.int_time, self.no_avg)
 
-                if len(data) == num_pixels:
+                if len(data) == self.avaspec_controller.num_pixels:
                     self.spectrum_data.append(data)
                     self.log_signal.emit("Spectrum successfully taken.")
                     self.plot_signal.emit(np.array(wavelength), np.array(self.spectrum_data))
                 else:
-                    self.log_signal.emit(f"Warning: Skipped measurement at {position:.3f} due to size mismatch.")
+                    self.log_signal.emit(
+                        f"Warning: Skipped measurement at {position:.3f} due to size mismatch.")
 
             if self.save_data and len(self.spectrum_data) > 0:
                 self.save_spectrum_data(np.array(wavelength), np.array(self.spectrum_data), start_time)
                 self.log_signal.emit("Data saved successfully.")
 
-            avs.AVS_Deactivate(self.active_spec_handle)
-            self.log_signal.emit("Measurement complete.")
         except Exception as e:
             self.log_signal.emit(f"Error: {e}")
+
+        finally:
+            try:
+                self.avaspec_controller.deactivate()
+                self.log_signal.emit("Spectrometer deactivated.")
+            except Exception as e:
+                self.log_signal.emit(f"Error deactivating spectrometer: {e}")
+
+            try:
+                self.thorlabs_controller.disable()
+                self.log_signal.emit("Motor disabled.")
+            except Exception as e:
+                self.log_signal.emit(f"Error disabling motor: {e}")
+
+            self.log_signal.emit("Measurement complete.")
 
     def save_spectrum_data(self, wavelength, spectrum_data, start_time):
         date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         save_path = os.path.join(os.getcwd(), f"SFGTemporalOverlap_{date_str}.txt")
-
         header = (f"Measurement Date: {start_time}\n"
                   f"Integration Time: {self.int_time} ms\n"
                   f"Number of Averages: {self.no_avg}\n"
                   f"Stage Positions: {self.positions}\n"
                   f"Data Columns: Wavelength (nm) + Spectrum Intensity at each position")
-
         np.savetxt(save_path, np.column_stack([wavelength] + spectrum_data.tolist()), header=header)
 
     def stop(self):
@@ -92,18 +102,19 @@ class SFGTemporalOverlapGUI(QWidget):
         layout = QHBoxLayout()
         controls_layout = QVBoxLayout()
 
+        # Thorlabs (Motor) settings
         self.motorIDLabel = QLabel("Motor ID:")
         self.motorIDInput = QLineEdit("83838295")
         controls_layout.addWidget(self.motorIDLabel)
         controls_layout.addWidget(self.motorIDInput)
 
+        # Stage position settings
         self.positionLabel = QLabel("Start Position:")
         self.positionInput = QLineEdit("0")
         self.endPositionLabel = QLabel("End Position:")
         self.endPositionInput = QLineEdit("10")
         self.numPointsLabel = QLabel("Number of Points:")
         self.numPointsInput = QLineEdit("5")
-
         controls_layout.addWidget(self.positionLabel)
         controls_layout.addWidget(self.positionInput)
         controls_layout.addWidget(self.endPositionLabel)
@@ -111,11 +122,11 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_layout.addWidget(self.numPointsLabel)
         controls_layout.addWidget(self.numPointsInput)
 
+        # Spectrometer settings
         self.intTimeLabel = QLabel("Integration Time (ms):")
         self.intTimeInput = QLineEdit("100")
         self.noAvgLabel = QLabel("Number of Averages:")
         self.noAvgInput = QLineEdit("1")
-
         controls_layout.addWidget(self.intTimeLabel)
         controls_layout.addWidget(self.intTimeInput)
         controls_layout.addWidget(self.noAvgLabel)
@@ -126,9 +137,11 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_layout.addWidget(self.spectrometerLabel)
         controls_layout.addWidget(self.spectrometerSelect)
 
+        # Data saving option
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
 
+        # Control buttons
         button_layout = QHBoxLayout()
         self.startButton = QPushButton("Start Measurement")
         self.startButton.clicked.connect(self.start_measurement)
@@ -139,6 +152,7 @@ class SFGTemporalOverlapGUI(QWidget):
         button_layout.addWidget(self.abortButton)
         controls_layout.addLayout(button_layout)
 
+        # Log text area
         self.logText = QTextEdit()
         self.logText.setReadOnly(True)
         controls_layout.addWidget(self.logText)
@@ -146,7 +160,10 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_container = QWidget()
         controls_container.setLayout(controls_layout)
 
-        self.canvas = FigureCanvas(plt.figure())
+        # Set up the matplotlib canvas for plotting
+        self.figure = plt.figure()
+        self.ax = self.figure.add_subplot(111)
+        self.canvas = FigureCanvas(self.figure)
 
         splitter = QSplitter()
         splitter.addWidget(controls_container)
@@ -161,8 +178,7 @@ class SFGTemporalOverlapGUI(QWidget):
         self.populate_spectrometers()
 
     def populate_spectrometers(self):
-        avs.AVS_Init()
-        speclist = avs.AVS_GetList()
+        speclist = AvaspecController.list_spectrometers()
         if not speclist:
             QMessageBox.critical(self, "Error", "No spectrometer found!")
             return
@@ -181,14 +197,15 @@ class SFGTemporalOverlapGUI(QWidget):
             positions = np.linspace(start_pos, end_pos, num_points)
             save_data = self.saveDataCheckbox.isChecked()
 
-            motor = apt.Motor(motor_id)
             selected_index = self.spectrometerSelect.currentIndex()
-            active_spec_handle = avs.AVS_Activate(self.spectrometer_handles[selected_index])
+            spec_handle = self.spectrometer_handles[selected_index]
 
-            self.thread = MeasurementThread(motor, active_spec_handle, positions, int_time, no_avg, save_data)
+            self.thread = MeasurementThread(motor_id, spec_handle, positions, int_time, no_avg, save_data)
             self.thread.log_signal.connect(self.update_log)
             self.thread.plot_signal.connect(self.update_plot)
             self.thread.start()
+
+            self.startButton.setEnabled(False)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to start measurement: {e}")
 
@@ -196,18 +213,20 @@ class SFGTemporalOverlapGUI(QWidget):
         self.logText.append(message)
 
     def update_plot(self, wavelength, spectrum_data):
-        self.canvas.figure.clear()
-        ax = self.canvas.figure.add_subplot(111)
-        ax.imshow(spectrum_data, aspect='auto', extent=[wavelength[0], wavelength[-1], 0, len(spectrum_data)],
-                  cmap='turbo')
-        ax.set_xlabel("Wavelength (nm)")
-        ax.set_ylabel("Position")
+        self.ax.clear()
+        self.ax.imshow(spectrum_data, aspect='auto',
+                       extent=[wavelength[0], wavelength[-1], 0, len(spectrum_data)],
+                       cmap='turbo')
+        self.ax.set_xlabel("Wavelength (nm)")
+        self.ax.set_ylabel("Position (mm)")
         self.canvas.draw()
 
     def abort_measurement(self):
         if hasattr(self, 'thread') and self.thread.isRunning():
             self.thread.stop()
+            self.thread.wait()
             self.update_log("Measurement aborted.")
+            self.startButton.setEnabled(True)
 
 
 if __name__ == "__main__":
