@@ -10,3 +10,5 @@ pygame~=2.6.1
 prysm~=0.21.1
 pandas~=2.2.3
 zaber_motion~=7.0.0
+PyVISA~=1.14.1
+ThorlabsPM100~=1.2.2
