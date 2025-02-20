@@ -1,22 +1,57 @@
 from prometheus_client import start_http_server, Gauge
 import time
-import random  # Replace with your actual sensor logic
+from PfeifferVacuum import MaxiGauge, MaxiGaugeError
+import logging
 
-# Create a Gauge metric for the pressure
-pressure_gauge = Gauge('sensor_pressure', 'Pressure value from the sensor')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def get_pressure_value():
-    # Replace this function with actual code to read from your sensor
-    return random.uniform(0, 100)  # Simulated pressure value
+pressure_gauge_1 = Gauge('sensor_pressure_1', 'Grating and MCP')
+pressure_gauge_2 = Gauge('sensor_pressure_2', 'Generation')
+pressure_gauge_3 = Gauge('sensor_pressure_3', 'Gas Catcher')
+
+COM_PORT = 'COM9'
+UPDATE_INTERVAL = 5  # seconds
+
+mg = None
+
+
+def initialize_maxigauge():
+    global mg
+    try:
+        mg = MaxiGauge(COM_PORT)
+        logging.info("MaxiGauge initialized successfully.")
+    except Exception as e:
+        logging.error(f"Failed to initialize MaxiGauge: {e}")
+        mg = None
+
 
 def update_metrics():
+    if mg is None:
+        logging.warning("MaxiGauge not initialized. Cannot update pressure data.")
+        return
+
     while True:
-        pressure_value = get_pressure_value()
-        pressure_gauge.set(pressure_value)  # Update the metric
-        time.sleep(1)  # Update every second (adjust as needed)
+        try:
+            pressures = mg.pressures()
+            pressure_gauge_1.set(pressures[0].pressure if pressures[0].status in [0, 1, 2] else float('nan'))
+            pressure_gauge_2.set(pressures[1].pressure if pressures[1].status in [0, 1, 2] else float('nan'))
+            pressure_gauge_3.set(pressures[2].pressure if pressures[2].status in [0, 1, 2] else float('nan'))
+        except MaxiGaugeError as e:
+            logging.error(f"Error reading from MaxiGauge: {e}")
+            pressure_gauge_1.set(float('nan'))
+            pressure_gauge_2.set(float('nan'))
+            pressure_gauge_3.set(float('nan'))
+            continue
+
+        time.sleep(UPDATE_INTERVAL)
+
 
 if __name__ == "__main__":
-    # Start the Prometheus HTTP server on port 8000
-    start_http_server(8000)
-    print("Prometheus metrics server running on http://localhost:8000")
-    update_metrics()
+    initialize_maxigauge()
+
+    if mg is not None:
+        start_http_server(8000)
+        logging.info("Prometheus metrics server running on http://localhost:8000")
+        update_metrics()
+    else:
+        logging.error("Exiting: MaxiGauge failed to initialize.")

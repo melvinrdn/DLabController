@@ -104,7 +104,7 @@ class SFGTemporalOverlapGUI(QWidget):
 
         # Thorlabs (Motor) settings
         self.motorIDLabel = QLabel("Motor ID:")
-        self.motorIDInput = QLineEdit("83838295")
+        self.motorIDInput = QLineEdit("83837725")
         controls_layout.addWidget(self.motorIDLabel)
         controls_layout.addWidget(self.motorIDInput)
 
@@ -205,7 +205,6 @@ class SFGTemporalOverlapGUI(QWidget):
             self.thread.plot_signal.connect(self.update_plot)
             self.thread.start()
 
-            self.startButton.setEnabled(False)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to start measurement: {e}")
 
@@ -218,7 +217,7 @@ class SFGTemporalOverlapGUI(QWidget):
                        extent=[wavelength[0], wavelength[-1], 0, len(spectrum_data)],
                        cmap='turbo')
         self.ax.set_xlabel("Wavelength (nm)")
-        self.ax.set_ylabel("Position (mm)")
+        self.ax.set_ylabel("Position")
         self.canvas.draw()
 
     def abort_measurement(self):
@@ -226,7 +225,6 @@ class SFGTemporalOverlapGUI(QWidget):
             self.thread.stop()
             self.thread.wait()
             self.update_log("Measurement aborted.")
-            self.startButton.setEnabled(True)
 
 
 if __name__ == "__main__":

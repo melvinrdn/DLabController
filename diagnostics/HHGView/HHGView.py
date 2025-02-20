@@ -292,7 +292,7 @@ class HHGView(object):
                                         state='disabled')
         self.ent_wp_4_should.grid(row=1, column=3, padx=2, pady=2, sticky='nsew')
 
-        self.strvar_wp_4_nr = tk.StringVar(self.win, '0000000')
+        self.strvar_wp_4_nr = tk.StringVar(self.win, '83837714')
         self.ent_wp_4_nr = tk.Entry(self.frm_ratio, width=10, validate='all', textvariable=self.strvar_wp_4_nr)
         self.ent_wp_4_nr.grid(row=1, column=1, pady=2, padx=2, sticky='nsew')
 
