@@ -34,31 +34,37 @@ class MeasurementThread(QThread):
         try:
             wavelength = self.avaspec_controller.wavelength
             start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            max_intensity = -np.inf
+            max_position = None
 
             for position in self.positions:
                 if not self.running:
                     self.log_signal.emit("Measurement aborted.")
                     return
 
-                self.log_signal.emit(f"Moving to position {position:.3f}")
+                self.log_signal.emit(f"Moving to position {position:.2f}...")
                 self.thorlabs_controller.move_to(position, blocking=True)
                 time.sleep(0.5)
                 current_pos = self.thorlabs_controller.get_position()
-                self.log_signal.emit(f"Reached position {current_pos:.3f}")
+                self.log_signal.emit(f"Reached position {current_pos:.2f}")
 
                 timestamp, data = self.avaspec_controller.measure_spectrum(self.int_time, self.no_avg)
+                self.log_signal.emit("Spectrum successfully taken.")
+                self.plot_signal.emit(np.array(wavelength), np.array(self.spectrum_data))
 
-                if len(data) == self.avaspec_controller.num_pixels:
-                    self.spectrum_data.append(data)
-                    self.log_signal.emit("Spectrum successfully taken.")
-                    self.plot_signal.emit(np.array(wavelength), np.array(self.spectrum_data))
-                else:
-                    self.log_signal.emit(
-                        f"Warning: Skipped measurement at {position:.3f} due to size mismatch.")
+                self.spectrum_data.append(data)
+                total_intensity = np.sum(data)
+
+                if total_intensity > max_intensity:
+                    max_intensity = total_intensity
+                    max_position = current_pos
 
             if self.save_data and len(self.spectrum_data) > 0:
                 self.save_spectrum_data(np.array(wavelength), np.array(self.spectrum_data), start_time)
                 self.log_signal.emit("Data saved successfully.")
+
+            if max_position is not None:
+                self.log_signal.emit(f"Maximum intensity found at position: {max_position:.2f} mm")
 
         except Exception as e:
             self.log_signal.emit(f"Error: {e}")
@@ -85,7 +91,7 @@ class MeasurementThread(QThread):
                   f"Integration Time: {self.int_time} ms\n"
                   f"Number of Averages: {self.no_avg}\n"
                   f"Stage Positions: {self.positions}\n"
-                  f"Data Columns: Wavelength (nm) + Spectrum Intensity at each position")
+                  f"Data Columns: Wavelength (nm) + Spectrum Intensity at each position of the stage")
         np.savetxt(save_path, np.column_stack([wavelength] + spectrum_data.tolist()), header=header)
 
     def stop(self):
@@ -110,21 +116,21 @@ class SFGTemporalOverlapGUI(QWidget):
 
         # Stage position settings
         self.positionLabel = QLabel("Start Position:")
-        self.positionInput = QLineEdit("0")
+        self.positionInput = QLineEdit("13")
         self.endPositionLabel = QLabel("End Position:")
-        self.endPositionInput = QLineEdit("10")
-        self.numPointsLabel = QLabel("Number of Points:")
-        self.numPointsInput = QLineEdit("5")
+        self.endPositionInput = QLineEdit("15")
+        self.stepSizeLabel = QLabel("Step Size:")
+        self.stepSizeInput = QLineEdit("0.01")
         controls_layout.addWidget(self.positionLabel)
         controls_layout.addWidget(self.positionInput)
         controls_layout.addWidget(self.endPositionLabel)
         controls_layout.addWidget(self.endPositionInput)
-        controls_layout.addWidget(self.numPointsLabel)
-        controls_layout.addWidget(self.numPointsInput)
+        controls_layout.addWidget(self.stepSizeLabel)
+        controls_layout.addWidget(self.stepSizeInput)
 
         # Spectrometer settings
         self.intTimeLabel = QLabel("Integration Time (ms):")
-        self.intTimeInput = QLineEdit("100")
+        self.intTimeInput = QLineEdit("10")
         self.noAvgLabel = QLabel("Number of Averages:")
         self.noAvgInput = QLineEdit("1")
         controls_layout.addWidget(self.intTimeLabel)
@@ -136,6 +142,10 @@ class SFGTemporalOverlapGUI(QWidget):
         self.spectrometerSelect = QComboBox()
         controls_layout.addWidget(self.spectrometerLabel)
         controls_layout.addWidget(self.spectrometerSelect)
+
+        self.searchSpectrometerButton = QPushButton("Search Spectrometers")
+        self.searchSpectrometerButton.clicked.connect(self.populate_spectrometers)
+        controls_layout.addWidget(self.searchSpectrometerButton)
 
         # Data saving option
         self.saveDataCheckbox = QCheckBox("Save Data to File")
@@ -175,30 +185,35 @@ class SFGTemporalOverlapGUI(QWidget):
         self.setWindowTitle("D-lab Controller - SFG Temporal Overlap")
         self.resize(1000, 500)
 
-        self.populate_spectrometers()
-
     def populate_spectrometers(self):
+        self.spectrometerSelect.clear()
         speclist = AvaspecController.list_spectrometers()
+
         if not speclist:
-            QMessageBox.critical(self, "Error", "No spectrometer found!")
+            QMessageBox.critical(self, "Error", "No spectrometer found.")
+            self.update_log("No spectrometer found.")
             return
 
         self.spectrometer_handles = speclist
         self.spectrometerSelect.addItems([f"Spectrometer {i + 1}" for i in range(len(speclist))])
+        self.update_log(f"Found {len(speclist)} spectrometer(s).")
 
     def start_measurement(self):
         try:
             motor_id = int(self.motorIDInput.text())
             start_pos = float(self.positionInput.text())
             end_pos = float(self.endPositionInput.text())
-            num_points = int(self.numPointsInput.text())
+            step_size = int(self.numPointsInput.text())
             int_time = int(self.intTimeInput.text())
             no_avg = int(self.noAvgInput.text())
+            num_points = int(np.floor((end_pos - start_pos) / step_size)) + 1
             positions = np.linspace(start_pos, end_pos, num_points)
             save_data = self.saveDataCheckbox.isChecked()
 
             selected_index = self.spectrometerSelect.currentIndex()
             spec_handle = self.spectrometer_handles[selected_index]
+
+            self.update_log(f"Number of steps: {num_points}")
 
             self.thread = MeasurementThread(motor_id, spec_handle, positions, int_time, no_avg, save_data)
             self.thread.log_signal.connect(self.update_log)
@@ -213,11 +228,13 @@ class SFGTemporalOverlapGUI(QWidget):
 
     def update_plot(self, wavelength, spectrum_data):
         self.ax.clear()
+        positions = self.thread.positions
         self.ax.imshow(spectrum_data, aspect='auto',
-                       extent=[wavelength[0], wavelength[-1], 0, len(spectrum_data)],
+                       extent=[wavelength[0], wavelength[-1], positions[-1], positions[0]],
                        cmap='turbo')
+
         self.ax.set_xlabel("Wavelength (nm)")
-        self.ax.set_ylabel("Position")
+        self.ax.set_ylabel("Position (mm)")
         self.canvas.draw()
 
     def abort_measurement(self):

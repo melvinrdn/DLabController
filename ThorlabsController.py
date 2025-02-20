@@ -6,8 +6,6 @@ class ThorlabsController:
         Initialize the Thorlabs motor controller with the given motor ID
         """
         self.motor = apt.Motor(motor_id)
-        #self.home()
-
     def home(self):
         """Send the motor to its home position."""
         self.motor.move_home(blocking=True)

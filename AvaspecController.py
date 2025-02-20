@@ -35,5 +35,10 @@ class AvaspecController:
         """
         Initialize and return a list of available spectrometers.
         """
-        avs.AVS_Init()
-        return avs.AVS_GetList()
+        try:
+            avs.AVS_Init()
+            spectrometer_list = avs.AVS_GetList()
+            return spectrometer_list
+
+        except Exception as e:
+            return None
