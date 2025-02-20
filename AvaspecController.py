@@ -1,13 +1,26 @@
+# AvaspecController.py
 import time
 import hardware.avaspec_driver._avs_py as avs
 
 class AvaspecController:
     def __init__(self, spec_handle):
         """
-        Initialize the spectrometer controller by activating the spectrometer.
+        Initialize the spectrometer controller.
+        (Activation is done manually by calling activate().)
         """
+        self.original_spec_handle = spec_handle
         self.avs = avs
-        self.spec_handle = self.avs.AVS_Activate(spec_handle)
+        self.spec_handle = None
+        self.wavelength = None
+        self.num_pixels = None
+
+    def activate(self):
+        """
+        Activate the spectrometer and retrieve its wavelength array.
+        """
+        # Reinitialize the library to ensure the device can be activated.
+        self.avs.AVS_Init()
+        self.spec_handle = self.avs.AVS_Activate(self.original_spec_handle)
         self.wavelength = self.avs.AVS_GetLambda(self.spec_handle)
         self.num_pixels = len(self.wavelength)
 
@@ -28,7 +41,9 @@ class AvaspecController:
 
     def deactivate(self):
         """Deactivate the spectrometer."""
-        self.avs.AVS_Deactivate(self.spec_handle)
+        if self.spec_handle:
+            self.avs.AVS_Deactivate(self.spec_handle)
+            self.spec_handle = None
 
     @classmethod
     def list_spectrometers(cls):
@@ -39,6 +54,5 @@ class AvaspecController:
             avs.AVS_Init()
             spectrometer_list = avs.AVS_GetList()
             return spectrometer_list
-
         except Exception as e:
             return None
