@@ -607,7 +607,7 @@ if __name__ == "__main__":
     tabs.addTab(powermeter_tab, "Powermeter Measurement")
 
     tabs.resize(1000, 800)
-    tabs.setWindowTitle("D-lab Controller")
+    tabs.setWindowTitle("D-lab Controller - SFG Temporal Overlap")
     tabs.show()
 
     sys.exit(app.exec_())
