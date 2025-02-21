@@ -29,20 +29,18 @@ class TwoMotorPowermeterMeasurementThread(QThread):
         self.motor1 = motor1_controller
         self.motor2 = motor2_controller
         self.powermeter = powermeter_controller
-        self.m1_positions = m1_positions  # positions for motor1 (will be mapped to y-axis)
-        self.m2_positions = m2_positions  # positions for motor2 (x-axis)
+        self.m1_positions = m1_positions
+        self.m2_positions = m2_positions
         self.no_avg = no_avg
         self.save_data = save_data
         self.header_text = header_text
         self.running = True
 
-        # Initialize a 2D array for power data: rows for motor1, columns for motor2
         self.power_map = np.zeros((len(m1_positions), len(m2_positions)))
 
     def run(self):
         try:
             start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # Loop over motor1 positions (e.g., rows)
             for i, pos1 in enumerate(self.m1_positions):
                 if not self.running:
                     self.log_signal.emit("Measurement aborted.")
@@ -54,7 +52,6 @@ class TwoMotorPowermeterMeasurementThread(QThread):
                 current_m1 = self.motor1.get_position()
                 self.log_signal.emit(f"Motor1 reached {current_m1:.2f}")
 
-                # For each motor1 position, loop over motor2 positions (e.g., columns)
                 for j, pos2 in enumerate(self.m2_positions):
                     if not self.running:
                         self.log_signal.emit("Measurement aborted.")
@@ -66,13 +63,11 @@ class TwoMotorPowermeterMeasurementThread(QThread):
                     current_m2 = self.motor2.get_position()
                     self.log_signal.emit(f"Motor2 reached {current_m2:.2f}")
 
-                    # Set averaging for powermeter and take measurement
                     self.powermeter.set_avg(self.no_avg)
                     power = self.powermeter.read_power()
                     self.log_signal.emit(f"Measured power: {power}")
                     self.power_map[i, j] = power
 
-                    # Update plot after each measurement
                     self.plot_signal.emit(self.m2_positions, self.m1_positions, self.power_map.copy())
 
             if self.save_data:
@@ -96,15 +91,13 @@ class TwoMotorPowermeterMeasurementThread(QThread):
                     f.write(f"# {self.header_text}\n")
                 f.write(f"# Date: {start_time}\n")
                 f.write(f"# Number of Averages: {self.no_avg}\n")
-                f.write(f"# Motor1 positions (rows): start = {self.m1_positions[0]} mm, end = {self.m1_positions[-1]} mm, count = {len(self.m1_positions)}\n")
-                f.write(f"# Motor2 positions (columns): start = {self.m2_positions[0]} mm, end = {self.m2_positions[-1]} mm, count = {len(self.m2_positions)}\n")
+                f.write(f"# Motor1 positions (rows): start = {self.m1_positions[0]}, end = {self.m1_positions[-1]}, count = {len(self.m1_positions)}\n")
+                f.write(f"# Motor2 positions (columns): start = {self.m2_positions[0]}, end = {self.m2_positions[-1]}, count = {len(self.m2_positions)}\n")
                 f.write("\n")
-                # Write header line with motor2 positions
                 header = "Motor1 \\ Motor2"
                 for pos2 in self.m2_positions:
                     header += f"\t{pos2}"
                 f.write(header + "\n")
-                # Write each row (each motor1 position)
                 for i, pos1 in enumerate(self.m1_positions):
                     row = f"{pos1}"
                     for power in power_map[i]:
@@ -131,18 +124,17 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         main_layout = QHBoxLayout()
         controls_layout = QVBoxLayout()
 
-        # Motor 1 settings
         self.motor1IDLabel = QLabel("Motor1 ID:")
         self.motor1IDInput = QLineEdit("83837725")
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
         self.motor1StartLabel = QLabel("Motor1 Start Position:")
-        self.motor1StartInput = QLineEdit("10")
+        self.motor1StartInput = QLineEdit("0")
         self.motor1EndLabel = QLabel("Motor1 End Position:")
-        self.motor1EndInput = QLineEdit("11")
+        self.motor1EndInput = QLineEdit("90")
         self.motor1StepLabel = QLabel("Motor1 Step Size:")
-        self.motor1StepInput = QLineEdit("0.1")
+        self.motor1StepInput = QLineEdit("5")
         controls_layout.addWidget(self.motor1StartLabel)
         controls_layout.addWidget(self.motor1StartInput)
         controls_layout.addWidget(self.motor1EndLabel)
@@ -150,18 +142,17 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1StepLabel)
         controls_layout.addWidget(self.motor1StepInput)
 
-        # Motor 2 settings
         self.motor2IDLabel = QLabel("Motor2 ID:")
         self.motor2IDInput = QLineEdit("83837726")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
-        self.motor2StartInput = QLineEdit("20")
+        self.motor2StartInput = QLineEdit("0")
         self.motor2EndLabel = QLabel("Motor2 End Position:")
-        self.motor2EndInput = QLineEdit("21")
+        self.motor2EndInput = QLineEdit("90")
         self.motor2StepLabel = QLabel("Motor2 Step Size:")
-        self.motor2StepInput = QLineEdit("0.1")
+        self.motor2StepInput = QLineEdit("5")
         controls_layout.addWidget(self.motor2StartLabel)
         controls_layout.addWidget(self.motor2StartInput)
         controls_layout.addWidget(self.motor2EndLabel)
@@ -169,27 +160,23 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor2StepLabel)
         controls_layout.addWidget(self.motor2StepInput)
 
-        # Powermeter settings
         self.powermeterLabel = QLabel("Powermeter VISA ID:")
         self.powermeterInput = QLineEdit("USB0::0x1313::0x8078::P0045634::INSTR")
         controls_layout.addWidget(self.powermeterLabel)
         controls_layout.addWidget(self.powermeterInput)
 
-        # Save data option and header comment
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
-        self.headerLabel = QLabel("File Header Comment:")
+        self.headerLabel = QLabel("Comments:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
 
-        # Averaging
         self.noAvgLabel = QLabel("Number of Averages:")
         self.noAvgInput = QLineEdit("1")
         controls_layout.addWidget(self.noAvgLabel)
         controls_layout.addWidget(self.noAvgInput)
 
-        # Activation buttons for hardware
         self.activateButton = QPushButton("Activate Hardware")
         self.activateButton.clicked.connect(self.activateHardware)
         controls_layout.addWidget(self.activateButton)
@@ -199,7 +186,6 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.deactivateButton)
         self.deactivateButton.setEnabled(False)
 
-        # Measurement buttons
         buttons_layout = QHBoxLayout()
         self.startButton = QPushButton("Start Measurement")
         self.startButton.clicked.connect(self.start_measurement)
@@ -209,19 +195,16 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         buttons_layout.addWidget(self.abortButton)
         controls_layout.addLayout(buttons_layout)
 
-        # Log text area
         self.logText = QTextEdit()
         self.logText.setReadOnly(True)
         controls_layout.addWidget(self.logText)
 
-        # Container for controls
         controls_container = QWidget()
         controls_container.setLayout(controls_layout)
 
-        # Set up matplotlib figure for 2D image
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
-        self.image = self.ax.imshow(np.zeros((10,10)), aspect='auto', cmap='viridis', origin='lower')
+        self.image = self.ax.imshow(np.zeros((10,10)), aspect='auto', cmap='turbo', origin='lower')
         self.ax.set_xlabel("Motor2 Position")
         self.ax.set_ylabel("Motor1 Position")
         self.canvas = FigureCanvas(self.figure)
@@ -233,24 +216,21 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         splitter.setSizes([300, 500])
         main_layout.addWidget(splitter)
         self.setLayout(main_layout)
-        self.setWindowTitle("D-lab Controller - Power scan")
+        self.setWindowTitle("D-lab Controller - Power Scan - Spectrometer")
         self.resize(1000, 800)
 
     def activateHardware(self):
         try:
-            # Activate Motor 1
             motor1_id = int(self.motor1IDInput.text())
             self.logText.append("Activating Motor1...")
             self.motor1_controller = ThorlabsController(motor1_id)
             self.motor1_controller.activate()
 
-            # Activate Motor 2
             motor2_id = int(self.motor2IDInput.text())
             self.logText.append("Activating Motor2...")
             self.motor2_controller = ThorlabsController(motor2_id)
             self.motor2_controller.activate()
 
-            # Activate Powermeter
             powermeter_id = self.powermeterInput.text()
             if not powermeter_id:
                 QMessageBox.critical(self, "Error", "No Powermeter VISA ID provided.")
@@ -298,14 +278,12 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
             self.startButton.setEnabled(False)
             self.abortButton.setEnabled(True)
 
-            # Read Motor1 grid parameters
             m1_start = float(self.motor1StartInput.text())
             m1_end = float(self.motor1EndInput.text())
             m1_step = float(self.motor1StepInput.text())
             m1_points = int(np.floor((m1_end - m1_start) / m1_step)) + 1
             m1_positions = np.linspace(m1_start, m1_end, m1_points)
 
-            # Read Motor2 grid parameters
             m2_start = float(self.motor2StartInput.text())
             m2_end = float(self.motor2EndInput.text())
             m2_step = float(self.motor2StepInput.text())
@@ -336,7 +314,6 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         self.logText.append(message)
 
     def update_plot(self, m2_positions, m1_positions, power_map):
-        # Update the image extent using motor2 positions (x-axis) and motor1 positions (y-axis)
         self.image.set_extent([m2_positions[0], m2_positions[-1], m1_positions[0], m1_positions[-1]])
         self.image.set_data(power_map)
         self.image.set_clim(vmin=np.min(power_map), vmax=np.max(power_map))
@@ -357,7 +334,6 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
 # ------------------ Two-Motor Spectrometer Measurement Thread ------------------
 class TwoMotorSpectrometerMeasurementThread(QThread):
     log_signal = pyqtSignal(str)
-    # Emit m2_positions (x-axis), m1_positions (y-axis) and the intensity map (2D integrated intensity)
     plot_signal = pyqtSignal(object, object, object)
 
     def __init__(self, motor1_controller, motor2_controller, spectrometer_controller,
@@ -366,15 +342,14 @@ class TwoMotorSpectrometerMeasurementThread(QThread):
         self.motor1 = motor1_controller
         self.motor2 = motor2_controller
         self.spec_controller = spectrometer_controller
-        self.m1_positions = m1_positions  # Rows (y-axis)
-        self.m2_positions = m2_positions  # Columns (x-axis)
+        self.m1_positions = m1_positions
+        self.m2_positions = m2_positions
         self.int_time = int_time
         self.no_avg = no_avg
         self.save_data = save_data
         self.header_text = header_text
         self.running = True
 
-        # Prepare a 2D array to hold the integrated intensity for each grid point.
         self.intensity_map = np.zeros((len(m1_positions), len(m2_positions)))
 
     def run(self):
@@ -385,31 +360,28 @@ class TwoMotorSpectrometerMeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     break
 
-                self.log_signal.emit(f"Moving Motor1 to {pos1:.2f} mm...")
+                self.log_signal.emit(f"Moving Motor1 to {pos1:.2f}...")
                 self.motor1.move_to(pos1, blocking=True)
                 time.sleep(0.5)
                 current_m1 = self.motor1.get_position()
-                self.log_signal.emit(f"Motor1 reached {current_m1:.2f} mm")
+                self.log_signal.emit(f"Motor1 reached {current_m1:.2f}")
 
                 for j, pos2 in enumerate(self.m2_positions):
                     if not self.running:
                         self.log_signal.emit("Measurement aborted.")
                         break
 
-                    self.log_signal.emit(f"Moving Motor2 to {pos2:.2f} mm...")
+                    self.log_signal.emit(f"Moving Motor2 to {pos2:.2f}...")
                     self.motor2.move_to(pos2, blocking=True)
                     time.sleep(0.5)
                     current_m2 = self.motor2.get_position()
-                    self.log_signal.emit(f"Motor2 reached {current_m2:.2f} mm")
+                    self.log_signal.emit(f"Motor2 reached {current_m2:.2f}")
 
-                    # Measure spectrum at the current grid point.
                     timestamp, spectrum = self.spec_controller.measure_spectrum(self.int_time, self.no_avg)
                     self.log_signal.emit("Spectrum acquired.")
-                    # Compute integrated intensity (sum of the spectral counts).
                     integrated_intensity = np.sum(spectrum)
                     self.intensity_map[i, j] = integrated_intensity
 
-                    # Update plot after each measurement.
                     self.plot_signal.emit(self.m2_positions, self.m1_positions, self.intensity_map.copy())
 
             if self.save_data:
@@ -428,23 +400,21 @@ class TwoMotorSpectrometerMeasurementThread(QThread):
         file_name = os.path.join(save_dir, f"SFGPowerScan_Spectrum_{safe_time}.txt")
         try:
             with open(file_name, "w") as f:
-                f.write("# Power Scan with Spectrometer\n")
+                f.write("# Power scan with spectrometer\n")
                 if self.header_text:
                     f.write(f"# {self.header_text}\n")
                 f.write(f"# Date: {start_time}\n")
                 f.write(f"# Integration Time (ms): {self.int_time}\n")
                 f.write(f"# Number of Averages: {self.no_avg}\n")
                 f.write(
-                    f"# Motor1 positions (rows): start = {self.m1_positions[0]} mm, end = {self.m1_positions[-1]} mm, count = {len(self.m1_positions)}\n")
+                    f"# Motor1 positions (rows): start = {self.m1_positions[0]}, end = {self.m1_positions[-1]}, count = {len(self.m1_positions)}\n")
                 f.write(
-                    f"# Motor2 positions (columns): start = {self.m2_positions[0]} mm, end = {self.m2_positions[-1]} mm, count = {len(self.m2_positions)}\n")
+                    f"# Motor2 positions (columns): start = {self.m2_positions[0]}, end = {self.m2_positions[-1]}, count = {len(self.m2_positions)}\n")
                 f.write("\n")
-                # Write header: first column for Motor1 positions and then columns for each Motor2 position.
                 header = "Motor1 \\ Motor2"
                 for pos2 in self.m2_positions:
                     header += f"\t{pos2}"
                 f.write(header + "\n")
-                # Write each row with the integrated intensity.
                 for i, pos1 in enumerate(self.m1_positions):
                     row = f"{pos1}"
                     for intensity in intensity_map[i]:
@@ -471,18 +441,17 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         main_layout = QHBoxLayout()
         controls_layout = QVBoxLayout()
 
-        # Motor 1 settings
         self.motor1IDLabel = QLabel("Motor1 ID:")
         self.motor1IDInput = QLineEdit("83837725")
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
         self.motor1StartLabel = QLabel("Motor1 Start Position:")
-        self.motor1StartInput = QLineEdit("10")
+        self.motor1StartInput = QLineEdit("0")
         self.motor1EndLabel = QLabel("Motor1 End Position:")
-        self.motor1EndInput = QLineEdit("11")
+        self.motor1EndInput = QLineEdit("90")
         self.motor1StepLabel = QLabel("Motor1 Step Size:")
-        self.motor1StepInput = QLineEdit("0.1")
+        self.motor1StepInput = QLineEdit("5")
         controls_layout.addWidget(self.motor1StartLabel)
         controls_layout.addWidget(self.motor1StartInput)
         controls_layout.addWidget(self.motor1EndLabel)
@@ -490,18 +459,17 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1StepLabel)
         controls_layout.addWidget(self.motor1StepInput)
 
-        # Motor 2 settings
         self.motor2IDLabel = QLabel("Motor2 ID:")
         self.motor2IDInput = QLineEdit("83837726")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
-        self.motor2StartInput = QLineEdit("20")
+        self.motor2StartInput = QLineEdit("0")
         self.motor2EndLabel = QLabel("Motor2 End Position:")
-        self.motor2EndInput = QLineEdit("21")
+        self.motor2EndInput = QLineEdit("90")
         self.motor2StepLabel = QLabel("Motor2 Step Size:")
-        self.motor2StepInput = QLineEdit("0.1")
+        self.motor2StepInput = QLineEdit("5")
         controls_layout.addWidget(self.motor2StartLabel)
         controls_layout.addWidget(self.motor2StartInput)
         controls_layout.addWidget(self.motor2EndLabel)
@@ -509,7 +477,6 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor2StepLabel)
         controls_layout.addWidget(self.motor2StepInput)
 
-        # Spectrometer settings
         self.specLabel = QLabel("Select Spectrometer:")
         self.specSelect = QComboBox()
         controls_layout.addWidget(self.specLabel)
@@ -527,7 +494,6 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.noAvgLabel)
         controls_layout.addWidget(self.noAvgInput)
 
-        # Save data and header options
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
         self.headerLabel = QLabel("File Header Comment:")
@@ -535,7 +501,6 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
 
-        # Hardware activation buttons
         self.activateButton = QPushButton("Activate Hardware")
         self.activateButton.clicked.connect(self.activateHardware)
         controls_layout.addWidget(self.activateButton)
@@ -545,7 +510,6 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.deactivateButton)
         self.deactivateButton.setEnabled(False)
 
-        # Measurement buttons
         buttons_layout = QHBoxLayout()
         self.startButton = QPushButton("Start Measurement")
         self.startButton.clicked.connect(self.start_measurement)
@@ -555,19 +519,16 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         buttons_layout.addWidget(self.abortButton)
         controls_layout.addLayout(buttons_layout)
 
-        # Log text area
         self.logText = QTextEdit()
         self.logText.setReadOnly(True)
         controls_layout.addWidget(self.logText)
 
-        # Container for controls
         controls_container = QWidget()
         controls_container.setLayout(controls_layout)
 
-        # Set up matplotlib figure for 2D image (integrated intensity map)
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
-        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap='plasma', origin='lower')
+        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap='turbo', origin='lower')
         self.ax.set_xlabel("Motor 2 Position")
         self.ax.set_ylabel("Motor 1 Position")
         self.canvas = FigureCanvas(self.figure)
@@ -579,12 +540,11 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         splitter.setSizes([300, 500])
         main_layout.addWidget(splitter)
         self.setLayout(main_layout)
-        self.setWindowTitle("D-lab Controller - 2D Spectrometer Measurement (Two Motors)")
+        self.setWindowTitle("D-lab Controller - Power Scan - Powermeter")
         self.resize(1000, 800)
 
     def populate_spectrometers(self):
         self.specSelect.clear()
-        # List available spectrometers using AvaspecController wrapper.
         speclist = AvaspecController.list_spectrometers()
         if not speclist:
             QMessageBox.critical(self, "Error", "No spectrometer found.")
@@ -596,19 +556,16 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
 
     def activateHardware(self):
         try:
-            # Activate Motor1
             motor1_id = int(self.motor1IDInput.text())
             self.logText.append("Activating Motor1...")
             self.motor1_controller = ThorlabsController(motor1_id)
             self.motor1_controller.activate()
 
-            # Activate Motor2
             motor2_id = int(self.motor2IDInput.text())
             self.logText.append("Activating Motor2...")
             self.motor2_controller = ThorlabsController(motor2_id)
             self.motor2_controller.activate()
 
-            # Activate Spectrometer (selected from the combo box)
             selected_index = self.specSelect.currentIndex()
             if selected_index < 0 or selected_index >= len(self.spectrometers):
                 QMessageBox.critical(self, "Error", "No spectrometer selected.")
@@ -657,21 +614,19 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
             self.startButton.setEnabled(False)
             self.abortButton.setEnabled(True)
 
-            # Read Motor1 grid parameters
             m1_start = float(self.motor1StartInput.text())
             m1_end = float(self.motor1EndInput.text())
             m1_step = float(self.motor1StepInput.text())
             m1_points = int(np.floor((m1_end - m1_start) / m1_step)) + 1
             m1_positions = np.linspace(m1_start, m1_end, m1_points)
 
-            # Read Motor2 grid parameters
             m2_start = float(self.motor2StartInput.text())
             m2_end = float(self.motor2EndInput.text())
             m2_step = float(self.motor2StepInput.text())
             m2_points = int(np.floor((m2_end - m2_start) / m2_step)) + 1
             m2_positions = np.linspace(m2_start, m2_end, m2_points)
 
-            int_time = int(self.intTimeInput.text())
+            int_time = float(self.intTimeInput.text())
             no_avg = int(self.noAvgInput.text())
             save_data = self.saveDataCheckbox.isChecked()
             header_text = self.headerInput.text()

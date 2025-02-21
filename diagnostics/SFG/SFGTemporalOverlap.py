@@ -364,7 +364,7 @@ class SFGTemporalOverlapGUI(QWidget):
             start_pos = float(self.positionInput.text())
             end_pos = float(self.endPositionInput.text())
             step_size = float(self.stepSizeInput.text())
-            int_time = int(self.intTimeInput.text())
+            int_time = float(self.intTimeInput.text())
             no_avg = int(self.noAvgInput.text())
             num_points = int(np.floor((end_pos - start_pos) / step_size)) + 1
             positions = np.linspace(start_pos, end_pos, num_points)
