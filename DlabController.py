@@ -7,9 +7,9 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from hardware.SLM_driver.SpatialLightModulator import SpatialLightModulator
+from hardware.wrappers.SLMController import SpatialLightModulator
 from hardware.SLM_driver import PhaseSettings
-from diagnostics.diagnostics_helpers import ColorFormatter
+from diagnostics.old.diagnostics_helpers import ColorFormatter
 
 handler = logging.StreamHandler()
 handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
