@@ -22,7 +22,7 @@ import os
 if (sys.version_info.major*100 + sys.version_info.minor) >= 308:
     os.add_dll_directory(os.getcwd())
 
-_libname = 'hardware/SLM_driver/SLMFunc.dll'
+_libname = 'hardware/drivers/SLM_driver/SLMFunc.dll'
 _libraries = {}
 _libraries[_libname] = WinDLL(_libname)
 

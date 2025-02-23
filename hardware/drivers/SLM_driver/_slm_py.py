@@ -1,5 +1,5 @@
 import ctypes as ct
-import hardware.SLM_driver._slm_win as dll
+import hardware.drivers.SLM_driver._slm_win as dll
 import numpy as np
 import warnings
 from os.path import exists

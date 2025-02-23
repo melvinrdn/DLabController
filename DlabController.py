@@ -1,573 +1,340 @@
+import sys
+import os
 import json
-import tkinter as tk
-from tkinter import ttk
-import logging
-
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from hardware.wrappers.SLMController import SpatialLightModulator
-from hardware.SLM_driver import PhaseSettings
-from diagnostics.old.diagnostics_helpers import ColorFormatter
+from hardware.wrappers.PhaseSettings import PhaseSettings
+from hardware.wrappers.SLMController import SLMController
 
-handler = logging.StreamHandler()
-handler.setFormatter(ColorFormatter("%(levelname)s: %(message)s"))
-logging.basicConfig(level=logging.INFO, handlers=[handler])
+base_path = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(base_path, 'ressources/saved_settings/default_settings_path.json')
 
-"""
-Welcome to the D-lab Controller. If you are reading this this is maybe because you want to modify something is the code.
-- If you want to add a button that opens a new window, directly go to setup_side_panel and add the name of your button 
-and the associated function.
-- If you want to add a new phase pattern, you to go to hardware>SLM_driver>PhaseSettings and
-add a new Type. 
-"""
 
-# The path to the preferred settings are stored into the JSON file
-CONFIG_FILE = './ressources/saved_settings/default_settings_path.json'
-
-class DLabController:
-    """
-    A graphical user interface (GUI) for controlling spatial light modulators (SLMs) and related hardware components
-    in the D-lab.
-    """
-    def __init__(self, parent):
-        """
-        Initializes the D-Lab Controller interface and sets up the main window components.
-
-        Parameters
-        ----------
-        parent : tkinter.Tk
-            The root tkinter window for the application.
-        """
-        logging.info('Initialisation of the interface...')
-        self.main_win = parent
-        self.style = ttk.Style()
-
+class MainWindow(QtWidgets.QMainWindow):
+    """Main window for D-Lab Controller."""
+    def __init__(self):
+        self.initializing = True
+        super().__init__()
+        self.setWindowTitle('D-Lab Controller')
+        self.setMinimumSize(700, 900)
         self.config_file = CONFIG_FILE
 
-        self.HHGView_win = None
-        self.GasDensity_win = None
-        self.FocusView_win = None
+        self.SLM_red = SLMController('red')
+        self.SLM_green = SLMController('green')
 
-        self.SLM_green = SpatialLightModulator('green')
-        self.SLM_red = SpatialLightModulator('red')
+        self.slm_red_status = "closed"
+        self.slm_green_status = "closed"
 
-        self.create_main_window()
+        self.initUI()
 
-        self.frm_green_visible = False
-        logging.info("Loading the default parameters...")
-        self.load_default_parameters('red')
-        self.load_default_parameters('green')
-        logging.info("Welcome to the D-Lab Controller")
+        self.append_log("-------------------------------------")
+        self.append_log("Welcome to the D-Lab Controller")
+        self.append_log("Loading the default parameters...")
+        for color in ['red', 'green']:
+            self.load_default_parameters(color)
+        self.append_log("-------------------------------------")
+        self.initializing = False
 
-    ## Setting up the interface
-    def create_main_window(self):
-        """
-        Configures the main window by setting up its properties and initiating the setup
-        for the SLM windows and side panels.
-        """
-        self.main_win.protocol("WM_DELETE_WINDOW", self.exit_prog)
-        self.main_win.title('D-Lab Controller - Main Interface')
-        self.main_win.resizable(False, False)
-        self.style.configure('lefttab.TNotebook', tabposition=tk.W + tk.N, tabplacement=tk.N + tk.EW)
-        self.setup_slm_window('green')
-        self.setup_slm_window('red')
-        self.setup_side_panel()
+    def initUI(self):
+        central = QtWidgets.QWidget(self)
+        self.setCentralWidget(central)
+        self.main_layout = QtWidgets.QVBoxLayout(central)
 
-    def setup_side_panel(self):
-        """
-        Creates the side panel that includes buttons for various functionalities.
-        To add a panel, just add the name of button and the name of the function
-        """
-        self.frm_side_panel = ttk.LabelFrame(self.main_win, text='Side Panel')
-        self.frm_side_panel.grid(row=0, column=2, sticky='nsew')
+        self.createMenuBar()
 
-        buttons = [
-            ('HHG View', self.open_hhg_view_win),
-            ('Gas Density', self.open_gas_density_win),
-            ('Focus View', self.open_focus_view_win),
-            ('Hide/Show Green', self.hide_show_green_panel)
-        ]
-        for row, (label, cmd) in enumerate(buttons):
-            button = ttk.Button(self.frm_side_panel, text=label, command=cmd)
-            button.grid(row=row, column=0, sticky='nsew')
+        self.slm_tabs = QtWidgets.QTabWidget()
+        panel_red = self.create_slm_panel('red')
+        panel_green = self.create_slm_panel('green')
+        self.slm_tabs.addTab(panel_red, "Red SLM")
+        self.slm_tabs.addTab(panel_green, "Green SLM")
 
-    def setup_slm_window(self, color):
-        """
-        Sets up the SLM window for the specified color.
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        splitter.addWidget(self.slm_tabs)
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        self.setup_frames(color)
-        self.setup_save_load_buttons(color)
-        self.setup_phase_tabs(color)
-        self.setup_phase_display(color)
-        self.setup_publish_button(color)
-        self.setup_preview_button(color)
-        self.setup_close_button(color)
+        self.log_widget = QtWidgets.QPlainTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.log_widget.setFixedHeight(120)
+        splitter.addWidget(self.log_widget)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
 
-        if color == 'red':
-            getattr(self, f"frm_top_{color}").grid(row=0, column=1, sticky='nsew')
-            getattr(self, f"frm_top_b_{color}").grid(row=1, column=1, sticky='nsew')
-            getattr(self, f"frm_mid_{color}").grid(row=2, column=1, sticky='nsew')
-            getattr(self, f"frm_bottom_{color}").grid(row=3, column=1, sticky='nsew')
+        self.main_layout.addWidget(splitter)
+        self.statusBar().showMessage("Red SLM: closed | Green SLM: closed")
 
-    def setup_preview_button(self, color):
-        """
-        Sets up the preview button for the specified color.
+    def update_status_bar(self):
+        msg = f"Red SLM: {self.slm_red_status} | Green SLM: {self.slm_green_status}"
+        self.statusBar().showMessage(msg)
+        if hasattr(self, 'status_label_red'):
+            self.status_label_red.setText(f"Status: {self.slm_red_status}")
+            self.status_label_red.setStyleSheet("background-color: lightgreen;" if "displaying" in self.slm_red_status else "background-color: lightgray;")
+        if hasattr(self, 'status_label_green'):
+            self.status_label_green.setText(f"Status: {self.slm_green_status}")
+            self.status_label_green.setStyleSheet("background-color: lightgreen;" if "displaying" in self.slm_green_status else "background-color: lightgray;")
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        preview_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Preview {color}',
-                                    command=lambda: self.get_phase(color))
-        preview_button.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
+    def createMenuBar(self):
+        menubar = self.menuBar()
+        fileMenu = menubar.addMenu("&File")
+        exitAction = QtWidgets.QAction("Exit", self)
+        exitAction.triggered.connect(self.close)
+        fileMenu.addAction(exitAction)
 
-    def setup_publish_button(self, color):
-        """
-        Sets up the publish button for the specified color.
+    def create_slm_panel(self, color):
+        panel = QtWidgets.QGroupBox(f"{color.capitalize()} SLM Interface")
+        layout = QtWidgets.QVBoxLayout(panel)
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        publish_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Publish {color}',
-                                    command=lambda: self.open_publish_win(color))
-        publish_button.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
+        top_group = QtWidgets.QGroupBox(f"{color.capitalize()} SLM - Phase Display")
+        top_layout = QtWidgets.QVBoxLayout(top_group)
 
-    def setup_close_button(self, color):
-        """
-        Sets up the preview button for the specified color.
+        btn_save = QtWidgets.QPushButton(f"Save {color} settings")
+        btn_load = QtWidgets.QPushButton(f"Load {color} settings")
+        btn_save.clicked.connect(lambda: self.save_settings(color))
+        btn_load.clicked.connect(lambda: self.load_settings(color))
+        hlayout_save = QtWidgets.QHBoxLayout()
+        hlayout_save.addWidget(btn_load)
+        hlayout_save.addWidget(btn_save)
+        top_layout.addLayout(hlayout_save)
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        close_button = ttk.Button(getattr(self, f"frm_bottom_{color}"), text=f'Close {color}',
-                                  command=lambda: self.close_publish_win(color))
-        close_button.grid(row=0, column=2, sticky='nsew', padx=5, pady=5)
+        h_layout_display = QtWidgets.QHBoxLayout()
+        label_display = QtWidgets.QLabel("Display number:")
+        screens = QtWidgets.QApplication.instance().screens()
+        num_screens = len(screens) if screens else 1
+        spin_display = QtWidgets.QSpinBox()
+        spin_display.setRange(1, num_screens)
+        spin_display.setValue(2 if color == 'green' and num_screens >= 2 else 1)
+        setattr(self, f"spin_{color}", spin_display)
+        h_layout_display.addWidget(label_display)
+        h_layout_display.addWidget(spin_display)
+        top_layout.addLayout(h_layout_display)
 
-    def setup_frames(self, color):
-        """
-        Sets up the frames for the interface of the specified color SLM.
+        # Status indicator
+        status_label = QtWidgets.QLabel("Status: closed")
+        status_label.setAlignment(QtCore.Qt.AlignCenter)
+        status_label.setStyleSheet("background-color: lightgray;")
+        setattr(self, f"status_label_{color}", status_label)
+        top_layout.addWidget(status_label)
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        setattr(self, f"frm_top_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM interface'))
-        setattr(self, f"frm_top_b_{color}",
-                ttk.LabelFrame(getattr(self, f"frm_top_{color}"), text=f'{color.capitalize()} SLM - Phase display'))
-        setattr(self, f"frm_mid_{color}", ttk.Notebook(self.main_win, style='lefttab.TNotebook'))
-        setattr(self, f"frm_bottom_{color}", ttk.LabelFrame(self.main_win, text=f'{color.capitalize()} SLM - Options'))
-
-    def setup_save_load_buttons(self, color):
-        """
-        Sets up the save and load buttons for the specified SLM.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        button_frame = getattr(self, f"frm_top_b_{color}")
-        save_button = ttk.Button(button_frame, text=f'Save {color} settings', command=lambda: self.save_settings(color))
-        load_button = ttk.Button(button_frame, text=f'Load {color} settings', command=lambda: self.load_settings(color))
-        save_button.grid(row=1, sticky='ew')
-        load_button.grid(row=0, sticky='ew')
-
-        label_screen = ttk.Label(getattr(self, f"frm_top_{color}"), text='Display number:')
-        setattr(self, f"strvar_{color}", tk.StringVar(value='2' if color == 'green' else '1'))
-        spinbox_screen = ttk.Spinbox(getattr(self, f"frm_top_{color}"), width=8, from_=1, to=5,
-                                     textvariable=getattr(self, f"strvar_{color}"))
-        spinbox_screen.grid(row=0, column=1, sticky='w')
-        label_screen.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
-
-        if color == 'green' or color == 'red':
-            setattr(self, f'ent_scr_{color}', spinbox_screen)
-
-    def setup_phase_tabs(self, color):
-        """
-        Sets up the phase tabs for the specified SLM.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        self.setup_box(getattr(self, f"frm_top_{color}"), color)
-
-    def setup_box(self, frm_, color):
-        """
-        Sets up the box with checkboxes for enabling or disabling phase types.
-
-        Parameters
-        ----------
-        frm_ : tkinter.Frame
-            The parent frame where the box is placed.
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        frm_box = ttk.LabelFrame(frm_, text='Phases enabled')
-        frm_box.grid(column=0)
-
-        types_attr = f"types_{color}"
-        vars_attr = f"vars_{color}"
-        phase_refs_attr = f"phase_refs_{color}"
-        tabs_attr = f"tabs_{color}"
-        frm_mid_attr = f"frm_mid_{color}"
-
-        setattr(self, types_attr, PhaseSettings.types)
-        setattr(self, vars_attr, [])
-        setattr(self, phase_refs_attr, [])
-        setattr(self, tabs_attr, [])
-
-        types = getattr(self, types_attr)
-        vars_list = getattr(self, vars_attr)
-        phase_refs_list = getattr(self, phase_refs_attr)
-        tabs_list = getattr(self, tabs_attr)
-        frm_mid = getattr(self, frm_mid_attr)
-
-        for ind, typ in enumerate(types):
-            var = tk.IntVar()
-            vars_list.append(var)
-            tab = ttk.Frame(frm_mid)
-            tabs_list.append(tab)
-            frm_mid.add(tab, text=typ)
-            phase_refs_list.append(PhaseSettings.new_type(tab, typ))
-            box = ttk.Checkbutton(frm_box, text=typ,
-                                  variable=vars_list[ind],
-                                  onvalue=1, offvalue=0)
-            box.grid(row=ind, sticky='w')
-
-    def setup_phase_display(self, color):
-        """
-        Sets up the phase display using matplotlib for the specified color with axis limits matching the SLM size.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        figure = Figure(figsize=(3, 2))
-        ax = figure.add_subplot(111)
-        figure.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)  # Adjust to center the plot
-
-        # Get the SLM size and set the extent of the plot accordingly
+        fig = Figure(figsize=(6, 4))
+        ax = fig.add_subplot(111)
+        fig.subplots_adjust(left=0.2, right=0.8, top=0.8, bottom=0.2)
         slm = getattr(self, f"SLM_{color}")
         extent = (-slm.slm_size[1] / 2, slm.slm_size[1] / 2, -slm.slm_size[0] / 2, slm.slm_size[0] / 2)
-
-        # Initialize the phase plot with fixed colormap limits
-        phase_image = ax.imshow(np.zeros(slm.slm_size), cmap='hsv', vmin=0, vmax=2*np.pi, extent=extent)
-        colorbar = figure.colorbar(phase_image, ax=ax, orientation='horizontal', fraction=0.07, pad=0.03)
-        colorbar.set_ticks([0, np.pi, 2 * np.pi])
-        colorbar.set_ticklabels(['0', 'π', '2π'])
-
+        phase_image = ax.imshow(np.zeros(slm.slm_size), cmap='hsv', vmin=0, vmax=2 * np.pi, extent=extent)
+        cbar = fig.colorbar(phase_image, ax=ax, orientation='horizontal', fraction=0.07, pad=0.03)
+        cbar.set_ticks([0, np.pi, 2 * np.pi])
+        cbar.set_ticklabels(['0', 'π', '2π'])
         ax.set_xticks([])
         ax.set_yticks([])
-
-        setattr(self, f"fig_{color}", figure)
+        canvas = FigureCanvas(fig)
+        setattr(self, f"fig_{color}", fig)
         setattr(self, f"ax_{color}", ax)
-        setattr(self, f"phase_image_{color}", phase_image)  # Save reference to update later
+        setattr(self, f"phase_image_{color}", phase_image)
+        setattr(self, f"canvas_{color}", canvas)
+        top_layout.addWidget(canvas)
 
-        ax.figure.tight_layout()
+        check_group = QtWidgets.QGroupBox("Phases enabled")
+        check_layout = QtWidgets.QVBoxLayout(check_group)
+        checkboxes = []
+        for typ in PhaseSettings.types:
+            cb = QtWidgets.QCheckBox(typ)
+            cb.setChecked(False)
+            check_layout.addWidget(cb)
+            checkboxes.append(cb)
+        tab_widget = QtWidgets.QTabWidget()
+        phase_refs = []
+        for typ in PhaseSettings.types:
+            tab = QtWidgets.QWidget()
+            tab_layout = QtWidgets.QVBoxLayout(tab)
+            phase_ref = PhaseSettings.new_type(tab, typ)
+            tab_layout.addWidget(phase_ref)
+            tab_widget.addTab(tab, typ)
+            phase_refs.append(phase_ref)
+        setattr(self, f"checkboxes_{color}", checkboxes)
+        setattr(self, f"phase_refs_{color}", phase_refs)
+        setattr(self, f"tab_widget_{color}", tab_widget)
+        top_tab_layout = QtWidgets.QHBoxLayout()
+        top_tab_layout.addWidget(check_group)
+        top_tab_layout.addWidget(tab_widget)
+        top_layout.addLayout(top_tab_layout)
 
-        canvas = FigureCanvasTkAgg(figure, getattr(self, f"frm_top_b_{color}"))
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.grid(row=2, padx=2, pady=2, sticky='nsew')
+        bottom_layout = QtWidgets.QHBoxLayout()
+        btn_preview = QtWidgets.QPushButton(f"Preview {color}")
+        btn_publish = QtWidgets.QPushButton(f"Publish {color}")
+        btn_close = QtWidgets.QPushButton(f"Close {color}")
+        btn_preview.clicked.connect(lambda: self.get_phase(color))
+        btn_publish.clicked.connect(lambda: self.open_publish_win(color))
+        btn_close.clicked.connect(lambda: self.close_publish_win(color))
+        bottom_layout.addWidget(btn_preview)
+        bottom_layout.addWidget(btn_publish)
+        bottom_layout.addWidget(btn_close)
+        layout.addLayout(bottom_layout)
 
-        setattr(self, f"img_{color}", canvas)
+        layout.addWidget(top_group)
+        return panel
 
-    def hide_show_green_panel(self):
-        """
-        Toggles the visibility of the green SLM interface panel.
-        """
-        panels = ['frm_top_green', 'frm_top_b_green', 'frm_mid_green', 'frm_bottom_green']
-
-        if self.frm_green_visible:
-            for panel in panels:
-                getattr(self, panel).grid_remove()
-        else:
-            getattr(self, 'frm_top_green').grid(row=0, column=0, sticky='nsew')
-            getattr(self, 'frm_top_b_green').grid(row=1, column=1, sticky='nsew')
-            getattr(self, 'frm_mid_green').grid(row=2, column=0, sticky='nsew')
-            getattr(self, 'frm_bottom_green').grid(row=3, column=0, sticky='nsew')
-
-        self.frm_green_visible = not self.frm_green_visible
-
-    ## Phase pattern commands
     def get_phase(self, color):
-        """
-        Retrieves and calculates the phase for the specified SLM based on the active phase types.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-
-        Returns
-        -------
-        numpy.ndarray
-            The phase array for the selected SLM.
-        """
-        slm = getattr(self, f'SLM_{color}')
-        phase_refs = getattr(self, f'phase_refs_{color}')
-        vars_color = getattr(self, f'vars_{color}')
-
-        phase = np.zeros(slm.slm_size)
-        slm.phase = np.zeros(slm.slm_size)
-        slm.background_phase = np.zeros(slm.slm_size)
-
-        active_phase_types = []
-        for ind, phase_type in enumerate(phase_refs):
-            if vars_color[ind].get() == 1:
-                active_phase_types.append(phase_type.__class__.__name__)
-                phase += phase_type.phase()  # Add each phase type to the phase variable
-
-                if phase_type.__class__.__name__ == 'TypeBackground':
-                    slm.background_phase = phase_type.phase()  # Send the new background on the SLM class
-
-        if np.all(slm.background_phase == 0):
-            logging.warning(f"The background phase of the {color} SLM is an array of 0.")
-
-        logging.info(f"Phase(s) on the {color} SLM: {', '.join(active_phase_types)}")
-
-        slm.phase = phase  # Send the new phase on the SLM class
-        self.update_phase_plot(slm, color)  # Update the plot on the main interface
-        return phase
-
-    def update_phase_plot(self, slm, color):
-        """
-        Updates the phase plot for the specified SLM without re-adding the colorbar or changing axes.
-
-        Parameters
-        ----------
-        slm : SpatialLightModulator
-            The SLM object for which the phase plot is updated.
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        phase_image = getattr(self, f"phase_image_{color}")
-
-        # Convert the phase data from 0-1023 range to 0-2π range for display only
-        display_phase = (slm.phase - slm.background_phase) * (2 * np.pi / 1023)
-
-        # Update the phase image data
-        phase_image.set_data(display_phase)
-
-        # Draw only the canvas without re-adding the color bar
-        getattr(self, f"img_{color}").draw()
-
-    ##  Opening other windows
-    def open_publish_win(self, color):
-        """
-        Publishes the current phase configuration to the specified SLM screen.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        slm = getattr(self, f'SLM_{color}')
-        ent_scr = getattr(self, f'ent_scr_{color}')
-        screen_num = int(ent_scr.get())
-        phase = self.get_phase(color)
-
-        # Check if all elements of background_phase are zero and raise an error
-        if np.all(slm.background_phase == 0):
-            raise ValueError(
-                f"Error: The background phase of the {color} SLM is all zeros. "
-                f"Please adjust the background phase before publishing.")
-
-        slm.publish(phase, screen_num)
-
-    def open_hhg_view_win(self):
-        """
-        Opens the HHG view window.
-        """
-        from diagnostics.HHGView import HHGView
-        self.HHGView_win = HHGView.HHGView(self)
-
-    def open_gas_density_win(self):
-        """
-        Opens the gas density view window.
-        """
-        from diagnostics.GasDensity import GasDensity
-        self.GasDensity_win = GasDensity.GasDensity()
-
-    def open_focus_view_win(self):
-        """
-        Opens the focus view window.
-        """
-        from diagnostics.FocusView import FocusView
-        self.FocusView_win = FocusView.FocusView()
-
-    ## Saving and laoding settings
-    def save_settings(self, color, filepath=None):
-        """
-        Saves the current phase settings for the specified SLM to a file.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        filepath : str, optional
-            The path where the settings file is saved. If not provided, a dialog is opened.
-        """
-        from tkinter.filedialog import asksaveasfilename
-        if filepath is None:
-            initial_directory = f'./ressources/saved_settings/SLM_{color}/'
-            filepath = asksaveasfilename(initialdir=initial_directory,
-                                         defaultextension='txt',
-                                         filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
-            if not filepath:
-                return
-
-        dict = {}
+        """Compute phases and update the preview; return phase types used for publishing."""
+        self.append_log(f"Preview requested for {color} SLM.")
+        slm = getattr(self, f"SLM_{color}")
         phase_refs = getattr(self, f"phase_refs_{color}")
-        vars_ = getattr(self, f"vars_{color}")
-        ent_scr = getattr(self, f"ent_scr_{color}")
+        checkboxes = getattr(self, f"checkboxes_{color}")
+        total_phase = np.zeros(slm.slm_size)
+        preview_phase = np.zeros(slm.slm_size)
+        publish_types = []
+        preview_types = []
+        for cb, phase_ref in zip(checkboxes, phase_refs):
+            if cb.isChecked():
+                phase_val = phase_ref.phase()
+                total_phase += phase_val
+                publish_types.append(phase_ref.name_())
+                if "background" not in phase_ref.name_().lower():
+                    preview_phase += phase_val
+                    preview_types.append(phase_ref.name_())
+        slm.phase = total_phase
+        display_phase = preview_phase * (2 * np.pi / 1023)
+        phase_image = getattr(self, f"phase_image_{color}")
+        phase_image.set_data(display_phase)
+        canvas = getattr(self, f"canvas_{color}")
+        canvas.draw()
+        self.append_log(f"Preview updated for {color} SLM. Types: {', '.join(preview_types)}")
+        return publish_types
 
+    def open_publish_win(self, color):
+        self.append_log(f"Publish requested for {color} SLM.")
+        slm = getattr(self, f"SLM_{color}")
+        spin = getattr(self, f"spin_{color}")
+        screen_num = spin.value()
+        if color == "red":
+            if self.slm_green_status != "closed" and f"Screen {screen_num}" in self.slm_green_status:
+                QtWidgets.QMessageBox.warning(self, "Error", f"Screen {screen_num} is already in use by Green SLM.")
+                self.append_log(f"Error: Cannot publish red SLM on screen {screen_num} because it is already in use by Green SLM.")
+                return
+        else:
+            if self.slm_red_status != "closed" and f"Screen {screen_num}" in self.slm_red_status:
+                QtWidgets.QMessageBox.warning(self, "Error", f"Screen {screen_num} is already in use by Red SLM.")
+                self.append_log(f"Error: Cannot publish green SLM on screen {screen_num} because it is already in use by Red SLM.")
+                return
+        publish_types = self.get_phase(color)
+        if np.all(slm.phase == 0):
+            QtWidgets.QMessageBox.warning(self, "Error", f"No background image provided for {color} SLM. Please provide a background image.")
+            self.append_log(f"Error: No background image provided for {color} SLM. Please provide a background image.")
+            return
+        slm.publish(slm.phase, screen_num)
+        self.append_log(f"Published {color} SLM phase on screen {screen_num}. Types: {', '.join(publish_types)}")
+        if color == "red":
+            self.slm_red_status = f"displaying (Screen {screen_num})"
+        else:
+            self.slm_green_status = f"displaying (Screen {screen_num})"
+        self.update_status_bar()
+
+    def close_publish_win(self, color):
+        self.append_log(f"Close requested for {color} SLM.")
+        slm = getattr(self, f"SLM_{color}")
+        slm.close()
+        slm.phase = np.zeros(slm.slm_size)
+        self.append_log(f"Closed {color} SLM connection.")
+        if color == "red":
+            self.slm_red_status = "closed"
+        else:
+            self.slm_green_status = "closed"
+        self.update_status_bar()
+
+    def save_settings(self, color):
+        dlg = QtWidgets.QFileDialog(self)
+        dlg.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
+        dlg.setNameFilter("Text Files (*.txt);;All Files (*)")
+        dlg.setDirectory(os.path.join(base_path, f"ressources/saved_settings/SLM_{color}/"))
+        if dlg.exec_():
+            filepath = dlg.selectedFiles()[0]
+        else:
+            return
+        settings = {}
+        phase_refs = getattr(self, f"phase_refs_{color}")
+        checkboxes = getattr(self, f"checkboxes_{color}")
+        spin = getattr(self, f"spin_{color}")
+        for phase_ref, cb in zip(phase_refs, checkboxes):
+            settings[phase_ref.name_()] = {'Enabled': cb.isChecked(), 'Params': phase_ref.save_()}
+        settings['screen_pos'] = spin.value()
         with open(filepath, 'w') as f:
-            for num, phase in enumerate(phase_refs):
-                dict[phase.name_()] = {'Enabled': vars_[num].get(), 'Params': phase.save_()}
-            dict['screen_pos'] = ent_scr.get()
-            f.write(json.dumps(dict))
-
+            json.dump(settings, f)
         self.update_default_path(filepath, color)
 
-    def update_default_path(self, path, color):
-        """
-        Updates the default settings path for the specified color in the JSON configuration file.
+    def load_settings(self, color, filepath=None):
+        dlg = QtWidgets.QFileDialog(self)
+        dlg.setNameFilter("Text Files (*.txt);;All Files (*)")
+        dlg.setDirectory(os.path.join(base_path, f"ressources/saved_settings/SLM_{color}/"))
+        if not filepath:
+            if dlg.exec_():
+                filepath = dlg.selectedFiles()[0]
+            else:
+                return
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            phase_refs = getattr(self, f"phase_refs_{color}")
+            checkboxes = getattr(self, f"checkboxes_{color}")
+            spin = getattr(self, f"spin_{color}")
+            for key, phase_ref, cb in zip(data.keys(), phase_refs, checkboxes):
+                if key != 'screen_pos' and key in data:
+                    phase_data = data[key]
+                    phase_ref.load_(phase_data['Params'])
+                    cb.setChecked(phase_data['Enabled'])
+            if 'screen_pos' in data:
+                spin.setValue(data['screen_pos'])
+            self.append_log(f"{color.capitalize()} settings loaded successfully")
+        except Exception as e:
+            self.append_log(f"Error loading settings for {color}: {e}")
 
-        Parameters
-        ----------
-        path : str
-            The path to be saved as the default.
-        color : str
-            The color ('green' or 'red') whose path is being updated.
-        """
+    def update_default_path(self, path, color):
+        rel_path = os.path.relpath(path, base_path)
         try:
             with open(self.config_file, 'r') as f:
                 data = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except Exception:
             data = {}
-
-        data[f"{color}_default_path"] = path
-
+        data[f"{color}_default_path"] = rel_path
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(data, f)
-            logging.info(f"Default {color} settings path updated to {path}")
+            self.append_log(f"Default {color} settings path updated to {rel_path}")
         except Exception as e:
-            logging.error(f"Failed to update default settings path for {color}: {e}")
-
-    def load_settings(self, color, filepath=None):
-        """
-        Loads the phase settings for the specified SLM from a file.
-
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        filepath : str, optional
-            The path to the settings file. If not provided, a dialog is opened.
-        """
-        from tkinter.filedialog import askopenfilename
-
-        # Open file dialog if filepath is not provided
-        if filepath is None:
-            initial_directory = f'./ressources/saved_settings/SLM_{color}/'
-            filepath = askopenfilename(initialdir=initial_directory,
-                                       filetypes=[('Text Files', '*.txt'), ('All Files', '*.*')])
-            if not filepath:
-                logging.info(f"No file selected for loading {color} settings.")
-                return
-
-        try:
-            with open(filepath, 'r') as f:
-                dics = json.load(f)
-
-            phase_refs = getattr(self, f"phase_refs_{color}")
-            vars_ = getattr(self, f"vars_{color}")
-            ent_scr = getattr(self, f"ent_scr_{color}")
-
-            # Load each phase reference setting if available
-            for num, phase in enumerate(phase_refs):
-                phase_data = dics.get(phase.name_())
-                if phase_data:
-                    phase.load_(phase_data['Params'])
-                    vars_[num].set(phase_data['Enabled'])
-                else:
-                    logging.warning(f"Missing data for {phase.name_()} in {color} settings file.")
-
-            # Set screen position
-            screen_pos = dics.get('screen_pos')
-            if screen_pos:
-                ent_scr.delete(0, tk.END)
-                ent_scr.insert(0, screen_pos)
-            else:
-                logging.warning(f"No screen position found in {color} settings file.")
-
-            logging.info(f"{color.capitalize()} settings loaded successfully from {filepath}")
-
-        except FileNotFoundError:
-            logging.error(f"No settings file found at {filepath}")
-        except json.JSONDecodeError:
-            logging.error(f"Error decoding JSON in {color} settings file at {filepath}")
-        except Exception as e:
-            logging.error(f"Unexpected error loading {color} settings from {filepath}: {e}")
+            self.append_log(f"Error updating default settings path for {color}: {e}")
 
     def load_default_parameters(self, color):
-        """
-        Loads the default parameters for the specified color SLM using the path from the JSON configuration file.
-        """
         try:
-            # Load the configuration file
             with open(self.config_file, 'r') as f:
                 data = json.load(f)
-                filepath = data.get(f"{color}_default_path")
-
-            # Ensure that a path was found in the configuration
-            if filepath:
-                logging.info(f"Loading default {color} settings from {filepath}...")
+            rel_path = data.get(f"{color}_default_path")
+            if rel_path:
+                filepath = os.path.join(base_path, rel_path)
+                self.append_log(f"Loading default {color} settings from {rel_path}...")
                 self.load_settings(color, filepath)
             else:
-                logging.error(f"No default path specified in the config file for {color}.")
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            logging.error(f"Error loading config file: {e}")
+                self.append_log(f"No default path specified in the config file for {color}.")
+        except Exception as e:
+            self.append_log(f"Error loading config file: {e}")
 
-    ## Closing and exit commands
-    def close_publish_win(self, color):
-        """
-        Close the connection to the SLM
+    def append_log(self, msg):
+        if getattr(self, 'initializing', False):
+            self.log_widget.appendPlainText(msg)
+        else:
+            current_time = QtCore.QTime.currentTime().toString("hh:mm:ss")
+            self.log_widget.appendPlainText(f"{current_time} - {msg}")
 
-        Parameters
-        ----------
-        color : str
-            The color of the SLM ('green' or 'red').
-        """
-        slm = getattr(self, f'SLM_{color}')
-        slm.close()
-
-    def exit_prog(self):
-        """
-        Closes the application and ensures the SLM connections are closed.
-        """
-        self.close_publish_win('red')
-        self.close_publish_win('green')
-        self.main_win.destroy()
+    def closeEvent(self, event):
+        try:
+            self.SLM_red.close()
+            self.SLM_green.close()
+        except Exception as e:
+            self.append_log(f"Error during shutdown: {e}")
+        event.accept()
 
 
-root = tk.Tk()
-main = DLabController(root)
-root.mainloop()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
