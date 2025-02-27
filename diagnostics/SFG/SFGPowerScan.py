@@ -187,7 +187,7 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
 
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
-        self.headerLabel = QLabel("Comments:")
+        self.headerLabel = QLabel("Comment:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
@@ -528,7 +528,7 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
 
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
-        self.headerLabel = QLabel("File Header Comment:")
+        self.headerLabel = QLabel("Comment:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
@@ -706,7 +706,7 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         self.abortButton.setEnabled(False)
 
 
-# ------------------ Main Application ------------------
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     tabs = QTabWidget()

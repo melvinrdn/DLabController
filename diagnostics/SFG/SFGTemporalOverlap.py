@@ -265,7 +265,7 @@ class SFGTemporalOverlapGUI(QWidget):
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
 
-        self.headerLabel = QLabel("File Header Comment:")
+        self.headerLabel = QLabel("Comment:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
@@ -486,7 +486,7 @@ class PowermeterMeasurementGUI(QWidget):
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
 
-        self.headerLabel = QLabel("File Header Comment:")
+        self.headerLabel = QLabel("Comment:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
