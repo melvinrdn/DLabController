@@ -311,7 +311,8 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
             self.abortButton.setEnabled(False)
 
     def update_log(self, message):
-        self.logText.append(message)
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logText.append(f"[{current_time}] {message}")
 
     def update_plot(self, m2_positions, m1_positions, power_map):
         self.image.set_extent([m2_positions[0], m2_positions[-1], m1_positions[0], m1_positions[-1]])
@@ -648,7 +649,8 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
             self.abortButton.setEnabled(False)
 
     def update_log(self, message):
-        self.logText.append(message)
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logText.append(f"[{current_time}] {message}")
 
     def update_plot(self, m2_positions, m1_positions, intensity_map):
         self.image.set_extent([m2_positions[0], m2_positions[-1], m1_positions[0], m1_positions[-1]])

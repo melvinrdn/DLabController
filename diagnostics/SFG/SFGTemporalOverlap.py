@@ -385,7 +385,8 @@ class SFGTemporalOverlapGUI(QWidget):
             self.abortButton.setEnabled(False)
 
     def update_log(self, message):
-        self.logText.append(message)
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logText.append(f"[{current_time}] {message}")
 
     def update_plot(self, wavelength, spectrum_data):
         self.image.set_extent([wavelength[0], wavelength[-1],
@@ -574,7 +575,8 @@ class PowermeterMeasurementGUI(QWidget):
             self.abortButton.setEnabled(False)
 
     def update_log(self, message):
-        self.logText.append(message)
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logText.append(f"[{current_time}] {message}")
 
     def update_plot(self, positions, power_data):
         self.ax.clear()

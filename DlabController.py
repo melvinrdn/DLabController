@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import numpy as np
+import datetime
 
 from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
@@ -17,7 +18,6 @@ CONFIG_FILE = os.path.join(base_path, 'ressources/saved_settings/default_setting
 class MainWindow(QtWidgets.QMainWindow):
     """Main window for D-Lab Controller."""
     def __init__(self):
-        self.initializing = True
         super().__init__()
         self.setWindowTitle('D-Lab Controller')
         self.setMinimumSize(700, 900)
@@ -31,13 +31,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.initUI()
 
-        self.append_log("-------------------------------------")
-        self.append_log("Welcome to the D-Lab Controller")
-        self.append_log("Loading the default parameters...")
+        self.update_log("Welcome to the D-Lab Controller")
+        self.update_log("Loading the default parameters...")
         for color in ['red', 'green']:
             self.load_default_parameters(color)
-        self.append_log("-------------------------------------")
-        self.initializing = False
 
     def initUI(self):
         central = QtWidgets.QWidget(self)
@@ -55,10 +52,10 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter.addWidget(self.slm_tabs)
 
-        self.log_widget = QtWidgets.QPlainTextEdit()
-        self.log_widget.setReadOnly(True)
-        self.log_widget.setFixedHeight(120)
-        splitter.addWidget(self.log_widget)
+        self.logText = QtWidgets.QTextEdit()
+        self.logText.setReadOnly(True)
+        self.logText.setFixedHeight(120)
+        splitter.addWidget(self.logText)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
@@ -177,7 +174,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def get_phase(self, color):
         """Compute phases and update the preview; return phase types used for publishing."""
-        self.append_log(f"Preview requested for {color} SLM.")
+        self.update_log(f"Preview requested for {color} SLM.")
         slm = getattr(self, f"SLM_{color}")
         phase_refs = getattr(self, f"phase_refs_{color}")
         checkboxes = getattr(self, f"checkboxes_{color}")
@@ -199,31 +196,31 @@ class MainWindow(QtWidgets.QMainWindow):
         phase_image.set_data(display_phase)
         canvas = getattr(self, f"canvas_{color}")
         canvas.draw()
-        self.append_log(f"Preview updated for {color} SLM. Types: {', '.join(preview_types)}")
+        self.update_log(f"Preview updated for {color} SLM. Types: {', '.join(preview_types)}")
         return publish_types
 
     def open_publish_win(self, color):
-        self.append_log(f"Publish requested for {color} SLM.")
+        self.update_log(f"Publish requested for {color} SLM.")
         slm = getattr(self, f"SLM_{color}")
         spin = getattr(self, f"spin_{color}")
         screen_num = spin.value()
         if color == "red":
             if self.slm_green_status != "closed" and f"Screen {screen_num}" in self.slm_green_status:
                 QtWidgets.QMessageBox.warning(self, "Error", f"Screen {screen_num} is already in use by Green SLM.")
-                self.append_log(f"Error: Cannot publish red SLM on screen {screen_num} because it is already in use by Green SLM.")
+                self.update_log(f"Error: Cannot publish red SLM on screen {screen_num} because it is already in use by Green SLM.")
                 return
         else:
             if self.slm_red_status != "closed" and f"Screen {screen_num}" in self.slm_red_status:
                 QtWidgets.QMessageBox.warning(self, "Error", f"Screen {screen_num} is already in use by Red SLM.")
-                self.append_log(f"Error: Cannot publish green SLM on screen {screen_num} because it is already in use by Red SLM.")
+                self.update_log(f"Error: Cannot publish green SLM on screen {screen_num} because it is already in use by Red SLM.")
                 return
         publish_types = self.get_phase(color)
         if np.all(slm.phase == 0):
             QtWidgets.QMessageBox.warning(self, "Error", f"No background image provided for {color} SLM. Please provide a background image.")
-            self.append_log(f"Error: No background image provided for {color} SLM. Please provide a background image.")
+            self.update_log(f"Error: No background image provided for {color} SLM. Please provide a background image.")
             return
         slm.publish(slm.phase, screen_num)
-        self.append_log(f"Published {color} SLM phase on screen {screen_num}. Types: {', '.join(publish_types)}")
+        self.update_log(f"Published {color} SLM phase on screen {screen_num}. Types: {', '.join(publish_types)}")
         if color == "red":
             self.slm_red_status = f"displaying (Screen {screen_num})"
         else:
@@ -231,11 +228,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_status_bar()
 
     def close_publish_win(self, color):
-        self.append_log(f"Close requested for {color} SLM.")
+        self.update_log(f"Close requested for {color} SLM.")
         slm = getattr(self, f"SLM_{color}")
         slm.close()
         slm.phase = np.zeros(slm.slm_size)
-        self.append_log(f"Closed {color} SLM connection.")
+        self.update_log(f"Closed {color} SLM connection.")
         if color == "red":
             self.slm_red_status = "closed"
         else:
@@ -284,9 +281,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     cb.setChecked(phase_data['Enabled'])
             if 'screen_pos' in data:
                 spin.setValue(data['screen_pos'])
-            self.append_log(f"{color.capitalize()} settings loaded successfully")
+            self.update_log(f"{color.capitalize()} settings loaded successfully")
         except Exception as e:
-            self.append_log(f"Error loading settings for {color}: {e}")
+            self.update_log(f"Error loading settings for {color}: {e}")
 
     def update_default_path(self, path, color):
         rel_path = os.path.relpath(path, base_path)
@@ -299,9 +296,9 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             with open(self.config_file, 'w') as f:
                 json.dump(data, f)
-            self.append_log(f"Default {color} settings path updated to {rel_path}")
+            self.update_log(f"Default {color} settings path updated to {rel_path}")
         except Exception as e:
-            self.append_log(f"Error updating default settings path for {color}: {e}")
+            self.update_log(f"Error updating default settings path for {color}: {e}")
 
     def load_default_parameters(self, color):
         try:
@@ -310,26 +307,23 @@ class MainWindow(QtWidgets.QMainWindow):
             rel_path = data.get(f"{color}_default_path")
             if rel_path:
                 filepath = os.path.join(base_path, rel_path)
-                self.append_log(f"Loading default {color} settings from {rel_path}...")
+                self.update_log(f"Loading default {color} settings from {rel_path}...")
                 self.load_settings(color, filepath)
             else:
-                self.append_log(f"No default path specified in the config file for {color}.")
+                self.update_log(f"No default path specified in the config file for {color}.")
         except Exception as e:
-            self.append_log(f"Error loading config file: {e}")
+            self.update_log(f"Error loading config file: {e}")
 
-    def append_log(self, msg):
-        if getattr(self, 'initializing', False):
-            self.log_widget.appendPlainText(msg)
-        else:
-            current_time = QtCore.QTime.currentTime().toString("hh:mm:ss")
-            self.log_widget.appendPlainText(f"{current_time} - {msg}")
+    def update_log(self, message):
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logText.append(f"[{current_time}] {message}")
 
     def closeEvent(self, event):
         try:
             self.SLM_red.close()
             self.SLM_green.close()
         except Exception as e:
-            self.append_log(f"Error during shutdown: {e}")
+            self.update_log(f"Error during shutdown: {e}")
         event.accept()
 
 
