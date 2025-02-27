@@ -131,6 +131,10 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
+        self.homing_motor1_Checkbox = QCheckBox("Home on Activate")
+        self.homing_motor1_Checkbox.setChecked(True)
+        controls_layout.addWidget(self.homing_motor1_Checkbox)
+
         self.motor1StartLabel = QLabel("Motor1 Start Position:")
         self.motor1StartInput = QLineEdit("0")
         self.motor1EndLabel = QLabel("Motor1 End Position:")
@@ -148,6 +152,10 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         self.motor2IDInput = QLineEdit("83837726")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
+
+        self.homing_motor2_Checkbox = QCheckBox("Home on Activate")
+        self.homing_motor2_Checkbox.setChecked(True)
+        controls_layout.addWidget(self.homing_motor2_Checkbox)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
         self.motor2StartInput = QLineEdit("0")
@@ -228,13 +236,13 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
             motor1_id = int(self.motor1IDInput.text())
             self.update_log("Activating Motor1...")
             self.motor1_controller = ThorlabsController(motor1_id)
-            self.motor1_controller.activate()
+            self.motor1_controller.activate(homing=self.homing_motor1_Checkbox.isChecked())
             self.update_log(f"Current position of Motor1: {self.motor1_controller.get_position()}")
 
             motor2_id = int(self.motor2IDInput.text())
             self.update_log("Activating Motor2...")
             self.motor2_controller = ThorlabsController(motor2_id)
-            self.motor2_controller.activate()
+            self.motor2_controller.activate(homing=self.homing_motor2_Checkbox.isChecked())
             self.update_log(f"Current position of Motor2: {self.motor2_controller.get_position()}")
 
             powermeter_id = self.powermeterInput.text()
@@ -453,6 +461,11 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
+        self.homing_motor1_Checkbox = QCheckBox("Home on Activate")
+        self.homing_motor1_Checkbox.setChecked(True)
+        controls_layout.addWidget(self.homing_motor1_Checkbox)
+
+
         self.motor1StartLabel = QLabel("Motor1 Start Position:")
         self.motor1StartInput = QLineEdit("0")
         self.motor1EndLabel = QLabel("Motor1 End Position:")
@@ -470,6 +483,10 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         self.motor2IDInput = QLineEdit("83837726")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
+
+        self.homing_motor2_Checkbox = QCheckBox("Home on Activate")
+        self.homing_motor2_Checkbox.setChecked(True)
+        controls_layout.addWidget(self.homing_motor2_Checkbox)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
         self.motor2StartInput = QLineEdit("0")
@@ -568,13 +585,13 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
             motor1_id = int(self.motor1IDInput.text())
             self.update_log("Activating Motor1...")
             self.motor1_controller = ThorlabsController(motor1_id)
-            self.motor1_controller.activate()
+            self.motor1_controller.activate(homing=self.homing_motor1_Checkbox.isChecked())
             self.update_log(f"Current position of Motor1: {self.motor1_controller.get_position()}")
 
             motor2_id = int(self.motor2IDInput.text())
             self.update_log("Activating Motor2...")
             self.motor2_controller = ThorlabsController(motor2_id)
-            self.motor2_controller.activate()
+            self.motor2_controller.activate(homing=self.homing_motor2_Checkbox.isChecked())
             self.update_log(f"Current position of Motor2: {self.motor2_controller.get_position()}")
 
 
