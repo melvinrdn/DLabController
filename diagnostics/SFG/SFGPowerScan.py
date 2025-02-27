@@ -175,17 +175,22 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.powermeterLabel)
         controls_layout.addWidget(self.powermeterInput)
 
+        self.wavelengthLabel = QLabel("Wavelength (nm):")
+        self.wavelengthInput = QLineEdit("343")
+        controls_layout.addWidget(self.wavelengthLabel)
+        controls_layout.addWidget(self.wavelengthInput)
+
+        self.noAvgLabel = QLabel("Number of Averages:")
+        self.noAvgInput = QLineEdit("1")
+        controls_layout.addWidget(self.noAvgLabel)
+        controls_layout.addWidget(self.noAvgInput)
+
         self.saveDataCheckbox = QCheckBox("Save Data to File")
         controls_layout.addWidget(self.saveDataCheckbox)
         self.headerLabel = QLabel("Comments:")
         self.headerInput = QLineEdit("")
         controls_layout.addWidget(self.headerLabel)
         controls_layout.addWidget(self.headerInput)
-
-        self.noAvgLabel = QLabel("Number of Averages:")
-        self.noAvgInput = QLineEdit("1")
-        controls_layout.addWidget(self.noAvgLabel)
-        controls_layout.addWidget(self.noAvgInput)
 
         self.activateButton = QPushButton("Activate Hardware")
         self.activateButton.clicked.connect(self.activateHardware)
@@ -252,8 +257,11 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
             self.update_log("Activating Powermeter...")
             self.powermeter_controller = PowermeterController(powermeter_id)
             self.powermeter_controller.activate()
-
+            wavelength = float(self.wavelengthInput.text())
+            self.powermeter_controller.set_wavelength(wavelength)
+            self.update_log(f"Powermeter wavelength set to {wavelength} nm")
             self.update_log("Hardware activated.")
+
             self.activateButton.setEnabled(False)
             self.deactivateButton.setEnabled(True)
         except Exception as e:

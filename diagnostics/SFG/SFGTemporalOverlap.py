@@ -5,7 +5,7 @@ import datetime
 
 from PyQt5.QtWidgets import (QApplication, QWidget, QVBoxLayout, QPushButton,
                              QMessageBox, QTextEdit, QLineEdit, QLabel, QHBoxLayout,
-                             QSplitter,QComboBox, QCheckBox, QTabWidget)
+                             QSplitter, QComboBox, QCheckBox, QTabWidget)
 from PyQt5.QtCore import QThread, pyqtSignal
 
 import numpy as np
@@ -17,6 +17,7 @@ from hardware.wrappers.AvaspecController import AvaspecController
 from hardware.wrappers.PowermeterController import PowermeterController
 
 from diagnostics.utils import custom_cmap
+
 
 # ------------------ Spectrometer Measurement Thread ------------------
 
@@ -418,6 +419,7 @@ class SFGTemporalOverlapGUI(QWidget):
         self.startButton.setEnabled(True)
         self.abortButton.setEnabled(False)
 
+
 # ------------------ Powermeter Measurement GUI (Tab 2) ------------------
 
 class PowermeterMeasurementGUI(QWidget):
@@ -465,6 +467,11 @@ class PowermeterMeasurementGUI(QWidget):
         self.powermeterInput = QLineEdit("USB0::0x1313::0x8078::P0045634::INSTR")
         controls_layout.addWidget(self.powermeterLabel)
         controls_layout.addWidget(self.powermeterInput)
+
+        self.wavelengthLabel = QLabel("Wavelength (nm):")
+        self.wavelengthInput = QLineEdit("343")
+        controls_layout.addWidget(self.wavelengthLabel)
+        controls_layout.addWidget(self.wavelengthInput)
 
         self.activateButton = QPushButton("Activate Hardware")
         self.activateButton.clicked.connect(self.activateHardware)
@@ -541,6 +548,9 @@ class PowermeterMeasurementGUI(QWidget):
             self.update_log("Starting Powermeter...")
             self.powermeter_controller = PowermeterController(powermeter_id)
             self.powermeter_controller.activate()
+            wavelength = float(self.wavelengthInput.text())
+            self.powermeter_controller.set_wavelength(wavelength)
+            self.update_log(f"Powermeter wavelength set to {wavelength} nm")
             self.update_log("Hardware activated.")
 
             self.activateButton.setEnabled(False)
@@ -585,7 +595,7 @@ class PowermeterMeasurementGUI(QWidget):
 
             header_text = self.headerInput.text()
             self.thread = PowerMeasurementThread(self.motor_controller, self.powermeter_controller,
-                                            positions, no_avg, save_data, header_text)
+                                                 positions, no_avg, save_data, header_text)
 
             self.thread.log_signal.connect(self.update_log)
             self.thread.plot_signal.connect(self.update_plot)
