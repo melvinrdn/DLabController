@@ -1,5 +1,5 @@
 import thorlabs_apt as apt
-from typing import Optional, Tuple
+from typing import Optional
 
 class ThorlabsController:
     def __init__(self, motor_id: int) -> None:
@@ -9,12 +9,13 @@ class ThorlabsController:
         self.motor_id: int = motor_id
         self.motor: Optional[apt.Motor] = None
 
-    def activate(self) -> None:
+    def activate(self,homing=True) -> None:
         """
         Activate (initialize) the motor.
         """
         self.motor = apt.Motor(self.motor_id)
-        self.home()
+        if homing:
+            self.home()
 
     def home(self) -> None:
         """

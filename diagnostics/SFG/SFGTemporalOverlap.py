@@ -214,6 +214,11 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_layout.addWidget(self.motorIDLabel)
         controls_layout.addWidget(self.motorIDInput)
 
+        # Add a checkbox for default homing
+        self.homingCheckbox = QCheckBox("Home on start")
+        self.homingCheckbox.setChecked(True)
+        controls_layout.addWidget(self.homingCheckbox)
+
         self.positionLabel = QLabel("Start Position:")
         self.positionInput = QLineEdit("13.6")
         self.endPositionLabel = QLabel("End Position:")
@@ -327,7 +332,7 @@ class SFGTemporalOverlapGUI(QWidget):
 
             self.update_log("Starting Thorlabs stage...")
             self.motor_controller = ThorlabsController(motor_id)
-            self.motor_controller.activate()
+            self.motor_controller.activate(homing=self.homingCheckbox.isChecked())
             self.update_log(f"Current position: {self.motor_controller.get_position()}")
 
             self.update_log("Starting Spectrometer...")
@@ -432,6 +437,11 @@ class PowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motorIDLabel)
         controls_layout.addWidget(self.motorIDInput)
 
+        # Add a checkbox for default homing
+        self.homingCheckbox = QCheckBox("Home on start")
+        self.homingCheckbox.setChecked(True)
+        controls_layout.addWidget(self.homingCheckbox)
+
         self.positionLabel = QLabel("Start Position:")
         self.positionInput = QLineEdit("13.6")
         self.endPositionLabel = QLabel("End Position:")
@@ -525,7 +535,7 @@ class PowermeterMeasurementGUI(QWidget):
 
             self.update_log("Starting Thorlabs stage...")
             self.motor_controller = ThorlabsController(motor_id)
-            self.motor_controller.activate()
+            self.motor_controller.activate(homing=self.homingCheckbox.isChecked())
             self.update_log(f"Current position: {self.motor_controller.get_position()}")
 
             self.update_log("Starting Powermeter...")

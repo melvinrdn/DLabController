@@ -686,13 +686,14 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     tabs = QTabWidget()
 
-    spec_tab = TwoMotorSpectrometerMeasurementGUI()
-    tabs.addTab(spec_tab, "Power Scan - Spectrometer")
+    spectrometer_tab = TwoMotorSpectrometerMeasurementGUI()
+    tabs.addTab(spectrometer_tab, "Spectrometer Measurement")
 
     powermeter_tab = TwoMotorPowermeterMeasurementGUI()
-    tabs.addTab(powermeter_tab, "Power Scan - Powermeter")
+    tabs.addTab(powermeter_tab, "Powermeter Measurement")
 
     tabs.resize(1200, 900)
     tabs.setWindowTitle("D-lab Controller - Power Scans")
     tabs.show()
+
     sys.exit(app.exec_())
