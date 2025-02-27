@@ -16,6 +16,8 @@ from hardware.wrappers.ThorlabsController import ThorlabsController
 from hardware.wrappers.AvaspecController import AvaspecController
 from hardware.wrappers.PowermeterController import PowermeterController
 
+from diagnostics.utils import custom_cmap
+
 # ------------------ Spectrometer Measurement Thread ------------------
 
 class MeasurementThread(QThread):
@@ -281,16 +283,19 @@ class SFGTemporalOverlapGUI(QWidget):
 
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
-        self.canvas = FigureCanvas(self.figure)
+        c = 3e8
+        self.ax2 = self.ax.secondary_yaxis('right',
+                                           functions=(lambda y: (2 * y * 1e12) / c,
+                                                      lambda t: (t * c) / (2 * 1e12)))
+        self.ax2.set_ylabel("Time (fs)")
 
-        self.image = self.ax.imshow(np.zeros((1, 1)), aspect='auto', cmap='turbo',
-                                     extent=[0, 1, 0, 1], origin='lower')
-        self.cbar = self.figure.colorbar(self.image, ax=self.ax, orientation='vertical')
+        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap=custom_cmap(512), origin='lower')
+        self.cbar = self.figure.colorbar(self.image, ax=self.ax, orientation='horizontal', location='top')
         self.cbar.set_label("Counts")
         self.ax.set_xlabel("Wavelength (nm)")
         self.ax.set_ylabel("Position (mm)")
+        self.canvas = FigureCanvas(self.figure)
         self.canvas.draw()
-
         splitter = QSplitter()
         splitter.addWidget(controls_container)
         splitter.addWidget(self.canvas)
@@ -323,6 +328,7 @@ class SFGTemporalOverlapGUI(QWidget):
             self.update_log("Starting Thorlabs stage...")
             self.motor_controller = ThorlabsController(motor_id)
             self.motor_controller.activate()
+            self.update_log(f"Current position: {self.motor_controller.get_position()}")
 
             self.update_log("Starting Spectrometer...")
             self.avaspec_controller = AvaspecController(spec_handle)
@@ -489,7 +495,13 @@ class PowermeterMeasurementGUI(QWidget):
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
         self.ax.set_xlabel("Position (mm)")
-        self.ax.set_ylabel("Power")
+        self.ax.set_ylabel("Power (W)")
+        c = 3e8
+        self.ax2 = self.ax.secondary_xaxis('top',
+                                           functions=(lambda x: (2 * x * 1e12) / c,
+                                                      lambda t: (t * c) / (2 * 1e12)))
+        self.ax2.set_xlabel("Time (fs)")
+
         self.line, = self.ax.plot([], [], marker='o')
         self.canvas = FigureCanvas(self.figure)
         self.canvas.draw()
@@ -511,29 +523,30 @@ class PowermeterMeasurementGUI(QWidget):
                 QMessageBox.critical(self, "Error", "No Powermeter VISA ID provided.")
                 return
 
-            self.logText.append("Starting Thorlabs stage...")
+            self.update_log("Starting Thorlabs stage...")
             self.motor_controller = ThorlabsController(motor_id)
             self.motor_controller.activate()
+            self.update_log(f"Current position: {self.motor_controller.get_position()}")
 
-            self.logText.append("Starting Powermeter...")
+            self.update_log("Starting Powermeter...")
             self.powermeter_controller = PowermeterController(powermeter_id)
             self.powermeter_controller.activate()
-            self.logText.append("Hardware activated.")
+            self.update_log("Hardware activated.")
 
             self.activateButton.setEnabled(False)
             self.deactivateButton.setEnabled(True)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate hardware: {e}")
-            self.logText.append(f"Error activating hardware: {e}")
+            self.update_log(f"Error activating hardware: {e}")
 
     def deactivateHardware(self):
         try:
             if self.powermeter_controller:
                 self.powermeter_controller.deactivate()
-                self.logText.append("Powermeter deactivated.")
+                self.update_log("Powermeter deactivated.")
             if self.motor_controller:
                 self.motor_controller.disable()
-                self.logText.append("Motor disabled.")
+                self.update_log("Motor disabled.")
             self.powermeter_controller = None
             self.motor_controller = None
 
@@ -541,14 +554,14 @@ class PowermeterMeasurementGUI(QWidget):
             self.activateButton.setEnabled(True)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to deactivate hardware: {e}")
-            self.logText.append(f"Error deactivating hardware: {e}")
+            self.update_log(f"Error deactivating hardware: {e}")
 
     def start_measurement(self):
         try:
             if self.motor_controller is None or self.powermeter_controller is None:
                 self.activateHardware()
 
-            self.logText.append("Starting measurement...")
+            self.update_log("Starting measurement...")
             self.startButton.setEnabled(False)
             self.abortButton.setEnabled(True)
 
@@ -568,7 +581,7 @@ class PowermeterMeasurementGUI(QWidget):
             self.thread.plot_signal.connect(self.update_plot)
             self.thread.finished.connect(self.measurement_finished)
             self.thread.start()
-            self.logText.append(f"Number of steps: {num_points}")
+            self.update_log(f"Number of steps: {num_points}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to start measurement: {e}")
             self.startButton.setEnabled(True)
@@ -589,10 +602,10 @@ class PowermeterMeasurementGUI(QWidget):
         if hasattr(self, 'thread') and self.thread.isRunning():
             self.thread.stop()
             self.thread.wait()
-            self.logText.append("Measurement aborted.")
+            self.update_log("Measurement aborted.")
 
     def measurement_finished(self):
-        self.logText.append("Measurement thread has finished.")
+        self.update_log("Measurement thread has finished.")
         self.startButton.setEnabled(True)
         self.abortButton.setEnabled(False)
 
