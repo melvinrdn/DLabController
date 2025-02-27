@@ -47,11 +47,11 @@ class MeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     break
 
-                self.log_signal.emit(f"Moving to position {position:.2f}...")
+                self.log_signal.emit(f"Moving to position {position:.3f}...")
                 self.thorlabs_controller.move_to(position, blocking=True)
                 time.sleep(0.5)
                 current_pos = self.thorlabs_controller.get_position()
-                self.log_signal.emit(f"Reached position {current_pos:.2f}")
+                self.log_signal.emit(f"Reached position {current_pos:.3f}")
 
                 timestamp, data = self.avaspec_controller.measure_spectrum(self.int_time, self.no_avg)
                 self.log_signal.emit("Spectrum successfully taken.")
@@ -68,7 +68,7 @@ class MeasurementThread(QThread):
                 self.save_spectrum_data(np.array(wavelength), self.spectrum_data, start_time)
 
             if max_position is not None:
-                self.log_signal.emit(f"Maximum intensity found at position: {max_position:.2f} mm")
+                self.log_signal.emit(f"Maximum intensity found at position: {max_position:.3f} mm")
 
         except Exception as e:
             self.log_signal.emit(f"Error: {e}")
@@ -143,11 +143,11 @@ class PowerMeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     break
 
-                self.log_signal.emit(f"Moving to position {pos:.2f}...")
+                self.log_signal.emit(f"Moving to position {pos:.3f}...")
                 self.motor_controller.move_to(pos, blocking=True)
                 time.sleep(0.5)
                 current_pos = self.motor_controller.get_position()
-                self.log_signal.emit(f"Reached position {current_pos:.2f}")
+                self.log_signal.emit(f"Reached position {current_pos:.3f}")
 
                 self.powermeter_controller.set_avg(self.no_avg)
                 power = self.powermeter_controller.read_power()
@@ -213,9 +213,9 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_layout.addWidget(self.motorIDInput)
 
         self.positionLabel = QLabel("Start Position:")
-        self.positionInput = QLineEdit("13")
+        self.positionInput = QLineEdit("13.6")
         self.endPositionLabel = QLabel("End Position:")
-        self.endPositionInput = QLineEdit("14")
+        self.endPositionInput = QLineEdit("13.8")
         self.stepSizeLabel = QLabel("Step Size:")
         self.stepSizeInput = QLineEdit("0.01")
         controls_layout.addWidget(self.positionLabel)
@@ -226,7 +226,7 @@ class SFGTemporalOverlapGUI(QWidget):
         controls_layout.addWidget(self.stepSizeInput)
 
         self.intTimeLabel = QLabel("Integration Time (ms):")
-        self.intTimeInput = QLineEdit("10")
+        self.intTimeInput = QLineEdit("1")
         self.noAvgLabel = QLabel("Number of Averages:")
         self.noAvgInput = QLineEdit("1")
         controls_layout.addWidget(self.intTimeLabel)
@@ -427,9 +427,9 @@ class PowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motorIDInput)
 
         self.positionLabel = QLabel("Start Position:")
-        self.positionInput = QLineEdit("13")
+        self.positionInput = QLineEdit("13.6")
         self.endPositionLabel = QLabel("End Position:")
-        self.endPositionInput = QLineEdit("14")
+        self.endPositionInput = QLineEdit("13.8")
         self.stepSizeLabel = QLabel("Step Size:")
         self.stepSizeInput = QLineEdit("0.01")
         controls_layout.addWidget(self.positionLabel)
@@ -582,7 +582,7 @@ class PowermeterMeasurementGUI(QWidget):
         self.ax.clear()
         self.ax.plot(positions, power_data, marker='o')
         self.ax.set_xlabel("Position (mm)")
-        self.ax.set_ylabel("Power")
+        self.ax.set_ylabel("Power (W)")
         self.canvas.draw_idle()
 
     def abort_measurement(self):

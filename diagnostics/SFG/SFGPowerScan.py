@@ -46,22 +46,22 @@ class TwoMotorPowermeterMeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     break
 
-                self.log_signal.emit(f"Moving Motor1 to {pos1:.2f}...")
+                self.log_signal.emit(f"Moving Motor1 to {pos1:.3f}...")
                 self.motor1.move_to(pos1, blocking=True)
                 time.sleep(0.5)
                 current_m1 = self.motor1.get_position()
-                self.log_signal.emit(f"Motor1 reached {current_m1:.2f}")
+                self.log_signal.emit(f"Motor1 reached {current_m1:.3f}")
 
                 for j, pos2 in enumerate(self.m2_positions):
                     if not self.running:
                         self.log_signal.emit("Measurement aborted.")
                         break
 
-                    self.log_signal.emit(f"Moving Motor2 to {pos2:.2f}...")
+                    self.log_signal.emit(f"Moving Motor2 to {pos2:.3f}...")
                     self.motor2.move_to(pos2, blocking=True)
                     time.sleep(0.5)
                     current_m2 = self.motor2.get_position()
-                    self.log_signal.emit(f"Motor2 reached {current_m2:.2f}")
+                    self.log_signal.emit(f"Motor2 reached {current_m2:.3f}")
 
                     self.powermeter.set_avg(self.no_avg)
                     power = self.powermeter.read_power()
@@ -361,22 +361,22 @@ class TwoMotorSpectrometerMeasurementThread(QThread):
                     self.log_signal.emit("Measurement aborted.")
                     break
 
-                self.log_signal.emit(f"Moving Motor1 to {pos1:.2f}...")
+                self.log_signal.emit(f"Moving Motor1 to {pos1:.3f}...")
                 self.motor1.move_to(pos1, blocking=True)
                 time.sleep(0.5)
                 current_m1 = self.motor1.get_position()
-                self.log_signal.emit(f"Motor1 reached {current_m1:.2f}")
+                self.log_signal.emit(f"Motor1 reached {current_m1:.3f}")
 
                 for j, pos2 in enumerate(self.m2_positions):
                     if not self.running:
                         self.log_signal.emit("Measurement aborted.")
                         break
 
-                    self.log_signal.emit(f"Moving Motor2 to {pos2:.2f}...")
+                    self.log_signal.emit(f"Moving Motor2 to {pos2:.3f}...")
                     self.motor2.move_to(pos2, blocking=True)
                     time.sleep(0.5)
                     current_m2 = self.motor2.get_position()
-                    self.log_signal.emit(f"Motor2 reached {current_m2:.2f}")
+                    self.log_signal.emit(f"Motor2 reached {current_m2:.3f}")
 
                     timestamp, spectrum = self.spec_controller.measure_spectrum(self.int_time, self.no_avg)
                     self.log_signal.emit("Spectrum acquired.")
