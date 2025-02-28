@@ -243,7 +243,10 @@ class PowerMeterLive(QWidget):
 
         self.ax.relim()
         self.ax.autoscale_view()
+
+        self.ax.set_title(f"Current Power: {power} W")
         self.canvas.draw_idle()
+
 
     def set_time_window(self):
         try:
