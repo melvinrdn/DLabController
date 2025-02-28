@@ -13,35 +13,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QThread, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 
-from hardware.wrappers.AvaspecController import AvaspecController
+from hardware.wrappers.AvaspecController import AvaspecController, DummyAvaspecController
 
-"""
-# ---------------- Dummy AvaspecController ----------------
-class DummyAvaspecController:
-    def __init__(self, spec_handle):
-        self.spec_handle = spec_handle
-        self.wavelength = np.linspace(300, 400, 2048)
-    def activate(self):
-        print("Dummy spectrometer activated.")
-    def measure_spectrum(self, int_time, no_avg):
-        # Generate a Gaussian spectrum around 343 nm with amplitude A, center mu, sigma
-        A = 1000  # peak counts
-        mu = 343  # center wavelength in nm
-        sigma = 1.2  # standard deviation
-        data = A * np.exp(-0.5 * ((self.wavelength - mu)/sigma)**2)
-        # Add some noise
-        data += 50 * np.random.randn(len(self.wavelength))
-        # Return a float timestamp and the spectrum data
-        timestamp = time.time()
-        return timestamp, data
-    def deactivate(self):
-        print("Dummy spectrometer deactivated.")
-    @classmethod
-    def list_spectrometers(cls):
-        return ["DummySpec1"]
-
-AvaspecController = DummyAvaspecController
-"""
+# Debug mode
+#AvaspecController = DummyAvaspecController
 
 class LiveMeasurementThread(QThread):
     spectrum_signal = pyqtSignal(float, object)
@@ -71,7 +46,7 @@ class LiveMeasurementThread(QThread):
 class AvaspecLive(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Live Spectrometer GUI")
+        self.setWindowTitle("Live Spectrometer")
         self.avaspec_controller = None
         self.measurement_thread = None
         self.spectrometer_handles = []
@@ -241,14 +216,15 @@ class AvaspecLive(QWidget):
         else:
             self.line.set_ydata(data)
         if self.gaussian_fit_checkbox.isChecked():
-            def gaussian(x, A, mu, sigma):
-                return A * np.exp(-0.5 * ((x - mu)/sigma)**2)
+            def gaussian(x, A, mu, sigma, d):
+                return A * np.exp(-0.5 * ((x - mu)/sigma)**2) + d
             try:
                 A0 = np.max(data)
                 mu0 = self.avaspec_controller.wavelength[np.argmax(data)]
                 sigma0 = 2.0
-                popt, _ = curve_fit(gaussian, self.avaspec_controller.wavelength, data, p0=[A0, mu0, sigma0])
-                A_fit, mu_fit, sigma_fit = popt
+                d0=0
+                popt, _ = curve_fit(gaussian, self.avaspec_controller.wavelength, data, p0=[A0, mu0, sigma0,d0])
+                A_fit, mu_fit, sigma_fit,d = popt
                 FWHM = 2.355 * sigma_fit
                 mu_m = mu_fit * 1e-9
                 FWHM_m = FWHM * 1e-9
@@ -269,7 +245,6 @@ class AvaspecLive(QWidget):
             if self.fit_line is not None:
                 self.fit_line.remove()
                 self.fit_line = None
-            self.ax.set_title(f"Spectrum at {timestamp}")
         if self.autoscale_checkbox.isChecked():
             self.ax.relim()
             self.ax.autoscale_view()

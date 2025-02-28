@@ -1,6 +1,7 @@
 import time
 import hardware.drivers.avaspec_driver._avs_py as avs
 from typing import Any, List, Tuple
+import numpy as np
 
 class AvaspecController:
     def __init__(self, spec_handle: Any) -> None:
@@ -58,6 +59,35 @@ class AvaspecController:
             return spectrometer_list
         except Exception as e:
             return None
+
+
+class DummyAvaspecController:
+
+    def __init__(self, spec_handle):
+        self.spec_handle = spec_handle
+        self.wavelength = np.linspace(100, 300, 2048)
+
+    def activate(self):
+        print("Dummy spectrometer activated.")
+
+    def measure_spectrum(self, int_time, no_avg):
+        # Generate a Gaussian spectrum around 343 nm with amplitude A, center mu, sigma
+        A = 1000  # peak counts
+        mu = 200  # center wavelength in nm
+        sigma = 1  # standard deviation
+        d = 1 # Background
+        data = A * np.exp(-0.5 * ((self.wavelength - mu)/sigma)**2) + d
+        # Add some noise
+        data += 10 * np.random.randn(len(self.wavelength))
+        timestamp = time.time()
+        return timestamp, data
+
+    def deactivate(self):
+        print("Dummy spectrometer deactivated.")
+
+    @classmethod
+    def list_spectrometers(cls):
+        return ["DummySpec1"]
 
 
 ## Example usage

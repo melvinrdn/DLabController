@@ -127,12 +127,12 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout = QVBoxLayout()
 
         self.motor1IDLabel = QLabel("Motor1 ID:")
-        self.motor1IDInput = QLineEdit("83837725")
+        self.motor1IDInput = QLineEdit("83838295")
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
         self.homing_motor1_Checkbox = QCheckBox("Home on Activate")
-        self.homing_motor1_Checkbox.setChecked(True)
+        self.homing_motor1_Checkbox.setChecked(False)
         controls_layout.addWidget(self.homing_motor1_Checkbox)
 
         self.motor1StartLabel = QLabel("Motor1 Start Position:")
@@ -149,12 +149,12 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1StepInput)
 
         self.motor2IDLabel = QLabel("Motor2 ID:")
-        self.motor2IDInput = QLineEdit("83837726")
+        self.motor2IDInput = QLineEdit("83837725")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
 
         self.homing_motor2_Checkbox = QCheckBox("Home on Activate")
-        self.homing_motor2_Checkbox.setChecked(True)
+        self.homing_motor2_Checkbox.setChecked(False)
         controls_layout.addWidget(self.homing_motor2_Checkbox)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
@@ -296,7 +296,7 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
                 self.powermeter_controller is None):
                 self.activateHardware()
 
-            self.self.update_log("Starting measurement...")
+            self.update_log("Starting measurement...")
             self.startButton.setEnabled(False)
             self.abortButton.setEnabled(True)
 
@@ -465,12 +465,12 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout = QVBoxLayout()
 
         self.motor1IDLabel = QLabel("Motor1 ID:")
-        self.motor1IDInput = QLineEdit("83837725")
+        self.motor1IDInput = QLineEdit("83838295")
         controls_layout.addWidget(self.motor1IDLabel)
         controls_layout.addWidget(self.motor1IDInput)
 
         self.homing_motor1_Checkbox = QCheckBox("Home on Activate")
-        self.homing_motor1_Checkbox.setChecked(True)
+        self.homing_motor1_Checkbox.setChecked(False)
         controls_layout.addWidget(self.homing_motor1_Checkbox)
 
 
@@ -488,12 +488,12 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
         controls_layout.addWidget(self.motor1StepInput)
 
         self.motor2IDLabel = QLabel("Motor2 ID:")
-        self.motor2IDInput = QLineEdit("83837726")
+        self.motor2IDInput = QLineEdit("83837725")
         controls_layout.addWidget(self.motor2IDLabel)
         controls_layout.addWidget(self.motor2IDInput)
 
         self.homing_motor2_Checkbox = QCheckBox("Home on Activate")
-        self.homing_motor2_Checkbox.setChecked(True)
+        self.homing_motor2_Checkbox.setChecked(False)
         controls_layout.addWidget(self.homing_motor2_Checkbox)
 
         self.motor2StartLabel = QLabel("Motor2 Start Position:")
