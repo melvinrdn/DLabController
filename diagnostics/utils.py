@@ -1,6 +1,6 @@
 from matplotlib.colors import LinearSegmentedColormap
 
-def custom_cmap(segments=512):
+def white_turbo(segments=512):
     colors = [
         (1, 1, 1),  # white
         (0, 0, 0.5),  # dark blue
@@ -12,4 +12,4 @@ def custom_cmap(segments=512):
         (1, 0, 0),  # red
         (0.5, 0, 0)  # darker red
     ]
-    return LinearSegmentedColormap.from_list('custom_cmap', colors, N=segments)
+    return LinearSegmentedColormap.from_list('white_turbo', colors, N=segments)

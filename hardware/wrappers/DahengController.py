@@ -1,23 +1,26 @@
-from hardware.drivers import gxipy_driver as gx
-import numpy as np
-import matplotlib.pyplot as plt
 import logging
 import threading
+from hardware.drivers import gxipy_driver as gx
+import numpy as np
 
 # Suppress Matplotlib debug messages.
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-DEFAULT_EXPOSURE_MS = 1000
+DEFAULT_EXPOSURE_US = 1000
 DEFAULT_GAIN = 0
+DEFAULT_AVERAGES = 1
+
+MIN_EXPOSURE_US = 20
+MAX_EXPOSURE_US = 100000
+MIN_GAIN = 0
+MAX_GAIN = 24
 
 class CameraError(Exception):
     """
     Exception raised for errors encountered during camera operations.
-
-    Attributes:
-        message (str): Explanation of the error.
     """
     pass
+
 
 class DahengController:
     """
@@ -26,14 +29,6 @@ class DahengController:
     This class handles camera initialization, configuration, image acquisition with frame averaging,
     and resource cleanup. It is designed to be thread-safe and logs key operations with messages
     prefixed by the camera index.
-
-    Attributes:
-        index (int): Identifier for the camera.
-        _cam: The internal camera device object.
-        _imshape: Shape of the captured image array (height, width).
-        device_manager: Object for managing available camera devices.
-        _lock: A threading lock to synchronize access to camera operations.
-        logger: Logger instance for logging messages.
     """
 
     def __init__(self, index: int):
@@ -48,26 +43,33 @@ class DahengController:
         self._imshape = None
         self.device_manager = gx.DeviceManager()
         self._lock = threading.Lock()  # Ensures thread-safe operations
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(f"DahengController_{self.index}")
+        self.logger.propagate = False
+        self.current_exposure = None
+        self.current_gain = None
+        self.current_avgs = None
+
+    def enable_debug(self, debug_on: bool = True) -> None:
+        """
+        Enables or disables debug mode for the camera controller.
+
+        Parameters:
+            debug_on (bool): If True, sets logger level to DEBUG; otherwise, INFO.
+        """
+        level = logging.DEBUG if debug_on else logging.INFO
+        self.logger.setLevel(level)
 
     def activate(self) -> None:
         """
         Activates and configures the camera with default settings.
 
-        This method opens the camera device, sets default exposure and gain values, configures
-        software triggering, and captures an initial image to determine the image dimensions.
-
         Raises:
-            CameraError: If the camera fails to activate. The error message includes available
-                         camera indices if activation fails.
+            CameraError: If the camera fails to activate.
         """
-        available_indices = DahengController.get_available_indices()
         try:
-            self.logger.debug(f"Available indices: {available_indices}")
-            self.logger.debug(f"Camera {self.index}: Opening...")
             self.device_manager.update_device_list()
             self._cam = self.device_manager.open_device_by_index(self.index)
-            self._cam.ExposureTime.set(DEFAULT_EXPOSURE_MS)
+            self._cam.ExposureTime.set(DEFAULT_EXPOSURE_US)
             self._cam.Gain.set(DEFAULT_GAIN)
             self._cam.TriggerMode.set(gx.GxSwitchEntry.ON)
             self._cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
@@ -77,23 +79,23 @@ class DahengController:
             np_im = im.get_numpy_array()
             self._imshape = np.shape(np_im)
             self._cam.stream_off()
-            self.logger.info(f"Camera {self.index}: activated successfully with shape {self._imshape}")
+            self.current_exposure = DEFAULT_EXPOSURE_US
+            self.current_gain = DEFAULT_GAIN
+            self.current_avgs = DEFAULT_AVERAGES
         except Exception as e:
             self._cam = None
             self._imshape = None
-            raise CameraError(
-                f"Camera {self.index}: Failed to activate camera: {e}. "
-            ) from e
+            raise CameraError(f"Camera {self.index}: Failed to activate camera: {e}") from e
 
     def set_exposure(self, exposure: int) -> None:
         """
-        Sets the camera's exposure time.
+        Sets the camera's exposure time if it differs from the current setting.
 
         Parameters:
-            exposure (int): Desired exposure time in milliseconds. Must be a positive integer.
+            exposure (int): Desired exposure time in microiseconds.
 
         Raises:
-            ValueError: If the exposure is not an integer or is less than or equal to zero.
+            ValueError: If exposure is not valid.
             CameraError: If the camera is not activated.
         """
         if not isinstance(exposure, int):
@@ -102,18 +104,20 @@ class DahengController:
             raise ValueError("Exposure time must be a positive integer.")
         if not self._cam:
             raise CameraError("Camera is not activated. Call activate() first.")
-        self._cam.ExposureTime.set(exposure)
-        self.logger.debug(f"Camera {self.index}: Exposure set to {exposure} ms")
+        if self.current_exposure != exposure:
+            self._cam.ExposureTime.set(exposure)
+            self.current_exposure = exposure
+            self.logger.debug(f"Camera {self.index}: Exposure set to {exposure} ms")
 
     def set_gain(self, gain: int) -> None:
         """
-        Sets the camera's gain.
+        Sets the camera's gain if it differs from the current setting.
 
         Parameters:
-            gain (int): Desired gain value. Must be a non-negative integer.
+            gain (int): Desired gain value.
 
         Raises:
-            ValueError: If the gain is not an integer or is negative.
+            ValueError: If gain is not valid.
             CameraError: If the camera is not activated.
         """
         if not isinstance(gain, int):
@@ -122,26 +126,43 @@ class DahengController:
             raise ValueError("Gain must be a non-negative integer.")
         if not self._cam:
             raise CameraError("Camera is not activated. Call activate() first.")
-        self._cam.Gain.set(gain)
-        self.logger.debug(f"Camera {self.index}: Gain set to {gain}")
+        if self.current_gain != gain:
+            self._cam.Gain.set(gain)
+            self.current_gain = gain
+            self.logger.debug(f"Camera {self.index}: Gain set to {gain}")
+
+    def set_average(self, avgs: int) -> None:
+        """
+        Updates the average count if it differs from the current value.
+
+        Parameters:
+            avgs (int): Desired number of frames to average.
+
+        Raises:
+            ValueError: If avgs is not a positive integer.
+        """
+        if not isinstance(avgs, int):
+            raise ValueError("Averaging count must be an integer.")
+        if avgs <= 0:
+            raise ValueError("Averaging count must be a positive integer.")
+        if self.current_avgs != avgs:
+            self.current_avgs = avgs
+            self.logger.debug(f"Camera {self.index}: Averaging count set to {avgs}")
 
     def take_image(self, exposure: int, gain: int, avgs: int) -> np.ndarray:
         """
         Captures and returns an averaged image based on the specified parameters.
 
-        This method sets the camera's exposure and gain, then triggers the camera to capture
-        a series of frames. The returned image is the pixel-wise average of the captured frames.
-
         Parameters:
-            exposure (int): Exposure time in milliseconds for image capture. Must be positive integer.
-            gain (int): Gain value for image capture. Must be non-negative.
-            avgs (int): Number of frames to average. Must be a positive integer.
+            exposure (int): Exposure time in microseconds.
+            gain (int): Gain value.
+            avgs (int): Number of frames to average.
 
         Returns:
-            np.ndarray: The averaged image array as a floating-point numpy array.
+            np.ndarray: Averaged image array.
 
         Raises:
-            ValueError: If any parameter is not an integer or is out of the allowed range.
+            ValueError: If parameters are invalid.
             CameraError: If the camera is not activated.
         """
         if not isinstance(exposure, int) or not isinstance(gain, int) or not isinstance(avgs, int):
@@ -155,9 +176,11 @@ class DahengController:
         if self._cam is None or self._imshape is None:
             raise CameraError("Camera is not activated. Call activate() first.")
 
-        with self._lock:  # Ensure thread-safe operations
+        with self._lock:
+            # Update settings only if necessary.
             self.set_exposure(exposure)
             self.set_gain(gain)
+            self.set_average(avgs)
 
             res = np.zeros(self._imshape, dtype=np.float64)
             self._cam.stream_on()
@@ -174,59 +197,33 @@ class DahengController:
 
     def deactivate(self) -> None:
         """
-        Deactivates the camera by closing the device connection and releasing resources.
-
-        This method should be called when camera operations are complete to prevent resource leaks.
+        Deactivates the camera and releases resources.
         """
         if self._cam:
             self._cam.close_device()
             self._cam = None
-            self.logger.info(f"Camera {self.index}: deactivated.")
 
     def __enter__(self) -> "DahengController":
         """
-        Activates the camera when entering a context (a with statement for instance).
-
-        Returns:
-            DahengController: The current camera controller instance.
+        Activates the camera upon entering a context.
         """
         self.activate()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         """
-        Deactivates the camera when exiting a context, ensuring proper cleanup.
+        Deactivates the camera upon exiting a context.
         """
         self.deactivate()
 
     @staticmethod
     def get_available_indices() -> list:
         """
-        Retrieves a list of available camera indices based on the current device list.
+        Retrieves available camera indices.
 
         Returns:
-            list: A list of available camera indices (1-indexed).
+            list: A list of available camera indices.
         """
         device_manager = gx.DeviceManager()
         dev_num, _ = device_manager.update_device_list()
         return list(range(1, dev_num + 1))
-
-# Execution example
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s - %(levelname)s - %(message)s")
-
-    exposure = 1000
-    gain = 0
-    avgs = 5
-    idx = 1
-
-    try:
-        with DahengController(idx) as camera:
-            averaged_image = camera.take_image(exposure, gain, avgs)
-            plt.imshow(averaged_image, cmap='turbo')
-            plt.title(f"Averaged Image ({avgs} Frames)")
-            plt.axis('off')
-            plt.show()
-    except CameraError as e:
-        logging.error(f"Camera {idx}: {e}")
