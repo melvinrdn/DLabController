@@ -15,7 +15,7 @@ from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 )
 
-from hardware.wrappers.DahengController import (DahengController, CameraError,
+from hardware.wrappers.DahengController import (DahengController, DahengControllerError,
                                                 MAX_GAIN, MAX_EXPOSURE_US, MIN_GAIN, MIN_EXPOSURE_US,
                                                 DEFAULT_AVERAGES, DEFAULT_GAIN, DEFAULT_EXPOSURE_US)
 import logging
@@ -119,7 +119,7 @@ class LiveCaptureThread(QThread):
                 image = self.camera_controller.take_image(exp, g, av)
                 self.image_signal.emit(image)
                 time.sleep(sleep_interval)
-            except CameraError as ce:
+            except DahengControllerError as ce:
                 print(f"CameraError in capture thread: {ce}")
                 break
             except Exception as e:
@@ -389,7 +389,7 @@ class DahengLive(QWidget):
             self.activate_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
             self.start_button.setEnabled(True)
-        except CameraError as ce:
+        except DahengControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to activate camera: {ce}")
             self.log(f"Error activating camera: {ce}")
 
@@ -406,7 +406,7 @@ class DahengLive(QWidget):
             self.deactivate_button.setEnabled(False)
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(False)
-        except CameraError as ce:
+        except DahengControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to deactivate camera: {ce}")
             self.log(f"Error deactivating camera: {ce}")
 
