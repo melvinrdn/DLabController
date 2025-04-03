@@ -16,7 +16,7 @@ from hardware.wrappers.ThorlabsController import ThorlabsController
 from hardware.wrappers.AvaspecController import AvaspecController
 from hardware.wrappers.PowermeterController import PowermeterController
 
-from diagnostics.utils import custom_cmap
+from diagnostics.utils import white_turbo
 
 
 # ------------------ Spectrometer Measurement Thread ------------------
@@ -295,7 +295,7 @@ class SFGTemporalOverlapGUI(QWidget):
                                                       lambda t: (t * c) / (2 * 1e12)))
         self.ax2.set_ylabel("Time (fs)")
 
-        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap=custom_cmap(512), origin='lower')
+        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap=white_turbo(512), origin='lower')
         self.cbar = self.figure.colorbar(self.image, ax=self.ax, orientation='horizontal', location='top')
         self.cbar.set_label("Counts")
         self.ax.set_xlabel("Wavelength (nm)")

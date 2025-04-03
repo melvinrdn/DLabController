@@ -23,7 +23,7 @@ from matplotlib.lines import Line2D
 NUM_WAVEPLATES = 6
 # Using six distinct colors.
 COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
-CONFIG_FILE = os.path.join('..', '..', 'ressources', 'calibration', 'calib_path.json')
+CONFIG_FILE = os.path.join('ressources', 'calibration', 'calib_path.json')
 
 
 class WaveplateCalibWidget(QWidget):

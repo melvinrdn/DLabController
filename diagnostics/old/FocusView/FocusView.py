@@ -18,9 +18,9 @@ from scipy import interpolate
 import pandas as pd
 
 import hardware.drivers.gxipy_driver.daheng_camera as dh
-from diagnostics.old.diagnostics_helpers import process_image
-from hardware.thorlabs_apt_driver import core as apt
-from hardware import gxipy_driver as gx
+#from diagnostics.old.diagnostics_helpers import process_image
+#from hardware.thorlabs_apt_driver import core as apt
+from hardware.drivers import gxipy_driver as gx
 
 colors = [
     (1, 1, 1),  # white
@@ -531,7 +531,7 @@ class FocusView:
 
             message = 'Successfully loaded'
             self.insert_message(message)
-            processed_images, som_x, som_y = self.process_images_dict()
+            processed_images, som_x, som_y = 0
             zero_position = 0
             zmin = (self.positions[0] - zero_position) * 1e-3
             zmax = (self.positions[-1] - zero_position) * 1e-3  # in mm
@@ -569,7 +569,7 @@ class FocusView:
         som_y = np.zeros(dz, dtype=float)
 
         for i in range(dz):
-            processed_image, som_x[i], som_y[i] = process_image(self.images[:, :, i],N=N)
+            processed_image, som_x[i], som_y[i] = 0
             processed_images[f'processed_image_{i}'] = processed_image
 
         som_y *= 3.45e-6
@@ -750,7 +750,7 @@ class FocusView:
             self.plot_daheng(im)
 
             res[:, :, ind] = self.relevant_image
-            imtest, temx, temy = process_image(self.relevant_image)
+            imtest, temx, temy = 0
             self.ax1r.scatter(pos, temx, color="blue")
             self.ax1r.scatter(pos, temy, color="red")
             self.ax1r.set_ylabel(r'$w$ (2nd order moment, μm)')

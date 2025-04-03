@@ -17,7 +17,7 @@ from hardware.wrappers.PowermeterController import PowermeterController
 from hardware.wrappers.AvaspecController import AvaspecController
 
 
-from diagnostics.utils import custom_cmap
+from diagnostics.utils import white_turbo
 
 # ------------------ Two-Motor Powermeter Measurement Thread ------------------
 
@@ -219,7 +219,7 @@ class TwoMotorPowermeterMeasurementGUI(QWidget):
 
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
-        self.image = self.ax.imshow(np.zeros((10,10)), aspect='auto', cmap=custom_cmap(512), origin='lower')
+        self.image = self.ax.imshow(np.zeros((10,10)), aspect='auto', cmap=white_turbo(512), origin='lower')
         self.cbar = self.figure.colorbar(self.image, ax=self.ax, orientation='horizontal', location='top')
         self.cbar.set_label("Power (W)")
         self.ax.set_xlabel("Motor 2 Position (deg)")
@@ -560,7 +560,7 @@ class TwoMotorSpectrometerMeasurementGUI(QWidget):
 
         self.figure = plt.figure()
         self.ax = self.figure.add_subplot(111)
-        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap=custom_cmap(512), origin='lower')
+        self.image = self.ax.imshow(np.zeros((10, 10)), aspect='auto', cmap=white_turbo(512), origin='lower')
         self.cbar = self.figure.colorbar(self.image, ax=self.ax, orientation='horizontal', location='top')
         self.cbar.set_label("Counts")
         self.ax.set_xlabel("Motor 2 Position (deg)")

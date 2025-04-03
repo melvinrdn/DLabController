@@ -15,7 +15,7 @@ MAX_EXPOSURE_US = 100000
 MIN_GAIN = 0
 MAX_GAIN = 24
 
-class CameraError(Exception):
+class DahengControllerError(Exception):
     """
     Exception raised for errors encountered during camera operations.
     """
@@ -85,7 +85,7 @@ class DahengController:
         except Exception as e:
             self._cam = None
             self._imshape = None
-            raise CameraError(f"Camera {self.index}: Failed to activate camera: {e}") from e
+            raise DahengControllerError(f"Camera {self.index}: Failed to activate camera: {e}") from e
 
     def set_exposure(self, exposure: int) -> None:
         """
@@ -103,7 +103,7 @@ class DahengController:
         if exposure <= 0:
             raise ValueError("Exposure time must be a positive integer.")
         if not self._cam:
-            raise CameraError("Camera is not activated. Call activate() first.")
+            raise DahengControllerError("Camera is not activated. Call activate() first.")
         if self.current_exposure != exposure:
             self._cam.ExposureTime.set(exposure)
             self.current_exposure = exposure
@@ -125,7 +125,7 @@ class DahengController:
         if gain < 0:
             raise ValueError("Gain must be a non-negative integer.")
         if not self._cam:
-            raise CameraError("Camera is not activated. Call activate() first.")
+            raise DahengControllerError("Camera is not activated. Call activate() first.")
         if self.current_gain != gain:
             self._cam.Gain.set(gain)
             self.current_gain = gain
@@ -174,7 +174,7 @@ class DahengController:
         if avgs <= 0:
             raise ValueError("Averaging count must be a positive integer.")
         if self._cam is None or self._imshape is None:
-            raise CameraError("Camera is not activated. Call activate() first.")
+            raise DahengControllerError("Camera is not activated. Call activate() first.")
 
         with self._lock:
             # Update settings only if necessary.

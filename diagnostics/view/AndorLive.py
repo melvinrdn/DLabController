@@ -1,18 +1,19 @@
 import sys
 import time
 import datetime
+import os
 import numpy as np
 import matplotlib.pyplot as plt
+from PIL import Image, PngImagePlugin  # For saving PNG with metadata
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QMessageBox, QSplitter, QComboBox, QCheckBox
+    QLineEdit, QTextEdit, QMessageBox, QSplitter, QComboBox, QCheckBox,
 )
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import QThread, pyqtSignal
-from matplotlib.backends.backend_qt5agg import (
-    FigureCanvasQTAgg as FigureCanvas
-)
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
 import logging
 import threading
 
@@ -28,6 +29,63 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 LOG_FORMAT = "[%(asctime)s] %(message)s"
 DATE_FORMAT = "%H:%M:%S"
 
+
+###############################################################################
+# Dummy Camera Controller
+###############################################################################
+
+class DummyAndorController:
+    """
+    A dummy controller that simulates an Andor camera.
+    It always returns a 512x512 2D Gaussian image with some noise.
+    """
+
+    def __init__(self, device_index=0):
+        self.device_index = device_index
+        self.image_shape = (512, 512)
+        self.current_exposure = DEFAULT_EXPOSURE_US
+        self.logger = logging.getLogger(f"DummyAndorController_{self.device_index}")
+        self.logger.propagate = False
+
+    def enable_debug(self, debug_on=True):
+        level = logging.DEBUG if debug_on else logging.INFO
+        self.logger.setLevel(level)
+
+    def activate(self):
+        # Simulate activation by simply setting the image shape.
+        self.logger.info(f"Dummy camera {self.device_index} activated with shape {self.image_shape}")
+
+    def set_exposure(self, exposure):
+        if not isinstance(exposure, int) or exposure <= 0:
+            raise ValueError("Exposure must be a positive integer in microseconds.")
+        self.current_exposure = exposure
+        self.logger.debug(f"Dummy camera {self.device_index}: Exposure set to {exposure} µs")
+
+    def take_image(self, exposure, avgs):
+        """
+        Simulate image capture by generating a 2D Gaussian with added noise.
+        The amplitude is scaled with the exposure.
+        """
+        amplitude = 255 * (exposure / DEFAULT_EXPOSURE_US)
+        sigma = 50
+        center_x = self.image_shape[1] // 2
+        center_y = self.image_shape[0] // 2
+        x = np.arange(self.image_shape[1])
+        y = np.arange(self.image_shape[0])
+        xv, yv = np.meshgrid(x, y)
+        gaussian = amplitude * np.exp(-(((xv - center_x) ** 2 + (yv - center_y) ** 2) / (2 * sigma ** 2)))
+        noise = np.random.normal(0, amplitude * 0.05, self.image_shape)
+        image = gaussian + noise
+        image = np.clip(image, 0, 255)
+        return image.astype(np.float64)
+
+    def deactivate(self):
+        self.logger.info(f"Dummy camera {self.device_index} deactivated.")
+
+
+###############################################################################
+# QTextEditHandler for logging to the GUI text box
+###############################################################################
 
 class QTextEditHandler(logging.Handler):
     """
@@ -45,12 +103,13 @@ class QTextEditHandler(logging.Handler):
         self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
 
+###############################################################################
+# Live Capture Thread
+###############################################################################
+
 class LiveCaptureThread(QThread):
     """
     QThread subclass to continuously capture images from the Andor camera.
-
-    Attributes:
-        image_signal (pyqtSignal): Signal emitted when an image is captured (np.ndarray).
     """
     image_signal = pyqtSignal(np.ndarray)
 
@@ -92,19 +151,14 @@ class LiveCaptureThread(QThread):
         self._running = False
 
 
+###############################################################################
+# AndorLive GUI Class
+###############################################################################
+
 class AndorLive(QWidget):
     """
     A PyQt5 GUI for live Andor camera image capture using AndorController.
-
-    Provides controls for:
-      - Setting exposure (in microseconds), averaging, and update interval (in milliseconds).
-      - Activating/deactivating the camera.
-      - Starting/stopping live capture.
-      - Toggling debug mode.
-      - Fixing the colorbar limits on the live image.
-
-    The displayed figure contains two subplots: the top shows the live image (with a colorbar)
-    and its title displays the maximum pixel value, while the bottom shows the integrated profile.
+    Includes options for real or dummy camera activation.
     """
 
     def __init__(self):
@@ -117,6 +171,7 @@ class AndorLive(QWidget):
         self.profile_line = None
         self.current_interval_ms = None
         self.fixed_cbar_max = None
+        self.last_frame = None  # To store the latest captured frame.
         self.initUI()
 
     def initUI(self):
@@ -154,16 +209,42 @@ class AndorLive(QWidget):
         int_layout.addWidget(self.interval_edit)
         param_layout.addLayout(int_layout)
 
+        # MCP Voltage entry.
+        mcp_layout = QHBoxLayout()
+        mcp_layout.addWidget(QLabel("MCP Voltage:"))
+        self.mcp_voltage_edit = QLineEdit()
+        mcp_layout.addWidget(self.mcp_voltage_edit)
+        param_layout.addLayout(mcp_layout)
+
+        # Comment entry.
+        comment_layout = QHBoxLayout()
+        comment_layout.addWidget(QLabel("Comment:"))
+        self.comment_edit = QLineEdit()
+        comment_layout.addWidget(self.comment_edit)
+        param_layout.addLayout(comment_layout)
+
         # Checkbox to fix the colorbar.
         self.fix_cbar_checkbox = QCheckBox("Fix Colorbar")
         self.fix_cbar_checkbox.setChecked(False)
         param_layout.addWidget(self.fix_cbar_checkbox)
 
-        # Buttons for camera control and live capture.
+        # New checkbox for Background.
+        self.background_checkbox = QCheckBox("Background")
+        self.background_checkbox.setChecked(False)
+        param_layout.addWidget(self.background_checkbox)
+
+        # Buttons for camera control, live capture, and saving frame.
         btn_layout = QVBoxLayout()
+
+        # Real camera activation.
         self.activate_button = QPushButton("Activate Camera")
         self.activate_button.clicked.connect(self.activate_camera)
         btn_layout.addWidget(self.activate_button)
+
+        # Dummy camera activation.
+        self.activate_dummy_button = QPushButton("Activate Dummy Camera")
+        self.activate_dummy_button.clicked.connect(self.activate_dummy_camera)
+        btn_layout.addWidget(self.activate_dummy_button)
 
         self.deactivate_button = QPushButton("Deactivate Camera")
         self.deactivate_button.clicked.connect(self.deactivate_camera)
@@ -184,6 +265,11 @@ class AndorLive(QWidget):
         self.debug_button.clicked.connect(self.toggle_debug_mode)
         btn_layout.addWidget(self.debug_button)
 
+        # Save frame button.
+        self.save_button = QPushButton("Save Frame")
+        self.save_button.clicked.connect(self.save_frame)
+        btn_layout.addWidget(self.save_button)
+
         param_layout.addLayout(btn_layout)
 
         self.log_text = QTextEdit()
@@ -195,12 +281,10 @@ class AndorLive(QWidget):
         # Plot panel with Matplotlib canvas using gridspec.
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
-        # Use gridspec to give the image subplot more space than the profile.
-        self.figure, (self.ax_img, self.ax_profile) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [3, 1]},
-                                                                   sharex=True)
+        self.figure, (self.ax_img, self.ax_profile) = plt.subplots(2, 1,
+                                                                   gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
         self.ax_img.set_title("Live Andor Camera Image")
-        self.ax_profile.set_title("Integrated Profile")
-        # Adjust right margin to make room for the colorbar.
+        self.ax_profile.setTitle("Integrated Profile")
         self.figure.subplots_adjust(right=0.85)
         self.canvas = FigureCanvas(self.figure)
         plot_layout.addWidget(self.canvas)
@@ -226,7 +310,6 @@ class AndorLive(QWidget):
                 self.capture_thread.update_parameters(exposure, avgs, update_interval)
             elif self.camera_controller:
                 self.camera_controller.set_exposure(exposure)
-                self.camera_controller.set_average(avgs)
         except ValueError:
             pass
 
@@ -250,11 +333,26 @@ class AndorLive(QWidget):
             self.camera_controller.enable_debug(debug_on=False)
             self.log("Camera 0 activated.")
             self.activate_button.setEnabled(False)
+            self.activate_dummy_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
             self.start_button.setEnabled(True)
         except AndorControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to activate camera: {ce}")
             self.log(f"Error activating camera: {ce}")
+
+    def activate_dummy_camera(self):
+        try:
+            self.camera_controller = DummyAndorController(device_index=666)
+            self.camera_controller.activate()
+            self.camera_controller.enable_debug(debug_on=False)
+            self.log("Dummy camera activated.")
+            self.activate_button.setEnabled(False)
+            self.activate_dummy_button.setEnabled(False)
+            self.deactivate_button.setEnabled(True)
+            self.start_button.setEnabled(True)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to activate dummy camera: {e}")
+            self.log(f"Error activating dummy camera: {e}")
 
     def deactivate_camera(self):
         try:
@@ -263,6 +361,7 @@ class AndorLive(QWidget):
                 self.log("Camera 0 deactivated.")
             self.camera_controller = None
             self.activate_button.setEnabled(True)
+            self.activate_dummy_button.setEnabled(True)
             self.deactivate_button.setEnabled(False)
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(False)
@@ -301,16 +400,8 @@ class AndorLive(QWidget):
         """
         Updates the displayed image on the Matplotlib canvas and the integrated profile,
         while preserving the current zoom settings.
-
-        The top subplot displays the live image with a colorbar and the title shows the maximum pixel value.
-        The bottom subplot displays the integrated intensity (sum along columns) plotted against the x–axis.
-
-        If the "Fix Colorbar" checkbox is checked, the colorbar’s upper limit is fixed to the first
-        maximum encountered; otherwise, it adjusts automatically.
-
-        Parameters:
-            image (np.ndarray): The new image data to display.
         """
+        self.last_frame = image  # Store the latest frame for saving.
         max_val = np.max(image)
         min_val = np.min(image)
         title_text = f"Live Andor Camera Image - Max: {max_val:.0f}"
@@ -319,7 +410,6 @@ class AndorLive(QWidget):
             self.ax_img.clear()
             self.image_artist = self.ax_img.imshow(image, cmap=white_turbo(512))
             self.ax_img.set_title(title_text)
-            # Create a colorbar in a separate axis.
             self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax_img, fraction=0.046, pad=0.04)
         else:
             xlim = self.ax_img.get_xlim()
@@ -328,7 +418,6 @@ class AndorLive(QWidget):
             self.ax_img.set_xlim(xlim)
             self.ax_img.set_ylim(ylim)
             self.ax_img.set_title(title_text)
-            # Update colorbar limits using the min pixel value instead of 0.
             if self.fix_cbar_checkbox.isChecked():
                 if self.fixed_cbar_max is None:
                     self.fixed_cbar_max = max_val
@@ -337,7 +426,7 @@ class AndorLive(QWidget):
                 self.fixed_cbar_max = None
                 self.image_artist.set_clim(min_val, max_val)
             self.cbar.update_normal(self.image_artist)
-        # Update bottom subplot (integrated intensity along columns).
+        # Update bottom subplot (integrated intensity).
         profile = np.sum(image, axis=0)
         self.ax_profile.clear()
         self.ax_profile.plot(np.arange(image.shape[1]), profile, color='r')
@@ -345,6 +434,71 @@ class AndorLive(QWidget):
         self.ax_profile.set_ylabel("Integrated Intensity")
         self.ax_profile.set_xlim(0, image.shape[1])
         self.canvas.draw_idle()
+
+    def save_frame(self):
+        """
+        Saves the most recent frame as a PNG file with embedded metadata (Exposure, Averages, MCP Voltage, and Comment).
+        Also appends an entry to a log file recording the file name, Exposure, Averages, MCP Voltage, and Comment.
+        The log file is named AndorCamera_log_YYYY_MM_DD.txt and uses tab ('\t') as the separator.
+        If the Background checkbox is checked, the file name will include "Background" and the log comment will be "Background".
+        """
+        if self.last_frame is None:
+            QMessageBox.warning(self, "Warning", "No frame available to save.")
+            return
+
+        now = datetime.datetime.now()
+        # Build directory path based on current date.
+        dir_path = f"C:/data/{now.strftime('%Y-%m-%d')}/AndorCamera/"
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
+
+        timestamp = now.strftime("%Y%m%d_%H%M%S%f")
+        exposure_val = self.exposure_edit.text()
+        avgs_val = self.avgs_edit.text()
+        mcp_voltage_val = self.mcp_voltage_edit.text()
+        comment_text = self.comment_edit.text()
+
+        # If background checkbox is checked, override filename and comment.
+        if self.background_checkbox.isChecked():
+            file_name = f"AndorCamera_MCP_Background_{timestamp}.png"
+            log_comment = comment_text
+        else:
+            file_name = f"AndorCamera_MCP_Image_{timestamp}.png"
+            log_comment = comment_text
+
+        file_path = os.path.join(dir_path, file_name)
+
+        try:
+            # Convert frame to uint8 and save with PNG metadata.
+            frame_uint8 = np.uint8(np.clip(self.last_frame, 0, 255))
+            img = Image.fromarray(frame_uint8)
+            metadata = PngImagePlugin.PngInfo()
+            metadata.add_text("Exposure", exposure_val)
+            metadata.add_text("Averages", avgs_val)
+            metadata.add_text("MCP Voltage", mcp_voltage_val)
+            metadata.add_text("Comment", log_comment)
+            img.save(file_path, pnginfo=metadata)
+            self.log(f"Frame saved to {file_path}")
+        except Exception as e:
+            self.log(f"Error saving frame: {e}")
+            QMessageBox.critical(self, "Error", f"Error saving frame: {e}")
+            return
+
+        # Log file: add header if file does not exist.
+        log_file_name = f"AndorCamera_log_{now.strftime('%Y_%m_%d')}.txt"
+        log_file_path = os.path.join(dir_path, log_file_name)
+        header = "File Name\tExposure (µs)\tAverages\tMCP Voltage\tComment\n"
+
+        try:
+            if not os.path.exists(log_file_path):
+                with open(log_file_path, "w") as log_file:
+                    log_file.write(header)
+            with open(log_file_path, "a") as log_file:
+                log_file.write(f"{file_name}\t{exposure_val}\t{avgs_val}\t{mcp_voltage_val}\t{log_comment}\n")
+            self.log(f"Camera parameters logged to {log_file_path}")
+        except Exception as e:
+            self.log(f"Error writing to log file: {e}")
+            QMessageBox.critical(self, "Error", f"Error writing to log file: {e}")
 
 
 if __name__ == "__main__":

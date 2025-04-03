@@ -1,5 +1,8 @@
 from matplotlib.colors import LinearSegmentedColormap
 
+LOG_FORMAT = "[%(asctime)s] %(message)s"
+DATE_FORMAT = "%H:%M:%S"
+
 def white_turbo(segments=512):
     colors = [
         (1, 1, 1),  # white
