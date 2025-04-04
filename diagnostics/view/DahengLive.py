@@ -437,19 +437,22 @@ class DahengLive(QWidget):
 
         # Override filename and comment if background checkbox is checked.
         if self.background_checkbox.isChecked():
-            file_name = f"DahengCamera_Nozzle_Background_{timestamp}.bmp"
+            file_name = f"DahengCamera_Nozzle_Background_{timestamp}.png"
             log_comment = comment_text
         else:
-            file_name = f"DahengCamera_Nozzle_Image_{timestamp}.bmp"
+            file_name = f"DahengCamera_Nozzle_Image_{timestamp}.png"
             log_comment = comment_text
 
         file_path = os.path.join(dir_path, file_name)
 
         try:
-            # Convert the frame to uint8.
             frame_uint8 = np.uint8(np.clip(self.last_frame, 0, 255))
             img = Image.fromarray(frame_uint8)
-            img.save(file_path)
+            metadata = PngImagePlugin.PngInfo()
+            metadata.add_text("Exposure", exposure_val)
+            metadata.add_text("Gain", gain_val)
+            metadata.add_text("Comment", log_comment)
+            img.save(file_path, pnginfo=metadata)
             self.log(f"Frame saved to {file_path}")
         except Exception as e:
             self.log(f"Error saving frame: {e}")

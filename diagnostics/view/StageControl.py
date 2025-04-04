@@ -12,6 +12,21 @@ from hardware.wrappers.ThorlabsController import ThorlabsController
 from hardware.wrappers.WaveplateCalib import WaveplateCalibWidget, NUM_WAVEPLATES
 from hardware.wrappers.AutoWaveplateCalib import AutoWaveplateCalib
 
+
+def power_to_angle(power: float, amplitude: float, offset: float) -> float:
+    """
+    Converts a power value to the corresponding angle using a cosine fit.
+    This function assumes a fit of the form:
+         y = amplitude * cos(2*pi/90 * x - 2*pi/90 * offset) + amplitude
+    and returns the corresponding angle for a given power.
+    """
+    A = amplitude / 2.0
+    try:
+        angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
+    except Exception:
+        angle = offset
+    return angle
+
 class StageRow(QWidget):
     """
     A widget representing a single Thorlabs stage row with controls.
@@ -98,21 +113,6 @@ class StageRow(QWidget):
 
         layout.addStretch(1)
 
-    @staticmethod
-    def power_to_angle(power: float, amplitude: float, offset: float) -> float:
-        """
-        Converts a power value to the corresponding angle using a cosine fit.
-        This function assumes a fit of the form:
-             y = amplitude * cos(2*pi/90 * x - 2*pi/90 * offset) + amplitude
-        and returns the corresponding angle for a given power.
-        """
-        A = amplitude / 2.0
-        try:
-            angle = -(45 * np.arccos(power / A - 1)) / np.pi + offset
-        except Exception:
-            angle = offset
-        return angle
-
     def log(self, message: str) -> None:
         full_msg = f"Stage {self.stage_number+1}: {message}"
         if self.log_callback:
@@ -177,7 +177,7 @@ class StageRow(QWidget):
                 if desired_power > self.amplitude:
                     self.log(f"Desired power {desired_power} exceeds maximum {self.amplitude:.2f}. Capping to maximum.")
                     desired_power = self.amplitude
-                target_angle = self.power_to_angle(desired_power, self.amplitude, self.offset)
+                target_angle = power_to_angle(desired_power, self.amplitude, self.offset)
                 target_angle = target_angle % 360  # Ensure angle is within 0-360°
                 self.log(f"Converting power {desired_power} to angle {target_angle:.2f}.")
             else:

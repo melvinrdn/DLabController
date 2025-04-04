@@ -1,7 +1,3 @@
-import sys
-import time
-import datetime
-
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QGroupBox, QTextEdit
@@ -10,23 +6,20 @@ from diagnostics.view.AndorLive import AndorLive
 from diagnostics.view.DahengLive import DahengLive
 from diagnostics.view.StageControl import StageControl
 from diagnostics.view.SLMView import SLMView
+from diagnostics.view.ScanPanel import ScanPanel
 from hardware.wrappers.PressureSensor import GRAFANA_PATH, PressureMonitorWidget
 
 class DlabController(QMainWindow):
-    """
-    Central control application that provides group boxes for opening various GUIs
-    and for running scans. The main window displays only the clickable dashboard URL
-    and a log text box. The pressure polling runs in the background without showing its UI.
-    """
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Central Control App")
+        self.setWindowTitle("DlabController")
         self.resize(800, 500)
 
         self.andor_live = None
         self.daheng_live = None
         self.stage_control = None
         self.slm_view = None
+        self.scan_panel = None  # Will hold the Scan Panel instance
 
         # Instantiate the PressureMonitorWidget to start pressure polling in the background.
         self.pressure_monitor = PressureMonitorWidget(self)
@@ -59,9 +52,10 @@ class DlabController(QMainWindow):
         # "Scan" group box.
         scan_group = QGroupBox("Scan")
         scan_layout = QVBoxLayout()
-        self.scan_button = QPushButton("Run Scan")
-        self.scan_button.clicked.connect(self.run_scan)
-        scan_layout.addWidget(self.scan_button)
+        # Replace the run scan button with one that opens the Scan Panel.
+        self.scan_panel_button = QPushButton("Open Scan Panel")
+        self.scan_panel_button.clicked.connect(self.open_scan_panel)
+        scan_layout.addWidget(self.scan_panel_button)
         scan_group.setLayout(scan_layout)
         left_panel.addWidget(scan_group)
 
@@ -81,7 +75,8 @@ class DlabController(QMainWindow):
         main_layout.addLayout(left_panel)
 
     def append_log(self, message):
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        from datetime import datetime
+        current_time = datetime.now().strftime("%H:%M:%S")
         self.log_text.append(f"[{current_time}] {message}")
 
     def open_andor_live(self):
@@ -116,53 +111,22 @@ class DlabController(QMainWindow):
         self.stage_control.activateWindow()
         self.append_log("Thorlabs Control GUI opened.")
 
-    def run_scan(self):
-        self.append_log("Starting scan...")
-        if self.daheng_live is None:
-            self.open_daheng_live()
+    def open_scan_panel(self):
         if self.andor_live is None:
             self.open_andor_live()
-        if self.daheng_live.camera_controller is None:
-            self.append_log("Daheng camera not activated.")
-            return
-        try:
-            exposure_d = int(self.daheng_live.exposure_edit.text())
-            gain = int(self.daheng_live.gain_edit.text())
-            avgs_d = int(self.daheng_live.avgs_edit.text())
-            daheng_img = self.daheng_live.camera_controller.take_image(exposure_d, gain, avgs_d)
-            self.append_log("Daheng image captured.")
-        except Exception as e:
-            self.append_log(f"Error capturing Daheng image: {e}")
-            return
+        if self.daheng_live is None:
+            self.open_daheng_live()
+        if self.stage_control is None:
+            self.open_thorlabs_view()
+        # Now we pass the thorlabs_view from stage_control.
+        self.scan_panel = ScanPanel(self.andor_live, self.daheng_live, self.stage_control.thorlabs_view)
+        self.scan_panel.show()
+        self.append_log("Scan Panel GUI opened.")
 
-        time.sleep(1)
-
-        if self.andor_live.camera_controller is None:
-            self.append_log("Andor camera not activated.")
-            return
-        try:
-            exposure_a = int(self.andor_live.exposure_edit.text())
-            avgs_a = int(self.andor_live.avgs_edit.text())
-            andor_img = self.andor_live.camera_controller.take_image(exposure_a, avgs_a)
-            self.append_log("Andor image captured.")
-        except Exception as e:
-            self.append_log(f"Error capturing Andor image: {e}")
-            return
-
-        self.display_scan_images(daheng_img, andor_img)
-
-    def display_scan_images(self, daheng_img, andor_img):
-        import matplotlib.pyplot as plt
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
-        ax1.imshow(daheng_img, cmap='viridis')
-        ax1.set_title("Daheng Image")
-        ax2.imshow(andor_img, cmap='viridis')
-        ax2.set_title("Andor Image")
-        plt.tight_layout()
-        plt.show()
-        self.append_log("Scan images displayed.")
 
 if __name__ == "__main__":
+    import sys
+    from PyQt5.QtWidgets import QApplication
     app = QApplication(sys.argv)
     window = DlabController()
     window.show()

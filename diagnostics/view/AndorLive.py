@@ -212,7 +212,7 @@ class AndorLive(QWidget):
         # MCP Voltage entry.
         mcp_layout = QHBoxLayout()
         mcp_layout.addWidget(QLabel("MCP Voltage:"))
-        self.mcp_voltage_edit = QLineEdit()
+        self.mcp_voltage_edit = QLineEdit("Not specified")
         mcp_layout.addWidget(self.mcp_voltage_edit)
         param_layout.addLayout(mcp_layout)
 
@@ -284,7 +284,7 @@ class AndorLive(QWidget):
         self.figure, (self.ax_img, self.ax_profile) = plt.subplots(2, 1,
                                                                    gridspec_kw={'height_ratios': [3, 1]}, sharex=True)
         self.ax_img.set_title("Live Andor Camera Image")
-        self.ax_profile.setTitle("Integrated Profile")
+        self.ax_profile.set_title("Integrated Profile")
         self.figure.subplots_adjust(right=0.85)
         self.canvas = FigureCanvas(self.figure)
         plot_layout.addWidget(self.canvas)
