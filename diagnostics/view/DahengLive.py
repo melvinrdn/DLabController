@@ -26,15 +26,10 @@ from diagnostics.utils import white_turbo
 # Suppress Matplotlib debug messages.
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
-# Common log format and date format.
 LOG_FORMAT = "[%(asctime)s] %(message)s"
 DATE_FORMAT = "%H:%M:%S"
 
-
 class QTextEditHandler(logging.Handler):
-    """
-    Custom logging handler to send log messages to a QTextEdit widget.
-    """
     def __init__(self, widget):
         super().__init__()
         self.widget = widget
@@ -45,11 +40,7 @@ class QTextEditHandler(logging.Handler):
         self.widget.append(msg)
         self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
-
 class LiveCaptureThread(QThread):
-    """
-    QThread subclass to continuously capture images from the camera.
-    """
     image_signal = pyqtSignal(np.ndarray)
 
     def __init__(self, camera_controller, exposure, gain, avgs, update_interval_ms):
@@ -59,7 +50,7 @@ class LiveCaptureThread(QThread):
         self.gain = gain
         self.avgs = avgs
         self.update_interval_ms = update_interval_ms
-        self.interval_sec = update_interval_ms / 1000.0  # Convert ms to seconds.
+        self.interval_sec = update_interval_ms / 1000.0
         self._running = True
         self._param_lock = threading.Lock()
 
@@ -92,27 +83,78 @@ class LiveCaptureThread(QThread):
     def stop(self):
         self._running = False
 
+class DummyCaptureThread(QThread):
+    image_signal = pyqtSignal(np.ndarray)
+
+    def __init__(self, exposure, gain, avgs, update_interval_ms, shape=(512, 512)):
+        super().__init__()
+        self.exposure = exposure
+        self.gain = gain
+        self.avgs = avgs
+        self.update_interval_ms = update_interval_ms
+        self.interval_sec = update_interval_ms / 1000.0
+        self.shape = shape
+        self._running = True
+        self._param_lock = threading.Lock()
+
+    def update_parameters(self, exposure, gain, avgs, update_interval_ms):
+        with self._param_lock:
+            self.exposure = exposure
+            self.gain = gain
+            self.avgs = avgs
+            self.update_interval_ms = update_interval_ms
+            self.interval_sec = update_interval_ms / 1000.0
+
+    def run(self):
+        # Generate a base Gaussian image (centered intensity distribution)
+        x = np.linspace(-1, 1, self.shape[1])
+        y = np.linspace(-1, 1, self.shape[0])
+        xv, yv = np.meshgrid(x, y)
+        sigma = 0.4
+        base_gaussian = np.exp(-(xv**2 + yv**2) / (2 * sigma**2))
+        # Normalize to 0-255
+        base_gaussian = 255 * base_gaussian / np.max(base_gaussian)
+
+        while self._running:
+            try:
+                with self._param_lock:
+                    sleep_interval = self.interval_sec
+                # Add random noise
+                noise = np.random.normal(loc=0, scale=20, size=self.shape)
+                image = base_gaussian + noise
+                image = np.clip(image, 0, 255)
+                image = image.astype(np.uint8)
+                self.image_signal.emit(image)
+                time.sleep(sleep_interval)
+            except Exception as e:
+                print("Error in dummy capture:", e)
+                break
+
+    def stop(self):
+        self._running = False
 
 class DahengLive(QWidget):
     """
     A PyQt5 GUI for live camera image capture using DahengController.
+    Now supports a fixed camera index and unique camera name.
+    Also includes a dummy mode that displays a Gaussian image with random noise.
     """
-    def __init__(self):
+    def __init__(self, camera_name="DahengLive", fixed_index=0):
         super().__init__()
-        self.setWindowTitle("Live Camera Feed")
+        self.camera_name = camera_name
+        self.fixed_index = fixed_index  # Fixed index for this instance.
+        self.setWindowTitle(f"DahengLive - {self.camera_name}")
         self.camera_controller = None
         self.capture_thread = None
-        self.debug_mode = False  # Track debug mode state.
-        self.image_artist = None  # To preserve zoomed axes.
-        self.last_frame = None    # To store the most recent frame for saving.
-        self.current_interval_ms = None  # Stores current update interval.
+        self.debug_mode = False
+        self.dummy_mode = False  # Flag to indicate dummy mode.
+        self.cbar = None
+        self.image_artist = None
+        self.last_frame = None
+        self.current_interval_ms = None
         self.initUI()
 
     def initUI(self):
-        """
-        Sets up the user interface including parameter controls, log box, image display,
-        the comment field, and the save button.
-        """
         main_layout = QHBoxLayout(self)
         splitter = QSplitter()
 
@@ -120,15 +162,11 @@ class DahengLive(QWidget):
         param_panel = QWidget()
         param_layout = QVBoxLayout(param_panel)
 
-        # Camera index selection.
+        # Display the fixed camera index.
         idx_layout = QHBoxLayout()
         idx_layout.addWidget(QLabel("Camera Index:"))
-        self.index_combo = QComboBox()
-        self.refresh_indices()
-        idx_layout.addWidget(self.index_combo)
-        refresh_button = QPushButton("Refresh Indices")
-        refresh_button.clicked.connect(self.refresh_indices)
-        idx_layout.addWidget(refresh_button)
+        idx_label = QLabel(str(self.fixed_index))
+        idx_layout.addWidget(idx_label)
         param_layout.addLayout(idx_layout)
 
         # Exposure parameter.
@@ -189,6 +227,11 @@ class DahengLive(QWidget):
         self.activate_button.clicked.connect(self.activate_camera)
         btn_layout.addWidget(self.activate_button)
 
+        # New Activate Dummy button.
+        self.activate_dummy_button = QPushButton("Activate Dummy")
+        self.activate_dummy_button.clicked.connect(self.activate_dummy)
+        btn_layout.addWidget(self.activate_dummy_button)
+
         self.deactivate_button = QPushButton("Deactivate Camera")
         self.deactivate_button.clicked.connect(self.deactivate_camera)
         self.deactivate_button.setEnabled(False)
@@ -227,9 +270,10 @@ class DahengLive(QWidget):
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
         self.figure, self.ax = plt.subplots()
-        self.ax.set_title("Live Camera Image")
         self.canvas = FigureCanvas(self.figure)
         self.toolbar = NavigationToolbar(self.canvas, self)
+        self.ax.set_title(f"DahengLive - {self.camera_name}")
+        self.figure.subplots_adjust(right=0.85)
         plot_layout.addWidget(self.toolbar)
         plot_layout.addWidget(self.canvas)
         splitter.addWidget(plot_panel)
@@ -237,27 +281,12 @@ class DahengLive(QWidget):
         main_layout.addWidget(splitter)
         self.resize(1080, 720)
 
-    def refresh_indices(self):
-        """
-        Refreshes the list of available camera indices and populates the combo box.
-        """
-        self.index_combo.clear()
-        indices = DahengController.get_available_indices()
-        for idx in indices:
-            self.index_combo.addItem(str(idx))
-
     def log(self, message):
-        """
-        Appends a log message to the log text box using the common format and auto-scrolls.
-        """
         current_time = datetime.datetime.now().strftime(DATE_FORMAT)
         self.log_text.append(f"[{current_time}] {message}")
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
 
     def update_capture_parameters(self):
-        """
-        Reads updated parameters from the input fields and applies them immediately.
-        """
         try:
             exposure = int(self.exposure_edit.text())
             gain = int(self.gain_edit.text())
@@ -276,9 +305,6 @@ class DahengLive(QWidget):
             pass
 
     def adjust_exposure(self, image):
-        """
-        Automatically adjusts the exposure based on the brightness of the zoomed image region.
-        """
         try:
             x0, x1 = self.ax.get_xlim()
             y0, y1 = self.ax.get_ylim()
@@ -309,24 +335,20 @@ class DahengLive(QWidget):
             self.log(f"Error adjusting exposure: {e}")
 
     def toggle_debug_mode(self):
-        """
-        Toggles the debug mode of the camera controller and updates the GUI.
-        """
-        if self.camera_controller:
+        if self.camera_controller or self.dummy_mode:
             self.debug_mode = not self.debug_mode
-            self.camera_controller.enable_debug(debug_on=self.debug_mode)
+            if self.camera_controller:
+                self.camera_controller.enable_debug(debug_on=self.debug_mode)
             state = "enabled" if self.debug_mode else "disabled"
-            self.log(f"Camera {self.camera_controller.index} Debug mode {state}.")
+            self.log(f"Debug mode {state}.")
             self.debug_button.setText("Disable Debug Mode" if self.debug_mode else "Enable Debug Mode")
         else:
-            QMessageBox.warning(self, "Warning", "Camera not activated. Activate the camera first.")
+            QMessageBox.warning(self, "Warning", "Camera not activated. Activate the camera or dummy first.")
 
     def activate_camera(self):
-        """
-        Activates the camera based on the selected index and configures logging.
-        """
         try:
-            selected_index = int(self.index_combo.currentText())
+            # Use the fixed index instead of reading from a combo box.
+            selected_index = self.fixed_index
             self.camera_controller = DahengController(selected_index)
             self.camera_controller.activate()
             self.camera_controller.logger.handlers = []
@@ -335,22 +357,36 @@ class DahengLive(QWidget):
             self.camera_controller.enable_debug(debug_on=False)
             self.log(f"Camera {selected_index} activated.")
             self.activate_button.setEnabled(False)
+            self.activate_dummy_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
             self.start_button.setEnabled(True)
+            self.dummy_mode = False
         except DahengControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to activate camera: {ce}")
             self.log(f"Error activating camera: {ce}")
 
+    def activate_dummy(self):
+        # Enter dummy mode and simulate activation.
+        self.dummy_mode = True
+        self.camera_controller = None
+        self.log("Dummy camera activated. A Gaussian image with random noise will be generated.")
+        self.activate_dummy_button.setEnabled(False)
+        self.activate_button.setEnabled(False)
+        self.deactivate_button.setEnabled(True)
+        self.start_button.setEnabled(True)
+
     def deactivate_camera(self):
-        """
-        Deactivates the camera and resets the GUI controls.
-        """
         try:
             if self.camera_controller:
                 self.camera_controller.deactivate()
-                self.log(f"Camera {self.camera_controller.index} deactivated.")
+                self.log(f"Camera {self.fixed_index} deactivated.")
+            else:
+                if self.dummy_mode:
+                    self.log("Dummy camera deactivated.")
             self.camera_controller = None
+            self.dummy_mode = False
             self.activate_button.setEnabled(True)
+            self.activate_dummy_button.setEnabled(True)
             self.deactivate_button.setEnabled(False)
             self.start_button.setEnabled(False)
             self.stop_button.setEnabled(False)
@@ -359,12 +395,6 @@ class DahengLive(QWidget):
             self.log(f"Error deactivating camera: {ce}")
 
     def start_capture(self):
-        """
-        Starts the live capture thread using the current parameters.
-        """
-        if self.camera_controller is None:
-            QMessageBox.critical(self, "Error", "Camera not activated.")
-            return
         try:
             exposure = int(self.exposure_edit.text())
             gain = int(self.gain_edit.text())
@@ -373,17 +403,26 @@ class DahengLive(QWidget):
         except ValueError:
             QMessageBox.critical(self, "Error", "Invalid parameter values.")
             return
-        self.capture_thread = LiveCaptureThread(self.camera_controller, exposure, gain, avgs, update_interval)
-        self.capture_thread.image_signal.connect(self.update_image)
-        self.capture_thread.start()
-        self.log("Live capture started.")
+
+        if self.dummy_mode:
+            # Start dummy capture thread.
+            self.capture_thread = DummyCaptureThread(exposure, gain, avgs, update_interval)
+            self.capture_thread.image_signal.connect(self.update_image)
+            self.capture_thread.start()
+            self.log("Dummy live capture started.")
+        elif self.camera_controller:
+            self.capture_thread = LiveCaptureThread(self.camera_controller, exposure, gain, avgs, update_interval)
+            self.capture_thread.image_signal.connect(self.update_image)
+            self.capture_thread.start()
+            self.log("Live capture started.")
+        else:
+            QMessageBox.critical(self, "Error", "No camera activated.")
+            return
+
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
 
     def stop_capture(self):
-        """
-        Stops the live capture thread.
-        """
         if self.capture_thread:
             self.capture_thread.stop()
             self.capture_thread.wait()
@@ -393,40 +432,37 @@ class DahengLive(QWidget):
         self.stop_button.setEnabled(False)
 
     def update_image(self, image):
-        """
-        Updates the displayed image on the Matplotlib canvas while preserving zoom.
-        """
-        # Store the latest frame for saving.
         self.last_frame = image
+        vmin, vmax = np.min(image), np.max(image)
 
         if self.image_artist is None:
             self.ax.clear()
-            self.image_artist = self.ax.imshow(image, cmap=white_turbo(512))
-            self.ax.set_title("Live Camera Image")
+            self.image_artist = self.ax.imshow(image, cmap=white_turbo(512), vmin=vmin, vmax=vmax)
+            self.ax.set_title(f"DahengLive - {self.camera_name}")
+            self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax, fraction=0.046, pad=0.04)
         else:
             xlim = self.ax.get_xlim()
             ylim = self.ax.get_ylim()
             self.image_artist.set_data(image)
+            self.image_artist.set_clim(vmin, vmax)
             self.ax.set_xlim(xlim)
             self.ax.set_ylim(ylim)
+            if self.cbar:
+                self.cbar.update_normal(self.image_artist)
+
         self.canvas.draw_idle()
+
         if self.auto_adjust_checkbox.isChecked():
             self.adjust_exposure(image)
 
     def save_frame(self):
-        """
-        Saves the most recent frame as a .bmp file in the designated folder.
-        The file is saved with a timestamp in its name.
-        If the Background checkbox is checked, the file name will include "Background" and the log comment will be "Background".
-        Additionally, a log file entry is appended with tab-separated values.
-        """
         if self.last_frame is None:
             QMessageBox.warning(self, "Warning", "No frame available to save.")
             return
 
         now = datetime.datetime.now()
-        # Build the directory path using the current date.
-        dir_path = f"C:/data/{now.strftime('%Y-%m-%d')}/DahengCamera/"
+        # Save images in a folder named after the camera.
+        dir_path = f"C:/data/{now.strftime('%Y-%m-%d')}/{self.camera_name}/"
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
 
@@ -435,12 +471,12 @@ class DahengLive(QWidget):
         gain_val = self.gain_edit.text()
         comment_text = self.comment_edit.text()
 
-        # Override filename and comment if background checkbox is checked.
+        # Use camera name in the file name.
         if self.background_checkbox.isChecked():
-            file_name = f"DahengCamera_Nozzle_Background_{timestamp}.png"
+            file_name = f"{self.camera_name}_Background_{timestamp}.png"
             log_comment = comment_text
         else:
-            file_name = f"DahengCamera_Nozzle_Image_{timestamp}.png"
+            file_name = f"{self.camera_name}_Image_{timestamp}.png"
             log_comment = comment_text
 
         file_path = os.path.join(dir_path, file_name)
@@ -459,17 +495,15 @@ class DahengLive(QWidget):
             QMessageBox.critical(self, "Error", f"Error saving frame: {e}")
             return
 
-        # Prepare the log file name and header.
-        log_file_name = f"DahengCamera_log_{now.strftime('%Y_%m_%d')}.txt"
+        # Log file entry.
+        log_file_name = f"{self.camera_name}_log_{now.strftime('%Y_%m_%d')}.txt"
         log_file_path = os.path.join(dir_path, log_file_name)
         header = "File Name\tExposure (µs)\tGain\tComment\n"
 
         try:
-            # Write header if the file does not exist.
             if not os.path.exists(log_file_path):
                 with open(log_file_path, "w") as log_file:
                     log_file.write(header)
-            # Append the log entry with tab-separated values.
             with open(log_file_path, "a") as log_file:
                 log_file.write(f"{file_name}\t{exposure_val}\t{gain_val}\t{log_comment}\n")
             self.log(f"Camera parameters logged to {log_file_path}")
@@ -477,9 +511,8 @@ class DahengLive(QWidget):
             self.log(f"Error writing to log file: {e}")
             QMessageBox.critical(self, "Error", f"Error writing to log file: {e}")
 
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    gui = DahengLive()
+    gui = DahengLive(camera_name="Nozzle", fixed_index=1)
     gui.show()
     sys.exit(app.exec_())
