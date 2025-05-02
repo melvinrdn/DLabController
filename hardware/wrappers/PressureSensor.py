@@ -122,16 +122,7 @@ class PressureMonitorWidget(QObject):
         except Exception as e:
             self.log_signal.emit(f"Failed to start HTTP server: {e}")
 
-        try:
-            self._prom_proc = subprocess.Popen(
-                [PROMETHEUS_EXEC, f'--config.file={PROMETHEUS_CONFIG}'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True
-            )
-            self.log_signal.emit("Prometheus server started")
-        except Exception as e:
-            self.log_signal.emit(f"Failed to launch Prometheus: {e}")
+        self.log_signal.emit(f"You can now launch prometheus.exe")
 
     def __del__(self):
         """
@@ -142,10 +133,3 @@ class PressureMonitorWidget(QObject):
         if hasattr(self, 'thread'):
             self.thread.quit()
             self.thread.wait()
-        if getattr(self, '_prom_proc', None):
-            self._prom_proc.terminate()
-            try:
-                self._prom_proc.wait(timeout=5)
-            except Exception:
-                self._prom_proc.kill()
-            self.log_signal.emit("Prometheus process stopped")
