@@ -164,7 +164,7 @@ class AndorLive(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Live Andor Camera Feed")
-        self.camera_controller = None
+        self.cam = None
         self.capture_thread = None
         self.debug_mode = False
         self.image_artist = None
@@ -308,15 +308,15 @@ class AndorLive(QWidget):
                 self.log(f"Update interval changed to {update_interval} ms.")
             if self.capture_thread:
                 self.capture_thread.update_parameters(exposure, avgs, update_interval)
-            elif self.camera_controller:
-                self.camera_controller.set_exposure(exposure)
+            elif self.cam:
+                self.cam.set_exposure(exposure)
         except ValueError:
             pass
 
     def toggle_debug_mode(self):
-        if self.camera_controller:
+        if self.cam:
             self.debug_mode = not self.debug_mode
-            self.camera_controller.enable_debug(debug_on=self.debug_mode)
+            self.cam.enable_debug(debug_on=self.debug_mode)
             state = "enabled" if self.debug_mode else "disabled"
             self.log(f"Camera 0 Debug mode {state}.")
             self.debug_button.setText("Disable Debug Mode" if self.debug_mode else "Enable Debug Mode")
@@ -325,12 +325,12 @@ class AndorLive(QWidget):
 
     def activate_camera(self):
         try:
-            self.camera_controller = AndorController(device_index=0)
-            self.camera_controller.activate()
-            self.camera_controller.logger.handlers = []
+            self.cam = AndorController(device_index=0)
+            self.cam.activate()
+            self.cam.logger.handlers = []
             qt_handler = QTextEditHandler(self.log_text)
-            self.camera_controller.logger.addHandler(qt_handler)
-            self.camera_controller.enable_debug(debug_on=False)
+            self.cam.logger.addHandler(qt_handler)
+            self.cam.enable_debug(debug_on=False)
             self.log("Camera 0 activated.")
             self.activate_button.setEnabled(False)
             self.activate_dummy_button.setEnabled(False)
@@ -342,9 +342,9 @@ class AndorLive(QWidget):
 
     def activate_dummy_camera(self):
         try:
-            self.camera_controller = DummyAndorController(device_index=666)
-            self.camera_controller.activate()
-            self.camera_controller.enable_debug(debug_on=False)
+            self.cam = DummyAndorController(device_index=666)
+            self.cam.activate()
+            self.cam.enable_debug(debug_on=False)
             self.log("Dummy camera activated.")
             self.activate_button.setEnabled(False)
             self.activate_dummy_button.setEnabled(False)
@@ -356,10 +356,10 @@ class AndorLive(QWidget):
 
     def deactivate_camera(self):
         try:
-            if self.camera_controller:
-                self.camera_controller.deactivate()
+            if self.cam:
+                self.cam.deactivate()
                 self.log("Camera 0 deactivated.")
-            self.camera_controller = None
+            self.cam = None
             self.activate_button.setEnabled(True)
             self.activate_dummy_button.setEnabled(True)
             self.deactivate_button.setEnabled(False)
@@ -370,7 +370,7 @@ class AndorLive(QWidget):
             self.log(f"Error deactivating camera: {ce}")
 
     def start_capture(self):
-        if self.camera_controller is None:
+        if self.cam is None:
             QMessageBox.critical(self, "Error", "Camera not activated.")
             return
         try:
@@ -380,7 +380,7 @@ class AndorLive(QWidget):
         except ValueError:
             QMessageBox.critical(self, "Error", "Invalid parameter values.")
             return
-        self.capture_thread = LiveCaptureThread(self.camera_controller, exposure, avgs, update_interval)
+        self.capture_thread = LiveCaptureThread(self.cam, exposure, avgs, update_interval)
         self.capture_thread.image_signal.connect(self.update_image)
         self.capture_thread.start()
         self.log("Live capture started.")

@@ -15,21 +15,19 @@ class ScanWorker(QThread):
     image_update = pyqtSignal(str, object)  # (camera, image) for live plot updates.
     finished = pyqtSignal()             # Emitted when scan is complete.
 
-    def __init__(self, andor_live, daheng_focus, daheng_nozzle, daheng_camera3,
+    def __init__(self, andor_live, daheng_focus, daheng_nozzle,
                  stage_control, scan_params, use_andor, use_daheng_focus,
-                 use_daheng_nozzle, use_daheng_camera3, save_scan, comment,
+                 use_daheng_nozzle, save_scan, comment,
                  delay, background, wp_group, power_mode, parent=None):
         super().__init__(parent)
         self.andor_live = andor_live
         self.daheng_focus = daheng_focus
         self.daheng_nozzle = daheng_nozzle
-        self.daheng_camera3 = daheng_camera3
         self.stage_control = stage_control  # Reference to the ThorlabsView
         self.scan_params = scan_params      # Dict: {'start': ..., 'stop': ..., 'points': ...}
         self.use_andor = use_andor
         self.use_daheng_focus = use_daheng_focus
         self.use_daheng_nozzle = use_daheng_nozzle
-        self.use_daheng_camera3 = use_daheng_camera3
         self.save_scan = save_scan
         self.comment = comment
         self.delay = delay
@@ -55,7 +53,7 @@ class ScanWorker(QThread):
         try:
             with open(general_log_path, "a") as f:
                 f.write(f"# {self.comment}\n")
-                scan_tab = "Intensity scan"
+                scan_tab = "Energy scan"
                 cameras_used = []
                 if self.use_andor:
                     cameras_used.append("Andor")
@@ -63,8 +61,6 @@ class ScanWorker(QThread):
                     cameras_used.append("Daheng Focus")
                 if self.use_daheng_nozzle:
                     cameras_used.append("Daheng Nozzle")
-                if self.use_daheng_camera3:
-                    cameras_used.append("Daheng Camera3")
                 cameras_str = ", ".join(cameras_used)
 
                 mode_str = "Power" if self.power_mode else "Angle"
@@ -140,13 +136,13 @@ class ScanWorker(QThread):
 
             # Process Andor camera.
             if self.use_andor:
-                if self.andor_live is None or self.andor_live.camera_controller is None:
+                if self.andor_live is None or self.andor_live.cam is None:
                     self.progress.emit("AndorLive is not activated. Skipping Andor at this point.")
                 else:
                     try:
                         exposure_a = int(self.andor_live.exposure_edit.text())
                         avgs_a = int(self.andor_live.avgs_edit.text())
-                        andor_img = self.andor_live.camera_controller.take_image(exposure_a, avgs_a)
+                        andor_img = self.andor_live.cam.take_image(exposure_a, avgs_a)
                         self.progress.emit("Andor image captured.")
                         self.image_update.emit("Andor", andor_img)
                         if self.save_scan:
@@ -158,20 +154,20 @@ class ScanWorker(QThread):
                     except Exception as e:
                         self.progress.emit(f"Error capturing Andor image: {e}")
             # Delay between cameras if needed.
-            if self.use_andor and (self.use_daheng_focus or self.use_daheng_nozzle or self.use_daheng_camera3):
+            if self.use_andor and (self.use_daheng_focus or self.use_daheng_nozzle):
                 self.progress.emit(f"Waiting {self.delay} seconds between camera acquisitions...")
                 time.sleep(self.delay)
 
             # Process Daheng Focus camera.
             if self.use_daheng_focus:
-                if self.daheng_focus is None or self.daheng_focus.camera_controller is None:
+                if self.daheng_focus is None or self.daheng_focus.cam is None:
                     self.progress.emit("Daheng Focus is not activated. Skipping Daheng Focus at this point.")
                 else:
                     try:
                         exposure_f = int(self.daheng_focus.exposure_edit.text())
                         gain_f = int(self.daheng_focus.gain_edit.text())
                         avgs_f = int(self.daheng_focus.avgs_edit.text())
-                        focus_img = self.daheng_focus.camera_controller.take_image(exposure_f, gain_f, avgs_f)
+                        focus_img = self.daheng_focus.cam.take_image(exposure_f, gain_f, avgs_f)
                         self.progress.emit("Daheng Focus image captured.")
                         self.image_update.emit("Daheng Focus", focus_img)
                         if self.save_scan:
@@ -185,14 +181,14 @@ class ScanWorker(QThread):
 
             # Process Daheng Nozzle camera.
             if self.use_daheng_nozzle:
-                if self.daheng_nozzle is None or self.daheng_nozzle.camera_controller is None:
+                if self.daheng_nozzle is None or self.daheng_nozzle.cam is None:
                     self.progress.emit("Daheng Nozzle is not activated. Skipping Daheng Nozzle at this point.")
                 else:
                     try:
                         exposure_n = int(self.daheng_nozzle.exposure_edit.text())
                         gain_n = int(self.daheng_nozzle.gain_edit.text())
                         avgs_n = int(self.daheng_nozzle.avgs_edit.text())
-                        nozzle_img = self.daheng_nozzle.camera_controller.take_image(exposure_n, gain_n, avgs_n)
+                        nozzle_img = self.daheng_nozzle.cam.take_image(exposure_n, gain_n, avgs_n)
                         self.progress.emit("Daheng Nozzle image captured.")
                         self.image_update.emit("Daheng Nozzle", nozzle_img)
                         if self.save_scan:
@@ -203,27 +199,6 @@ class ScanWorker(QThread):
                                 self.progress.emit(f"Daheng Nozzle scan event logged: point {point}, file {file_name}")
                     except Exception as e:
                         self.progress.emit(f"Error capturing Daheng Nozzle image: {e}")
-
-            # Process Daheng Camera3.
-            if self.use_daheng_camera3:
-                if self.daheng_camera3 is None or self.daheng_camera3.camera_controller is None:
-                    self.progress.emit("Daheng Camera3 is not activated. Skipping Daheng Camera3 at this point.")
-                else:
-                    try:
-                        exposure_c = int(self.daheng_camera3.exposure_edit.text())
-                        gain_c = int(self.daheng_camera3.gain_edit.text())
-                        avgs_c = int(self.daheng_camera3.avgs_edit.text())
-                        camera3_img = self.daheng_camera3.camera_controller.take_image(exposure_c, gain_c, avgs_c)
-                        self.progress.emit("Daheng Camera3 image captured.")
-                        self.image_update.emit("Daheng Camera3", camera3_img)
-                        if self.save_scan:
-                            file_name = self.save_daheng_scan_image(camera3_img, exposure_c, gain_c, avgs_c, camera_type="Camera3")
-                            if file_name:
-                                with open(general_log_path, "a") as f:
-                                    f.write(f"DahengCamera3\t{point}\t{file_name}\n")
-                                self.progress.emit(f"Daheng Camera3 scan event logged: point {point}, file {file_name}")
-                    except Exception as e:
-                        self.progress.emit(f"Error capturing Daheng Camera3 image: {e}")
         self.finished.emit()
 
     def save_andor_scan_image(self, image, exposure, avgs):
@@ -294,12 +269,11 @@ class ScanWorker(QThread):
 
 
 class ScanPanel(QMainWindow):
-    def __init__(self, andor_live, daheng_focus, daheng_nozzle, daheng_camera3, stage_control):
+    def __init__(self, andor_live, daheng_focus, daheng_nozzle, stage_control):
         """
         :param andor_live: Reference to AndorLive GUI.
         :param daheng_focus: Reference to Daheng Focus GUI.
         :param daheng_nozzle: Reference to Daheng Nozzle GUI.
-        :param daheng_camera3: Reference to Daheng Camera3 GUI.
         :param stage_control: Reference to the ThorlabsView (stage control).
         """
         super().__init__()
@@ -308,7 +282,6 @@ class ScanPanel(QMainWindow):
         self.andor_live = andor_live
         self.daheng_focus = daheng_focus
         self.daheng_nozzle = daheng_nozzle
-        self.daheng_camera3 = daheng_camera3
         self.stage_control = stage_control
         self.init_ui()
 
@@ -323,15 +296,28 @@ class ScanPanel(QMainWindow):
         cam_layout.addWidget(self.andor_checkbox)
         layout.addLayout(cam_layout)
 
+        self.andor_checkbox.setEnabled(self.andor_live.cam is not None)
+        self.andor_live.activate_button.clicked.connect(
+            lambda: self.andor_checkbox.setEnabled(True)
+        )
+
         # --- Daheng Cameras Selection ---
         daheng_cam_layout = QHBoxLayout()
         self.daheng_focus_checkbox = QCheckBox("Use Daheng Focus")
         self.daheng_nozzle_checkbox = QCheckBox("Use Daheng Nozzle")
-        self.daheng_camera3_checkbox = QCheckBox("Use Daheng Camera3")
         daheng_cam_layout.addWidget(self.daheng_focus_checkbox)
         daheng_cam_layout.addWidget(self.daheng_nozzle_checkbox)
-        daheng_cam_layout.addWidget(self.daheng_camera3_checkbox)
         layout.addLayout(daheng_cam_layout)
+
+        self.daheng_focus_checkbox.setEnabled(self.daheng_focus.cam is not None)
+        self.daheng_focus.activate_camera_btn.clicked.connect(
+            lambda: self.daheng_focus_checkbox.setEnabled(True)
+        )
+
+        self.daheng_nozzle_checkbox.setEnabled(self.daheng_nozzle.cam is not None)
+        self.daheng_nozzle.activate_camera_btn.clicked.connect(
+            lambda: self.daheng_nozzle_checkbox.setEnabled(True)
+        )
 
         # --- Stage (WP Group) Selection ---
         wp_layout = QHBoxLayout()
@@ -411,8 +397,7 @@ class ScanPanel(QMainWindow):
         use_andor = self.andor_checkbox.isChecked()
         use_daheng_focus = self.daheng_focus_checkbox.isChecked()
         use_daheng_nozzle = self.daheng_nozzle_checkbox.isChecked()
-        use_daheng_camera3 = self.daheng_camera3_checkbox.isChecked()
-        if not use_andor and not (use_daheng_focus or use_daheng_nozzle or use_daheng_camera3):
+        if not use_andor and not (use_daheng_focus or use_daheng_nozzle):
             self.log("No cameras selected for scan.")
             return
         save_scan = self.save_checkbox.isChecked()
@@ -450,12 +435,6 @@ class ScanPanel(QMainWindow):
             self.log("Daheng Nozzle live capture stopped for scan.")
         else:
             self._daheng_nozzle_live_was_running = False
-        if self.daheng_camera3 is not None and getattr(self.daheng_camera3, "capture_thread", None):
-            self._daheng_camera3_live_was_running = True
-            self.daheng_camera3.stop_capture()
-            self.log("Daheng Camera3 live capture stopped for scan.")
-        else:
-            self._daheng_camera3_live_was_running = False
 
         self.scan_button.setEnabled(False)
         self.abort_button.setEnabled(True)
@@ -463,13 +442,11 @@ class ScanPanel(QMainWindow):
             self.andor_live,
             self.daheng_focus,
             self.daheng_nozzle,
-            self.daheng_camera3,
             self.stage_control,
             scan_params,
             use_andor,
             use_daheng_focus,
             use_daheng_nozzle,
-            use_daheng_camera3,
             save_scan,
             comment,
             delay,
@@ -489,8 +466,6 @@ class ScanPanel(QMainWindow):
             self.daheng_focus.update_image(image)
         elif camera == "Daheng Nozzle" and self.daheng_nozzle is not None:
             self.daheng_nozzle.update_image(image)
-        elif camera == "Daheng Camera3" and self.daheng_camera3 is not None:
-            self.daheng_camera3.update_image(image)
 
     def abort_scan(self):
         if hasattr(self, "worker") and self.worker is not None:
@@ -512,6 +487,3 @@ class ScanPanel(QMainWindow):
         if self.daheng_nozzle is not None and self._daheng_nozzle_live_was_running:
             self.daheng_nozzle.start_capture()
             self.log("Daheng Nozzle live capture reactivated.")
-        if self.daheng_camera3 is not None and self._daheng_camera3_live_was_running:
-            self.daheng_camera3.start_capture()
-            self.log("Daheng Camera3 live capture reactivated.")

@@ -50,10 +50,6 @@ class DlabController(QMainWindow):
         self.daheng_focus_button.clicked.connect(lambda: self.open_daheng_live("Focus", 2))
         view_layout.addWidget(self.daheng_focus_button)
 
-        self.daheng_camera3_button = QPushButton("Open Daheng Live – Camera3")
-        self.daheng_camera3_button.clicked.connect(lambda: self.open_daheng_live("Camera3", 3))
-        view_layout.addWidget(self.daheng_camera3_button)
-
         self.thorlabs_button = QPushButton("Open Thorlabs Control")
         self.thorlabs_button.clicked.connect(self.open_thorlabs_view)
         view_layout.addWidget(self.thorlabs_button)
@@ -132,17 +128,14 @@ class DlabController(QMainWindow):
             self.open_daheng_live("Nozzle", 1)
         if "Focus" not in self.daheng_live:
             self.open_daheng_live("Focus", 2)
-        if "Camera3" not in self.daheng_live:
-            self.open_daheng_live("Camera3", 3)
         if self.stage_control is None:
             self.open_thorlabs_view()
 
         # Pass all three Daheng camera instances to the ScanPanel.
         self.scan_panel = ScanPanel(
             self.andor_live,
-            self.daheng_live["Nozzle"],
             self.daheng_live["Focus"],
-            self.daheng_live["Camera3"],
+            self.daheng_live["Nozzle"], #Its reversed, to fix later
             self.stage_control.thorlabs_view
         )
         self.scan_panel.show()

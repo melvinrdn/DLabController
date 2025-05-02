@@ -178,10 +178,13 @@ class StageRow(QWidget):
                     self.log(f"Desired power {desired_power} exceeds maximum {self.amplitude:.2f}. Capping to maximum.")
                     desired_power = self.amplitude
                 target_angle = power_to_angle(desired_power, self.amplitude, self.offset)
-                target_angle = target_angle % 360  # Ensure angle is within 0-360°
+                target_angle = target_angle
                 self.log(f"Converting power {desired_power} to angle {target_angle:.2f}.")
             else:
-                target_angle = float(target_str) % 360
+                target_angle = float(target_str)
+
+            target_angle = target_angle % 360
+
             self.controller.move_to(target_angle, blocking=True)
             pos = self.controller.get_position()
             self.current_edit.setText(f"{pos:.3f}" if pos is not None else "N/A")
