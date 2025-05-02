@@ -65,21 +65,22 @@ class PressureWorker(QObject):
         """
         Main loop: read pressures, set gauges, emit signals.
         """
+        if self._mg is None:
+            self.error_occurred.emit("Pressure: Not initialized")
+            return
+
         while self._running:
-            if self._mg is None:
-                self.error_occurred.emit("Pressure: Not initialized")
-            else:
-                try:
-                    p = self._mg.pressures()
-                    p1 = p[0].pressure if p[0].status in (0, 1, 2) else float('nan')
-                    p2 = p[1].pressure if p[1].status in (0, 1, 2) else float('nan')
-                    p3 = p[2].pressure if p[2].status in (0, 1, 2) else float('nan')
-                    self._g1.set(p1)
-                    self._g2.set(p2)
-                    self._g3.set(p3)
-                    self.pressure_updated.emit(p1, p2, p3)
-                except MaxiGaugeError as e:
-                    self.error_occurred.emit(f"Pressure: Error ({e})")
+            try:
+                p = self._mg.pressures()
+                p1 = p[0].pressure if p[0].status in (0, 1, 2) else float('nan')
+                p2 = p[1].pressure if p[1].status in (0, 1, 2) else float('nan')
+                p3 = p[2].pressure if p[2].status in (0, 1, 2) else float('nan')
+                self._g1.set(p1)
+                self._g2.set(p2)
+                self._g3.set(p3)
+                self.pressure_updated.emit(p1, p2, p3)
+            except MaxiGaugeError as e:
+                self.error_occurred.emit(f"Pressure: Error ({e})")
             time.sleep(UPDATE_INTERVAL)
 
 
@@ -97,7 +98,6 @@ class PressureMonitorWidget(QObject):
     def __init__(self, parent: QObject = None) -> None:
         super().__init__(parent)
         mg = initialize_maxigauge(COM_PORT)
-        self._prom_proc = None
 
         QTimer.singleShot(0, self.start_prometheus)
 
