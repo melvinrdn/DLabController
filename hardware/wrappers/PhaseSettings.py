@@ -205,16 +205,27 @@ class TypeLens(BaseTypeWidget):
     def phase(self):
         try:
             bending_strength = float(self.le_ben.text())
-            wavelength = float(self.le_wavelength.text()) * 1e-9
+            wavelength = float(self.le_wavelength.text()) * 1e-9  # convert to meters
         except ValueError:
             print("Invalid input for bending strength or wavelength.")
             return np.zeros(slm_size)
-        radius = 2 / abs(bending_strength) if bending_strength != 0 else 1e6
+
+        if bending_strength == 0:
+            return np.zeros(slm_size)
+
+        focal_length = 1 / bending_strength
         x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
         y = np.linspace(-chip_height / 2, chip_height / 2, slm_size[0])
         X, Y = np.meshgrid(x, y)
-        R = np.sqrt(X ** 2 + Y ** 2)
-        phase_profile = (np.sqrt(radius ** 2 + R ** 2) - radius) / wavelength * bit_depth
+        R_squared = X ** 2 + Y ** 2
+
+        # Thin lens phase formula (preserves sign)
+        phase_profile = (-np.pi * R_squared) / (wavelength * focal_length)
+
+        # Normalize to bit depth (e.g., 8-bit or 16-bit)
+        phase_profile = np.mod(phase_profile, 2 * np.pi)  # wrap phase to [0, 2pi]
+        phase_profile = phase_profile / (2 * np.pi) * bit_depth
+
         return phase_profile
 
     def save_(self):

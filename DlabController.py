@@ -42,9 +42,13 @@ class DlabController(QMainWindow):
         view_layout.addWidget(self.andor_button)
 
         # Three separate Daheng buttons.
-        self.daheng_nozzle_button = QPushButton("Open Daheng Live – Nozzle")
-        self.daheng_nozzle_button.clicked.connect(lambda: self.open_daheng_live("Nozzle", 1))
+        self.daheng_nozzle_button = QPushButton("Open Daheng Live – Nomarski")
+        self.daheng_nozzle_button.clicked.connect(lambda: self.open_daheng_live("Nomarski", 1))
         view_layout.addWidget(self.daheng_nozzle_button)
+
+        self.daheng_focus_button = QPushButton("Open Daheng Live – Nozzle")
+        self.daheng_focus_button.clicked.connect(lambda: self.open_daheng_live("Focus", 1))
+        view_layout.addWidget(self.daheng_focus_button)
 
         self.daheng_focus_button = QPushButton("Open Daheng Live – Focus")
         self.daheng_focus_button.clicked.connect(lambda: self.open_daheng_live("Focus", 2))
