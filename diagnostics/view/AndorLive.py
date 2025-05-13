@@ -4,11 +4,11 @@ import datetime
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image, PngImagePlugin  # For saving PNG with metadata
+from PIL import Image, PngImagePlugin
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QMessageBox, QSplitter, QComboBox, QCheckBox,
+    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -88,10 +88,6 @@ class DummyAndorController:
 ###############################################################################
 
 class QTextEditHandler(logging.Handler):
-    """
-    Custom logging handler to send log messages to a QTextEdit widget.
-    """
-
     def __init__(self, widget):
         super().__init__()
         self.widget = widget
@@ -100,17 +96,17 @@ class QTextEditHandler(logging.Handler):
     def emit(self, record):
         msg = self.format(record)
         self.widget.append(msg)
-        self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
+        self.widget.verticalScrollBar().setValue(
+            self.widget.verticalScrollBar().maximum()
+        )
 
 
 ###############################################################################
 # Live Capture Thread
 ###############################################################################
 
+
 class LiveCaptureThread(QThread):
-    """
-    QThread subclass to continuously capture images from the Andor camera.
-    """
     image_signal = pyqtSignal(np.ndarray)
 
     def __init__(self, camera_controller, exposure, avgs, update_interval_ms):
@@ -150,7 +146,6 @@ class LiveCaptureThread(QThread):
     def stop(self):
         self._running = False
 
-
 ###############################################################################
 # AndorLive GUI Class
 ###############################################################################
@@ -169,6 +164,7 @@ class AndorLive(QWidget):
         self.debug_mode = False
         self.image_artist = None
         self.profile_line = None
+        self.cbar = None
         self.current_interval_ms = None
         self.fixed_cbar_max = None
         self.last_frame = None  # To store the latest captured frame.
@@ -224,9 +220,15 @@ class AndorLive(QWidget):
         param_layout.addLayout(comment_layout)
 
         # Checkbox to fix the colorbar.
-        self.fix_cbar_checkbox = QCheckBox("Fix Colorbar")
-        self.fix_cbar_checkbox.setChecked(False)
+        self.fix_cbar_checkbox = QCheckBox("Fix Colorbar Max")
         param_layout.addWidget(self.fix_cbar_checkbox)
+        self.fix_value_edit = QLineEdit("10000")
+        self.fix_value_edit.setValidator(QIntValidator(0, 1000000000, self))
+        self.fix_value_edit.setEnabled(False)
+        param_layout.addWidget(self.fix_value_edit)
+        self.fix_cbar_checkbox.toggled.connect(self.fix_value_edit.setEnabled)
+        self.fix_cbar_checkbox.toggled.connect(self.on_fix_cbar)
+        self.fix_value_edit.textChanged.connect(self.on_fix_value_changed)
 
         # New checkbox for Background.
         self.background_checkbox = QCheckBox("Background")
@@ -396,6 +398,32 @@ class AndorLive(QWidget):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
+    def on_fix_cbar(self, checked):
+        if checked:
+            try:
+                self.fixed_cbar_max = float(self.fix_value_edit.text())
+                self.log(f"Colorbar max set to {self.fixed_cbar_max:.1f}")
+            except ValueError:
+                self.log("Invalid colorbar max value")
+                self.fix_cbar_checkbox.setChecked(False)
+        else:
+            self.fixed_cbar_max = None
+            self.log("Colorbar auto scale")
+
+    def on_fix_value_changed(self, text):
+        if not self.fix_cbar_checkbox.isChecked() or not self.image_artist:
+            return
+        try:
+            self.fixed_cbar_max = float(text)
+            vmin, _ = self.image_artist.get_clim()
+            self.image_artist.set_clim(vmin, self.fixed_cbar_max)
+            if self.cbar:
+                self.cbar.update_normal(self.image_artist)
+            self.canvas.draw_idle()
+            self.log(f"Colorbar max updated to {self.fixed_cbar_max:.1f}")
+        except ValueError:
+            pass
+
     def update_image(self, image):
         """
         Updates the displayed image on the Matplotlib canvas and the integrated profile,
@@ -418,9 +446,7 @@ class AndorLive(QWidget):
             self.ax_img.set_xlim(xlim)
             self.ax_img.set_ylim(ylim)
             self.ax_img.set_title(title_text)
-            if self.fix_cbar_checkbox.isChecked():
-                if self.fixed_cbar_max is None:
-                    self.fixed_cbar_max = max_val
+            if self.fix_cbar_checkbox.isChecked() and self.fixed_cbar_max is not None:
                 self.image_artist.set_clim(min_val, self.fixed_cbar_max)
             else:
                 self.fixed_cbar_max = None
