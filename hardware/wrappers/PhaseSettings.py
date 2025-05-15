@@ -8,12 +8,18 @@ from PyQt5.QtWidgets import (QFileDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.image as mpimg
+from PyQt5.QtWidgets import (
+    QVBoxLayout, QGroupBox, QGridLayout, QLabel,
+    QPushButton, QSpinBox, QDoubleSpinBox, QFileDialog
+)
+import numpy as np
+from scipy.special import jv
 
 from hardware.wrappers.SLMController import slm_size, bit_depth, chip_width, chip_height
 from prysm import coordinates, polynomials
 
 w_L = 3.5e-3
-phase_types = ['Background', 'Lens', 'Zernike', 'Flat', 'Binary', 'Vortex', 'PhaseJumps', 'Grating', 'Square','Checkerboard', 'Tilt']
+phase_types = ['Background', 'Lens', 'Zernike', 'Flat', 'Binary', 'Vortex', 'PhaseJumps', 'Grating', 'Square','Checkerboard', 'Tilt', 'Axicon']
 
 class BaseTypeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -58,7 +64,7 @@ class TypeFlat(BaseTypeWidget):
         layout.addWidget(group)
         hlayout = QHBoxLayout(group)
         lbl = QLabel("Phase shift ({} = 2π):".format(bit_depth))
-        self.le_flat = QLineEdit()
+        self.le_flat = QLineEdit("512")
         hlayout.addWidget(lbl)
         hlayout.addWidget(self.le_flat)
 
@@ -135,7 +141,7 @@ class TypeLens(BaseTypeWidget):
                   'Calibration Slope [mm * m]:', 'Zero Reference [1/f]:', 'Focus Shift [mm]:']
         self.le_ben = QLineEdit("0")
         self.le_focal = QLineEdit("1")
-        self.le_wavelength = QLineEdit("500")
+        self.le_wavelength = QLineEdit("1030")
         self.le_slope = QLineEdit("1.0")
         self.le_zero = QLineEdit("0")
         self.le_focus = QLineEdit("0")
@@ -414,7 +420,7 @@ class TypeVortex(BaseTypeWidget):
         grid = QGridLayout(group)
 
         grid.addWidget(QLabel("Radius (wL):"), 0, 0)
-        self.le_radius = QLineEdit()
+        self.le_radius = QLineEdit("10")
         grid.addWidget(self.le_radius, 0, 1)
 
         grid.addWidget(QLabel("Vortex Order:"), 1, 0)
@@ -487,7 +493,7 @@ class TypeGrating(BaseTypeWidget):
         grid = QGridLayout(group)
 
         grid.addWidget(QLabel("Spatial Frequency (lines/mm):"), 0, 0)
-        self.le_freq = QLineEdit("1000")
+        self.le_freq = QLineEdit("0")
         grid.addWidget(self.le_freq, 0, 1)
 
         grid.addWidget(QLabel("Orientation Angle (degrees):"), 1, 0)
@@ -579,11 +585,11 @@ class TypePhaseJumps(BaseTypeWidget):
         grid = QGridLayout(group)
 
         grid.addWidget(QLabel("Distance (wL):"), 0, 0)
-        self.le_distance = QLineEdit()
+        self.le_distance = QLineEdit("1.2")
         grid.addWidget(self.le_distance, 0, 1)
 
         grid.addWidget(QLabel("Phase Value (π units):"), 1, 0)
-        self.le_phase = QLineEdit()
+        self.le_phase = QLineEdit("1")
         grid.addWidget(self.le_phase, 1, 1)
 
         btn_add = QPushButton("Add Phase Jump")
@@ -733,6 +739,48 @@ class TypeSquare(BaseTypeWidget):
         self.squares = settings.get('squares', [])
         self.update_square_display()
 
+class TypeAxicon(BaseTypeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.name = 'Axicon'
+        layout = QVBoxLayout(self)
+        group = QGroupBox("Axicon Settings")
+        layout.addWidget(group)
+        grid = QGridLayout(group)
+
+        grid.addWidget(QLabel("Cone angle (°):"), 0, 0)
+        self.le_angle = QLineEdit("0.01")
+        grid.addWidget(self.le_angle, 0, 1)
+
+        grid.addWidget(QLabel("Wavelength (nm):"), 1, 0)
+        self.le_wl = QLineEdit("1030")
+        grid.addWidget(self.le_wl, 1, 1)
+
+    def phase(self):
+        try:
+            alpha = np.radians(float(self.le_angle.text()))
+            wl = float(self.le_wl.text()) * 1e-9
+        except ValueError:
+            return np.zeros(slm_size)
+
+        # grille physique
+        x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
+        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
+        X, Y = np.meshgrid(x, y)
+        R = np.sqrt(X**2 + Y**2)
+
+        # phase conique : φ = (2π/λ) * R * sin(alpha)
+        ramp = (2*np.pi/wl) * R * np.sin(alpha)
+        wrapped = np.mod(ramp, 2*np.pi)
+        return wrapped * (bit_depth/(2*np.pi))
+
+    def save_(self):
+        return {'angle': self.le_angle.text(), 'wavelength': self.le_wl.text()}
+
+    def load_(self, settings):
+        self.le_angle.setText(settings.get('angle', '1.0'))
+        self.le_wl.setText(settings.get('wavelength', '500'))
+
 
 class TypeCheckerboard(BaseTypeWidget):
     """Checkerboard phase pattern with two phase values."""
@@ -793,6 +841,8 @@ class TypeCheckerboard(BaseTypeWidget):
         self.le_rows.setText(settings.get('rows', '8'))
         self.le_phaseA.setText(settings.get('phaseA', '0'))
         self.le_phaseB.setText(settings.get('phaseB', '1'))
+        
+        
 
 def new_type(parent, typ):
     types_dict = {
@@ -806,8 +856,8 @@ def new_type(parent, typ):
         'Grating': TypeGrating,
         'Square': TypeSquare,
         'Checkerboard': TypeCheckerboard,
-        'Tilt': TypeTilt
-
+        'Tilt': TypeTilt,
+        'Axicon': TypeAxicon,
     }
     if typ not in types_dict:
         raise ValueError("Unrecognized type '{}'. Valid types are: {}".format(typ, list(types_dict.keys())))
