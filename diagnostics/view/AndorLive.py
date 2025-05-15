@@ -519,7 +519,7 @@ class AndorLive(QWidget):
             return
 
         # Log file: add header if file does not exist.
-        log_file_name = f"AndorCamera_log_{now.strftime('%Y_%m_%d')}.txt"
+        log_file_name = f"AndorCamera_log_{now.strftime('%Y-%m-%d')}.txt"
         log_file_path = os.path.join(dir_path, log_file_name)
         header = "File Name\tExposure (µs)\tAverages\tMCP Voltage\tComment\n"
 

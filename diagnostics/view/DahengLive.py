@@ -557,7 +557,7 @@ class DahengLive(QWidget):
             QMessageBox.critical(self, "Error", str(e))
             return
 
-        logfn = f"{self.camera_name}_log_{now:%Y_%m_%d}.txt"
+        logfn = f"{self.camera_name}_log_{now:%Y-%m-%d}.txt"
         logp = os.path.join(folder, logfn)
         header = "File Name\tExposure_us\tGain\tComment\n"
         try:
