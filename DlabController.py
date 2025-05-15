@@ -2,11 +2,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
     QPushButton, QGroupBox, QTextEdit
 )
-from diagnostics.view.AndorLive import AndorLive
-from diagnostics.view.DahengLive import DahengLive
-from diagnostics.view.StageControl import StageControl
-from diagnostics.view.SLMView import SLMView
-from diagnostics.view.ScanPanel import ScanPanel
+
 from hardware.wrappers.PressureSensor import GRAFANA_PATH, PressureMonitorWidget
 
 class DlabController(QMainWindow):
@@ -90,6 +86,7 @@ class DlabController(QMainWindow):
         self.log_text.append(f"[{current_time}] {message}")
 
     def open_andor_live(self):
+        from diagnostics.view.AndorLive import AndorLive
         if self.andor_live is None:
             self.andor_live = AndorLive()
         self.andor_live.show()
@@ -98,6 +95,7 @@ class DlabController(QMainWindow):
         self.append_log("AndorLive GUI opened.")
 
     def open_slm_view(self):
+        from diagnostics.view.SLMView import SLMView
         if self.slm_view is None:
             self.slm_view = SLMView()
         self.slm_view.show()
@@ -109,6 +107,7 @@ class DlabController(QMainWindow):
         """
         Opens a DahengLive window with a fixed camera index and a unique camera name.
         """
+        from diagnostics.view.DahengLive import DahengLive
         if camera_name not in self.daheng_live:
             self.daheng_live[camera_name] = DahengLive(camera_name=camera_name, fixed_index=fixed_index)
         self.daheng_live[camera_name].show()
@@ -117,6 +116,7 @@ class DlabController(QMainWindow):
         self.append_log(f"DahengLive GUI opened for {camera_name} camera.")
 
     def open_thorlabs_view(self):
+        from diagnostics.view.StageControl import StageControl
         if self.stage_control is None:
             self.stage_control = StageControl()
         self.stage_control.show()
@@ -125,6 +125,7 @@ class DlabController(QMainWindow):
         self.append_log("Thorlabs Control GUI opened.")
 
     def open_scan_panel(self):
+        from diagnostics.view.ScanPanel import ScanPanel
         if self.andor_live is None:
             self.open_andor_live()
         # Ensure all three Daheng cameras are available.
