@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 import logging
@@ -155,10 +155,11 @@ class AndorLive(QWidget):
     A PyQt5 GUI for live Andor camera image capture using AndorController.
     Includes options for real or dummy camera activation.
     """
-
+    closed = pyqtSignal()
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Live Andor Camera Feed")
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.cam = None
         self.capture_thread = None
         self.debug_mode = False
@@ -533,6 +534,18 @@ class AndorLive(QWidget):
         except Exception as e:
             self.log(f"Error writing to log file: {e}")
             QMessageBox.critical(self, "Error", f"Error writing to log file: {e}")
+            
+    def closeEvent(self, event):
+        """
+        Handles window close: stops live capture thread, deactivates camera,
+        emits closed signal, then closes gracefully.
+        """
+        if self.capture_thread:
+            self.stop_capture()
+        if self.cam:
+            self.deactivate_camera()
+        self.closed.emit()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

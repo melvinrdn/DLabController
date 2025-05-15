@@ -113,10 +113,16 @@ class DlabController(QMainWindow):
         from diagnostics.view.AndorLive import AndorLive
         if self.andor_live is None:
             self.andor_live = AndorLive()
+            self.andor_live.closed.connect(lambda: self.on_andor_closed())
         self.andor_live.show()
         self.andor_live.raise_()
         self.andor_live.activateWindow()
         self.append_log("AndorLive opened.")
+    
+    def on_andor_closed(self):
+        """Handles the closing of the AndorLive window."""
+        self.append_log("AndorLive closed.")
+        self.andor_live = None
 
     def open_slm_view(self):
         """Opens the SLMView window."""
