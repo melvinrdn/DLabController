@@ -1,3 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+tempfile.py
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+doctorat.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+Pipfile.lock
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Jupyter
+.ipynb_checkpoints/
+
+# pytest
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Others
 /hardware/prometheus/
 /data/
-__pycache__/
