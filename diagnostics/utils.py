@@ -1,8 +1,5 @@
+## Colormaps
 from matplotlib.colors import LinearSegmentedColormap
-
-LOG_FORMAT = "[%(asctime)s] %(message)s"
-DATE_FORMAT = "%H:%M:%S"
-
 def white_turbo(segments):
     colors = [
         (1, 1, 1),  # white
@@ -23,3 +20,7 @@ def black_red(segments):
         (1, 0, 0),  # rouge
     ]
     return LinearSegmentedColormap.from_list('black_red', colors, N=segments)
+
+## Logging
+LOG_FORMAT = "[%(asctime)s] %(message)s"
+LOG_DATE_FORMAT = "%H:%M:%S"
