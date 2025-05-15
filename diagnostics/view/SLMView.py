@@ -5,6 +5,7 @@ import numpy as np
 import datetime
 
 from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtCore import pyqtSignal, Qt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -16,11 +17,13 @@ base_path = os.path.dirname(p='C:')
 CONFIG_FILE = os.path.join(base_path, 'ressources/saved_settings/default_settings_path.json')
 
 class SLMView(QtWidgets.QMainWindow):
-    """Main window for D-Lab Controller."""
+    closed = pyqtSignal()
     def __init__(self):
         super().__init__()
         self.setWindowTitle('SLMView')
         self.setMinimumSize(700, 900)
+        self.setAttribute(Qt.WA_DeleteOnClose) 
+        
         self.config_file = CONFIG_FILE
 
         self.SLM_red = SLMController('red')
@@ -323,7 +326,9 @@ class SLMView(QtWidgets.QMainWindow):
             self.SLM_green.close()
         except Exception as e:
             self.update_log(f"Error during shutdown: {e}")
-        event.accept()
+            
+        self.closed.emit()
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

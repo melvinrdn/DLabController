@@ -114,28 +114,42 @@ class DlabController(QMainWindow):
         if self.andor_live is None:
             self.andor_live = AndorLive()
             self.andor_live.closed.connect(lambda: self.on_andor_closed())
-        self.andor_live.show()
-        self.andor_live.raise_()
-        self.andor_live.activateWindow()
-        self.append_log("AndorLive opened.")
+            self.andor_live.show()
+            self.andor_live.raise_()
+            self.andor_live.activateWindow()
+            self.append_log("AndorLive opened.")
+        else:
+            self.append_log("AndorLive is already open.")
     
     def on_andor_closed(self):
         """Handles the closing of the AndorLive window."""
-        self.append_log("AndorLive closed.")
         self.andor_live = None
+        self.append_log("AndorLive closed.")
 
     def open_slm_view(self):
         """Opens the SLMView window."""
         from diagnostics.view.SLMView import SLMView
         if self.slm_view is None:
             self.slm_view = SLMView()
-        self.slm_view.show()
-        self.slm_view.raise_()
-        self.slm_view.activateWindow()
-        self.append_log("SLMView opened.")
+            self.slm_view.closed.connect(lambda: self.on_slm_closed())
+            self.slm_view.show()
+            self.slm_view.raise_()
+            self.slm_view.activateWindow()
+            self.append_log("SLMView opened.")
+        else:
+            self.append_log("SLMView is already open.")
+        
+    def on_slm_closed(self):
+        """Closes the SLMView window."""
+        self.slm_view = None
+        self.append_log("SLMView closed.")
 
     def open_thorlabs_view(self):
-        """Opens the Thorlabs Control window."""
+        """
+        Opens the Thorlabs Control window.
+        This windows is not being closed, only hidden. Otherwise the thorlabs
+        stages are crashing after a few open/close cycles. So only activate once.
+        """
         from diagnostics.view.StageControl import StageControl
         if self.stage_control is None:
             self.stage_control = StageControl()
@@ -150,11 +164,21 @@ class DlabController(QMainWindow):
         """
         from diagnostics.view.DahengLive import DahengLive
         if camera_name not in self.daheng_live:
-            self.daheng_live[camera_name] = DahengLive(camera_name=camera_name, fixed_index=fixed_index)
-        self.daheng_live[camera_name].show()
-        self.daheng_live[camera_name].raise_()
-        self.daheng_live[camera_name].activateWindow()
-        self.append_log(f"DahengLive opened for {camera_name} camera.")
+            win = DahengLive(camera_name=camera_name, fixed_index=fixed_index)
+            win.closed.connect(lambda name=camera_name: self.on_daheng_closed(name))
+            self.daheng_live[camera_name] = win
+            win.show()
+            win.raise_()
+            win.activateWindow()
+            self.append_log(f"DahengLive opened for {camera_name} camera.")
+        else:
+            self.append_log(f"DahengLive for {camera_name} is already open.")
+        
+    def on_daheng_closed(self, camera_name):
+        """Closes the Daheng window for the specified camera."""
+        if camera_name in self.daheng_live:
+            del self.daheng_live[camera_name]
+        self.append_log(f"DahengLive closed for {camera_name} camera.")
 
     def open_scan_panel(self):
         """Opens the Scan Panel window."""

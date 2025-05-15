@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 )
@@ -144,11 +144,14 @@ class DummyCaptureThread(QThread):
 
 class DahengLive(QWidget):
     """Main GUI for live camera capture and display."""
+    closed = pyqtSignal()
     def __init__(self, camera_name="DahengLive", fixed_index=0):
         super().__init__()
+        self.setAttribute(Qt.WA_DeleteOnClose)
         self.camera_name = camera_name
         self.fixed_index = fixed_index
         self.setWindowTitle(f"DahengLive - {camera_name}")
+        
 
         self.cmap = black_red(512) if camera_name == 'Nomarski' else white_turbo(512)
         self.cam = None
@@ -280,18 +283,6 @@ class DahengLive(QWidget):
 
         main_layout.addWidget(splitter)
         self.resize(1080, 720)
-
-    def closeEvent(self, event):
-        """Ensure capture is stopped and camera deactivated on window close."""
-        if self.thread:
-            self.thread.stop()
-            self.thread.wait()
-        if self.cam:
-            try:
-                self.cam.deactivate()
-            except Exception:
-                pass
-        event.accept()
 
     def log(self, message):
         now = datetime.datetime.now().strftime(DATE_FORMAT)
@@ -570,6 +561,21 @@ class DahengLive(QWidget):
         except Exception as e:
             self.log(f"Error writing log: {e}")
             QMessageBox.critical(self, "Error", str(e))
+            
+            
+    def closeEvent(self, event):
+        """Ensure capture is stopped and camera deactivated on window close."""
+        if self.thread:
+            self.thread.stop()
+            self.thread.wait()
+        if self.cam:
+            try:
+                self.cam.deactivate()
+            except Exception:
+                pass
+            
+        self.closed.emit()
+        super().closeEvent(event)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
