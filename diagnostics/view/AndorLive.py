@@ -453,12 +453,12 @@ class AndorLive(QWidget):
                 self.image_artist.set_clim(min_val, max_val)
             self.cbar.update_normal(self.image_artist)
         # Update bottom subplot (integrated intensity).
-        profile = np.sum(image, axis=0)
+        profile = np.sum(image, axis=1)
         self.ax_profile.clear()
-        self.ax_profile.plot(np.arange(image.shape[1]), profile, color='r')
-        self.ax_profile.set_xlabel("X (px)")
+        self.ax_profile.plot(np.arange(image.shape[0]), profile, color='r')
+        self.ax_profile.set_xlabel("(px)")
         self.ax_profile.set_ylabel("Integrated Intensity")
-        self.ax_profile.set_xlim(0, image.shape[1])
+        self.ax_profile.set_xlim(0, image.shape[0])
         self.canvas.draw_idle()
 
     def save_frame(self):
@@ -496,15 +496,23 @@ class AndorLive(QWidget):
 
         try:
             # Convert frame to uint8 and save with PNG metadata.
-            frame_uint8 = np.uint8(np.clip(self.last_frame, 0, 255))
-            img = Image.fromarray(frame_uint8)
+            frame_uint16 = self.last_frame.astype(np.uint16)
+
+            # Create an image from the numpy array
+            img = Image.fromarray(frame_uint16)
+
+            # Add metadata
             metadata = PngImagePlugin.PngInfo()
             metadata.add_text("Exposure", exposure_val)
             metadata.add_text("Averages", avgs_val)
             metadata.add_text("MCP Voltage", mcp_voltage_val)
             metadata.add_text("Comment", log_comment)
-            img.save(file_path, pnginfo=metadata)
+
+            # Save the image with metadata as a 16-bit PNG
+            img.save(file_path, format='PNG', pnginfo=metadata)
             self.log(f"Frame saved to {file_path}")
+
+            image = Image.fromarray(self.last_frame)
         except Exception as e:
             self.log(f"Error saving frame: {e}")
             QMessageBox.critical(self, "Error", f"Error saving frame: {e}")
