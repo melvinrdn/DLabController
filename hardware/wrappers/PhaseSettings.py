@@ -13,7 +13,7 @@ from hardware.wrappers.SLMController import slm_size, bit_depth, chip_width, chi
 from prysm import coordinates, polynomials
 
 w_L = 3.5e-3
-phase_types = ['Background', 'Lens', 'Zernike', 'Flat', 'Binary', 'Vortex', 'PhaseJumps', 'Grating', 'Square','Checkerboard']
+phase_types = ['Background', 'Lens', 'Zernike', 'Flat', 'Binary', 'Vortex', 'PhaseJumps', 'Grating', 'Square','Checkerboard', 'Tilt']
 
 class BaseTypeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -364,6 +364,44 @@ class TypeZernike(BaseTypeWidget):
             self.btn_modify.setEnabled(True)
             self.btn_update.setEnabled(True)
 
+class TypeTilt(BaseTypeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.name = 'Tilt'
+        layout = QVBoxLayout(self)
+        group = QGroupBox("Tilt Settings")
+        layout.addWidget(group)
+        grid = QGridLayout(group)
+
+        grid.addWidget(QLabel("Tilt X (rad/m):"), 0, 0)
+        self.le_tx = QLineEdit("0.0")
+        grid.addWidget(self.le_tx, 0, 1)
+
+        grid.addWidget(QLabel("Tilt Y (rad/m):"), 1, 0)
+        self.le_ty = QLineEdit("0.0")
+        grid.addWidget(self.le_ty, 1, 1)
+
+    def phase(self):
+        try:
+            tx = float(self.le_tx.text())
+            ty = float(self.le_ty.text())
+        except ValueError:
+            return np.zeros(slm_size)
+
+        x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
+        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
+        X, Y = np.meshgrid(x, y)
+
+        ramp = tx * X + ty * Y
+        wrapped = np.mod(ramp, 2*np.pi)
+        return wrapped * (bit_depth / (2*np.pi))
+
+    def save_(self):
+        return {'tilt_x': self.le_tx.text(), 'tilt_y': self.le_ty.text()}
+
+    def load_(self, settings):
+        self.le_tx.setText(settings.get('tilt_x', '0.0'))
+        self.le_ty.setText(settings.get('tilt_y', '0.0'))
 
 class TypeVortex(BaseTypeWidget):
     def __init__(self, parent=None):
@@ -767,7 +805,8 @@ def new_type(parent, typ):
         'PhaseJumps': TypePhaseJumps,
         'Grating': TypeGrating,
         'Square': TypeSquare,
-        'Checkerboard': TypeCheckerboard
+        'Checkerboard': TypeCheckerboard,
+        'Tilt': TypeTilt
 
     }
     if typ not in types_dict:

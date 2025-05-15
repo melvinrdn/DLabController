@@ -172,7 +172,7 @@ class DlabController(QMainWindow):
             win.activateWindow()
             self.append_log(f"DahengLive opened for {camera_name} camera.")
         else:
-            self.append_log(f"DahengLive for {camera_name} is already open.")
+                self.append_log(f"DahengLive for {camera_name} is already open.")
         
     def on_daheng_closed(self, camera_name):
         """Closes the Daheng window for the specified camera."""
