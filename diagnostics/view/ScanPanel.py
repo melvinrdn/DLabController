@@ -46,7 +46,7 @@ class ScanWorker(QThread):
         scan_dir = os.path.join("C:/data", date_str, "Scans")
         if not os.path.exists(scan_dir):
             os.makedirs(scan_dir)
-        log_file_name = f"Scan_log_{now.strftime('%Y_%m_%d')}.txt"
+        log_file_name = f"Scan_log_{now.strftime('%Y-%m-%d')}.txt"
         general_log_path = os.path.join(scan_dir, log_file_name)
 
         # Write header lines.
@@ -213,16 +213,17 @@ class ScanWorker(QThread):
         try:
             mcp_voltage = ""
             if self.andor_live is not None and hasattr(self.andor_live, "mcp_voltage_edit"):
-                mcp_voltage = self.andor_live.mcp_voltage_edit.text()
-            frame_uint8 = np.uint8(np.clip(image, 0, 255))
-            img = Image.fromarray(frame_uint8)
+                mcp_voltage = self.andor_live.mcp_voltage_edit.text()           
+            frame_uint16 = image.astype(np.uint16)
+            img = Image.fromarray(frame_uint16)
             metadata = PngImagePlugin.PngInfo()
             metadata.add_text("Exposure", str(exposure))
             metadata.add_text("Averages", str(avgs))
             metadata.add_text("MCP Voltage", str(mcp_voltage))
             metadata.add_text("Comment", self.comment)
-            img.save(file_path, pnginfo=metadata)
-            log_file_name = f"AndorCamera_log_{now.strftime('%Y_%m_%d')}.txt"
+            img.save(file_path, format='PNG', pnginfo=metadata)
+            
+            log_file_name = f"AndorCamera_log_{now.strftime('%Y-%m-%d')}.txt"
             andor_log_path = os.path.join(dir_path, log_file_name)
             header = "File Name\tExposure (µs)\tAverages\tMCP Voltage\tComment\n"
             if not os.path.exists(andor_log_path):
@@ -254,7 +255,7 @@ class ScanWorker(QThread):
             metadata.add_text("Gain", str(gain))
             metadata.add_text("Comment", self.comment)
             img.save(file_path, pnginfo=metadata)
-            log_file_name = f"{dir_name}_log_{now.strftime('%Y_%m_%d')}.txt"
+            log_file_name = f"{dir_name}_log_{now.strftime('%Y-%m-%d')}.txt"
             daheng_log_path = os.path.join(dir_path, log_file_name)
             header = "File Name\tExposure (µs)\tGain\tAverages\tComment\n"
             if not os.path.exists(daheng_log_path):
