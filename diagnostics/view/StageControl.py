@@ -34,6 +34,17 @@ class StageRow(QWidget):
     Includes motor ID, activation, homing, target entry (angle or power),
     and current position. Also stores calibration parameters for power conversion.
     """
+    DEFAULT_IDS = {
+        0: "83837714",  # w/2w, 3w attenuator
+        1: "83837719",  # w attenuator
+        2: "00000000",  # 2w attenuator
+        3: "00000000",  # 3w attenuator
+        4: "00000000",  # w attenuator for SFG
+        5: "00000000",  # 2w attenuator for SFG
+        6: "83838295",  # SFG delay stage
+        7: "83837725",  # w delay
+    }
+    
     def __init__(self, stage_number: int, description: str = "",
                  log_callback=None, parent: QWidget = None):
         super().__init__(parent)
@@ -64,8 +75,12 @@ class StageRow(QWidget):
 
         # Motor ID entry.
         self.motor_id_edit = QLineEdit()
-        default_id = "83837725" if stage_number == 0 else "000000"
-        self.motor_id_edit.setText(default_id)
+        motor_id = self.DEFAULT_IDS.get(stage_number, "UNKNOWN")
+
+        if motor_id == "UNKNOWN":
+            self.log(f"Warning: No default motor ID defined for stage {stage_number}")
+            
+        self.motor_id_edit.setText(motor_id)
         self.motor_id_edit.setPlaceholderText("Motor ID")
         self.motor_id_edit.setFixedWidth(80)
         self.motor_id_edit.setValidator(QIntValidator(1, 99999999, self))
