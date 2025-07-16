@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QGroupBox, QTextEdit
+    QPushButton, QGroupBox, QTextEdit, QSpinBox
 )
 from hardware.wrappers.PressureSensor import GRAFANA_PATH, PressureMonitorWidget
 from diagnostics.utils import LOG_DATE_FORMAT
@@ -17,7 +17,6 @@ class DlabController(QMainWindow):
         self.daheng_live = {}  # Empty dictionary for the Daheng cameras.
         self.stage_control = None # Will hold the Thorlabs StageControl instance
         self.slm_view = None # Will hold the SLMView instance
-        self.scan_panel = None  # Will hold the Scan Panel instance
 
         self.setup_ui() # Set up the UI
         
@@ -27,7 +26,7 @@ class DlabController(QMainWindow):
         """
         # Set up the main window.
         self.setWindowTitle("DlabController")
-        self.resize(800, 500)
+        self.resize(500, 500)
         
         # Set up the main layout.
         central_widget = QWidget()
@@ -48,17 +47,33 @@ class DlabController(QMainWindow):
         view_layout.addWidget(self.andor_button)
 
         # Three separate Daheng buttons.
-        self.daheng_nozzle_button = QPushButton("Open Daheng Live – Nomarski")
-        self.daheng_nozzle_button.clicked.connect(lambda: self.open_daheng_live("Nomarski", 1))
-        view_layout.addWidget(self.daheng_nozzle_button)
+        self.camera_controls = {}
+        
+        default_indices = {
+            "Nomarski": 1,
+            "Nozzle": 2,
+            "Focus": 3,
+        }
+        
+        for label in ["Nomarski", "Nozzle", "Focus"]:
+            box = QGroupBox(f"Daheng – {label}")
+            layout = QHBoxLayout()
 
-        self.daheng_focus_button = QPushButton("Open Daheng Live – Nozzle")
-        self.daheng_focus_button.clicked.connect(lambda: self.open_daheng_live("Focus", 2))
-        view_layout.addWidget(self.daheng_focus_button)
+            spinbox = QSpinBox()
+            spinbox.setRange(1, 5) 
+            spinbox.setValue(default_indices[label])
+            layout.addWidget(QLabel("Index:"))
+            layout.addWidget(spinbox)
 
-        self.daheng_focus_button = QPushButton("Open Daheng Live – Focus")
-        self.daheng_focus_button.clicked.connect(lambda: self.open_daheng_live("Focus", 3))
-        view_layout.addWidget(self.daheng_focus_button)
+            button = QPushButton("Open")
+            layout.addWidget(button)
+
+            button.clicked.connect(lambda _, name=label, sb=spinbox: self.open_daheng_live(name, sb.value()))
+
+            box.setLayout(layout)
+            view_layout.addWidget(box)
+
+            self.camera_controls[label] = spinbox # Store the spinbox for later use
 
         # Thorlabs button.
         self.thorlabs_button = QPushButton("Open Thorlabs Control")
@@ -66,15 +81,6 @@ class DlabController(QMainWindow):
         view_layout.addWidget(self.thorlabs_button)
         view_group.setLayout(view_layout)
         left_panel.addWidget(view_group)
-
-        # Scan group box.
-        scan_group = QGroupBox("Scan")
-        scan_layout = QVBoxLayout()
-        self.scan_panel_button = QPushButton("Open Scan Panel")
-        self.scan_panel_button.clicked.connect(self.open_scan_panel)
-        scan_layout.addWidget(self.scan_panel_button)
-        scan_group.setLayout(scan_layout)
-        left_panel.addWidget(scan_group)
 
         # Clickable Dashboard URL for Grafana.
         self.path_label = QLabel(
@@ -179,30 +185,6 @@ class DlabController(QMainWindow):
         if camera_name in self.daheng_live:
             del self.daheng_live[camera_name]
         self.append_log(f"DahengLive closed for {camera_name} camera.")
-
-    def open_scan_panel(self):
-        """Opens the Scan Panel window."""
-        from diagnostics.view.ScanPanel import ScanPanel
-        if self.andor_live is None:
-            self.open_andor_live()
-        # Ensure all three Daheng cameras are available.
-        if "Nozzle" not in self.daheng_live:
-            self.open_daheng_live("Nozzle", 1)
-        if "Focus" not in self.daheng_live:
-            self.open_daheng_live("Focus", 2)
-        if self.stage_control is None:
-            self.open_thorlabs_view()
-
-        # Pass all three Daheng camera instances to the ScanPanel.
-        self.scan_panel = ScanPanel(
-            self.andor_live,
-            self.daheng_live["Focus"],
-            self.daheng_live["Nozzle"], #Its reversed, to fix later
-            self.stage_control.thorlabs_view
-        )
-        self.scan_panel.show()
-        self.append_log("Scan Panel opened.")
-
 
 if __name__ == "__main__":
     import sys
