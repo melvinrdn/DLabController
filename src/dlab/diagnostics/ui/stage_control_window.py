@@ -72,20 +72,22 @@ def power_to_angle(power: float, amplitude: float, offset: float) -> float:
 
 class StageRow(QWidget):
     """
-    One stage row with: ID, Activate, Home, target (angle/power), Move, Current position.
-    Non-blocking motion with a poll timer to keep the UI responsive.
+    One stage row with: ID, Activate, Home, target (angle/power or position), Move, Current position.
+    Waveplates (index < NUM_WAVEPLATES) keep 'Power Mode'; translation stages have it disabled.
     """
     def __init__(self, stage_number: int, description: str = "",
                  log_callback=None, parent: QWidget = None):
         super().__init__(parent)
         self.stage_number = stage_number
+        self.is_waveplate = (stage_number < NUM_WAVEPLATES)
         self.controller: ThorlabsController | None = None
         self.log_callback = log_callback
+
         self._poll = QTimer(self)
         self._poll.setInterval(200)  # ms
         self._poll.timeout.connect(self._update_position)
 
-        # power→angle fit params
+        # power→angle fit params (only used for waveplates)
         self.amplitude = 100.0
         self.offset = 0.0
 
@@ -93,7 +95,7 @@ class StageRow(QWidget):
         layout.setSpacing(5)
 
         # Label
-        title = f"Waveplate {stage_number+1}:" if stage_number < 7 else f"Stage {stage_number+1}:"
+        title = f"Waveplate {stage_number+1}:" if self.is_waveplate else f"Stage {stage_number+1}:"
         self.stage_label = QLabel(title); self.stage_label.setFixedWidth(120)
         layout.addWidget(self.stage_label)
 
@@ -130,14 +132,22 @@ class StageRow(QWidget):
         self.ident_btn.setEnabled(False)
         layout.addWidget(self.ident_btn)
 
-        # Target + power mode
+        # Target input
         self.target_edit = QLineEdit()
-        self.target_edit.setPlaceholderText("Target")
-        self.target_edit.setFixedWidth(80)
-        self.target_edit.setValidator(QDoubleValidator(-10000, 10000, 3, self))
+        ph = "Angle (deg)" if self.is_waveplate else "Position"
+        self.target_edit.setPlaceholderText(ph)
+        self.target_edit.setFixedWidth(100)
+        self.target_edit.setValidator(QDoubleValidator(-1e6, 1e6, 3, self))
         layout.addWidget(self.target_edit)
 
+        # Power mode (waveplates only)
         self.power_mode_checkbox = QCheckBox("Power Mode")
+        if not self.is_waveplate:
+            # Translation stages: disable & hide power mode
+            self.power_mode_checkbox.setChecked(False)
+            self.power_mode_checkbox.setEnabled(False)
+            self.power_mode_checkbox.setVisible(False)
+            self.power_mode_checkbox.setToolTip("Disabled for translation stages")
         layout.addWidget(self.power_mode_checkbox)
 
         # Move
@@ -149,17 +159,17 @@ class StageRow(QWidget):
         # Current pos (read-only)
         self.current_edit = QLineEdit()
         self.current_edit.setPlaceholderText("Current")
-        self.current_edit.setFixedWidth(90)
+        self.current_edit.setFixedWidth(100)
         self.current_edit.setReadOnly(True)
         layout.addWidget(self.current_edit)
 
         layout.addStretch(1)
 
     def log(self, message: str) -> None:
-            full_msg = f"Stage {self.stage_number+1}: {message}"
-            if self.log_callback:
-                self.log_callback(full_msg)   # GUI
-            logger.info(full_msg)             # file via boot logging
+        full_msg = f"Stage {self.stage_number+1}: {message}"
+        if self.log_callback:
+            self.log_callback(full_msg)
+        logger.info(full_msg)
 
     def _update_position(self) -> None:
         if not self.controller:
@@ -174,6 +184,8 @@ class StageRow(QWidget):
             self.log(f"Position read failed: {e}")
 
     def activate_stage(self) -> None:
+        from dlab.core.device_registry import REGISTRY
+        
         txt = self.motor_id_edit.text().strip()
         if not txt:
             QMessageBox.warning(self, "Error", "Please enter a motor ID.")
@@ -186,6 +198,7 @@ class StageRow(QWidget):
         try:
             self.controller = ThorlabsController(motor_id)
             self.controller.activate(homing=self.home_on_activate_checkbox.isChecked())
+            
             self.activate_btn.setEnabled(False)
             self.motor_id_edit.setEnabled(False)
             self.home_btn.setEnabled(True)
@@ -193,6 +206,18 @@ class StageRow(QWidget):
             self.move_btn.setEnabled(True)
             self.stage_label.setStyleSheet("background-color: lightgreen;")
             self.log("Activated.")
+            
+            key_ui = f"stage:{self.stage_number+1}"
+            key_ser = f"stage:serial:{motor_id}"
+            
+            for k in (key_ui, key_ser):
+                prev = REGISTRY.get(k)
+                if prev and prev is not self.controller:
+                    self.log(f"Registry key '{k}' already in use. Replacing.")
+                    
+            REGISTRY.register(key_ui,  self.controller)
+            REGISTRY.register(key_ser, self.controller)
+            
             self._poll.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate stage: {e}")
@@ -206,7 +231,6 @@ class StageRow(QWidget):
             QMessageBox.warning(self, "Error", "Stage not activated.")
             return
         try:
-            # non-blocking home + poll to keep UI responsive
             self.controller.home(blocking=False)
             self.log("Homing…")
             self._poll.start()
@@ -234,23 +258,32 @@ class StageRow(QWidget):
             QMessageBox.warning(self, "Error", "Please enter a target value.")
             return
         try:
-            if self.power_mode_checkbox.isChecked():
+            if self.is_waveplate and self.power_mode_checkbox.isChecked():
+                # power→angle conversion
                 desired_power = float(t)
                 if desired_power > self.amplitude:
                     self.log(f"Desired power {desired_power} exceeds max {self.amplitude:.2f}; capping.")
                     desired_power = self.amplitude
-                angle = power_to_angle(desired_power, self.amplitude, self.offset)
+                value = power_to_angle(desired_power, self.amplitude, self.offset)
+                # wrap angles for waveplates
+                value = value % 360.0
+                units = "°"
             else:
-                angle = float(t)
+                # direct move: angle for waveplates, linear position for translation stages
+                value = float(t)
+                if self.is_waveplate:
+                    value = value % 360.0
+                    units = "°"
+                else:
+                    units = ""  # mm or native units depending on stage; keep generic
 
-            angle = angle % 360.0
-            # non-blocking move → UI stays responsive; poll updates current position
-            self.controller.move_to(angle, blocking=False)
-            self.log(f"Moving to {angle:.2f}° …")
+            self.controller.move_to(value, blocking=False)
+            self.log(f"Moving to {value:.3f}{units} …")
             self._poll.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to move stage: {e}")
             self.log(f"Move failed: {e}")
+            
 
 
 class ThorlabsView(QWidget):

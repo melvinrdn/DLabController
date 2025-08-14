@@ -20,7 +20,7 @@ stages:
     3: "00000000"
     4: "00000000"
     5: "00000000"
-    6: "00000000"
+    6: "83837725"
     7: "00000000"
     8: "00000000"
 
@@ -32,7 +32,6 @@ waveplates:
     "4": "calibration/wp4/default_wp4.txt"
     "5": "calibration/wp5/default_wp5.txt"
     "6": "calibration/wp6/default_wp6.txt"
-
 
 slm:
   beam_radius_on_slm: 3.5e-3

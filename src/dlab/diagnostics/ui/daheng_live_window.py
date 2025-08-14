@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 )
@@ -27,6 +27,7 @@ from dlab.hardware.wrappers.daheng_controller import (
 )
 from dlab.diagnostics.utils import white_turbo
 from dlab.boot import get_config
+from dlab.core.device_registry import REGISTRY
 
 # Pixel size (meters)
 PIXEL_SIZE_M = 3.45e-6
@@ -43,19 +44,20 @@ def _data_root() -> str:
     return str((cfg.get("paths", {}) or {}).get("data_dir", r"C:/data"))
 
 
-# ------------------------ capture thread (no averaging) ------------------------
+# ------------------------ capture thread ------------------------
 
 class LiveCaptureThread(QThread):
     image_signal = pyqtSignal(np.ndarray)
 
-    def __init__(self, cam: DahengController, exposure_us: int, gain: int, interval_us: int):
+    def __init__(self, cam: DahengController, exposure_us: int, gain: int, interval_us: int, cap_lock=None):
         super().__init__()
         self.cam = cam
         self.exposure_us = exposure_us
         self.gain = gain
         self.interval_s = interval_us / 1e6
         self._running = True
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()      
+        self._cap_lock = cap_lock          
 
     def update_parameters(self, exposure_us: int, gain: int, interval_us: int):
         with self._lock:
@@ -63,14 +65,19 @@ class LiveCaptureThread(QThread):
             self.gain = gain
             self.interval_s = interval_us / 1e6
 
-    def run(self):
+    def run(self) -> None:
         while self._running:
             try:
                 with self._lock:
                     exp = self.exposure_us
                     g = self.gain
                     wait_s = self.interval_s
-                frame = self.cam.capture_single(exp, g)
+
+                # ---- only one capture at a time (live OR scan) ----
+                lock = self._cap_lock or threading.Lock()
+                with lock:
+                    frame = self.cam.capture_single(exp, g)
+
                 self.image_signal.emit(frame)
                 time.sleep(wait_s)
             except DahengControllerError as ce:
@@ -84,14 +91,16 @@ class LiveCaptureThread(QThread):
         self._running = False
 
 
+
 # ----------------------------- GUI ----------------------------------
 
 class DahengLiveWindow(QWidget):
-    """Live viewer for Daheng camera (no averaging in UI)."""
+    """Live viewer for Daheng camera."""
     closed = pyqtSignal()
 
     def __init__(self, camera_name: str = "Daheng", fixed_index: int = 1):
         super().__init__()
+        self.capture_lock = threading.RLock()
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.camera_name = camera_name
         self.fixed_index = fixed_index
@@ -266,6 +275,15 @@ class DahengLiveWindow(QWidget):
             self.log(f"Activation error: {e}")
             return
         self.log(f"Camera {self.fixed_index} activated")
+        key_name  = f"camera:daheng:{self.camera_name.lower()}"     # e.g. camera:daheng:nomarski
+        key_index = f"camera:daheng:index:{self.fixed_index}"       # e.g. camera:daheng:index:1
+        
+        for k in (key_name, key_index):
+            prev = REGISTRY.get(k)
+            if prev and prev is not self.cam:
+                self.log(f"Registry key '{k}' already in use. Replacing.")
+            REGISTRY.register(k, self)
+
         self.activate_camera_btn.setEnabled(False)
         self.deactivate_camera_btn.setEnabled(True)
         self.start_capture_btn.setEnabled(True)
@@ -277,6 +295,9 @@ class DahengLiveWindow(QWidget):
             except Exception:
                 pass
             self.log(f"Camera {self.fixed_index} deactivated")
+        for k in (f"camera:daheng:{self.camera_name.lower()}",
+                f"camera:daheng:index:{self.fixed_index}"):
+            REGISTRY.unregister(k)
         self.cam = None
         self.activate_camera_btn.setEnabled(True)
         self.deactivate_camera_btn.setEnabled(False)
@@ -297,7 +318,7 @@ class DahengLiveWindow(QWidget):
             QMessageBox.critical(self, "Error", "Invalid parameters.")
             return
 
-        self.thread = LiveCaptureThread(self.cam, exp_us, gain, interval_us)
+        self.thread = LiveCaptureThread(self.cam, exp_us, gain, interval_us, cap_lock=self.capture_lock)
         self.thread.image_signal.connect(self.update_image)
         self.thread.start()
         self.log("Live capture started")
@@ -441,7 +462,7 @@ class DahengLiveWindow(QWidget):
         # Append TSV log with .log extension
         log_name = f"{self.camera_name}_log_{now:%Y-%m-%d}.log"
         log_path = os.path.join(folder, log_name)
-        header = "File Name\tExposure_us\tGain\tComment\n"
+        header = "ImageFile\tExposure_us\tGain\tComment\n"
         try:
             if not os.path.exists(log_path):
                 with open(log_path, "w", encoding="utf-8") as f:
@@ -453,6 +474,35 @@ class DahengLiveWindow(QWidget):
         except Exception as e:
             self.log(f"Error writing log: {e}")
             QMessageBox.critical(self, "Error", f"Error writing log: {e}")
+            
+    def grab_frame_for_scan(self):
+        """
+        Capture one frame synchronously for external scans.
+        Returns (frame_u16, meta_dict).
+        """
+        if not self.cam:
+            raise DahengControllerError("Camera not activated.")
+
+        # Use current GUI parameters
+        try:
+            exp_us = int(self.exposure_edit.text())
+        except ValueError:
+            exp_us = DEFAULT_EXPOSURE_US
+        try:
+            gain = int(self.gain_edit.text())
+        except ValueError:
+            gain = DEFAULT_GAIN
+
+        frame = self._capture_one(exp_us, gain)  # already raises if cam not active
+        frame_u16 = np.clip(frame, 0, 65535).astype(np.uint16, copy=False)
+
+        meta = {
+            "CameraName": self.camera_name,
+            "Exposure_us": exp_us,
+            "Gain": gain,
+        }
+        return frame_u16, meta
+
 
     # -------- close --------
 
@@ -460,12 +510,14 @@ class DahengLiveWindow(QWidget):
         if self.thread:
             self.stop_capture()
         if self.cam:
-            try:
-                self.cam.deactivate()
-            except Exception:
-                pass
+            try: self.cam.deactivate()
+            except Exception: pass
+        for k in (f"camera:daheng:{self.camera_name.lower()}",
+                  f"camera:daheng:index:{self.fixed_index}"):
+            REGISTRY.unregister(k)
         self.closed.emit()
         super().closeEvent(event)
+
 
 
 if __name__ == "__main__":

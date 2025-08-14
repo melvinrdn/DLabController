@@ -25,6 +25,7 @@ class DlabControllerWindow(QMainWindow):
         self.daheng_windows: dict[str, object] = {}
         self.stage_control_window = None
         self.slm_window = None
+        self.scan_window = None
 
         self.setup_ui()
 
@@ -59,12 +60,17 @@ class DlabControllerWindow(QMainWindow):
         self.thorlabs_button = QPushButton("Open Stage Control Window")
         self.thorlabs_button.clicked.connect(self.open_stage_control_window)
         view_layout.addWidget(self.thorlabs_button)
+        
+        # Scan
+        self.scan_button = QPushButton("Open Scan Window")
+        self.scan_button.clicked.connect(self.open_scan_window)
+        view_layout.addWidget(self.scan_button)
 
         # Daheng x3
         self.camera_controls = {}
-        default_indices = {"Nomarski": 1, "Nozzle": 2, "Focus": 3}
-        for label in ["Nomarski", "Nozzle", "Focus"]:
-            box = QGroupBox(f"Daheng – {label}")
+        default_indices = {"DahengCam_1": 1, "DahengCam_2": 2, "DahengCam_3": 3}
+        for label in ["DahengCam_1", "DahengCam_2", "DahengCam_3"]:
+            box = QGroupBox(f"{label}")
             layout = QHBoxLayout()
 
             spinbox = QSpinBox()
@@ -189,6 +195,20 @@ class DlabControllerWindow(QMainWindow):
         if camera_name in self.daheng_windows:
             del self.daheng_windows[camera_name]
         self.append_log(f"Daheng window closed for '{camera_name}'.")
+        
+    def open_scan_window(self):
+        from dlab.diagnostics.ui.scan_window import ScanWindow
+        if self.scan_window is None:
+            self.scan_window = ScanWindow()
+            self.scan_window.closed.connect(self.on_scan_window_closed)
+        self.scan_window.show()
+        self.scan_window.raise_()
+        self.scan_window.activateWindow()
+        self.append_log("Scan window opened.")
+
+    def on_scan_window_closed(self):
+        self.scan_window = None
+        self.append_log("Scan window closed.")
 
 
 def main():
