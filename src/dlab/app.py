@@ -1,0 +1,203 @@
+from __future__ import annotations
+from pathlib import Path
+import datetime
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
+    QPushButton, QGroupBox, QTextEdit, QSpinBox
+)
+
+from dlab.boot import ROOT, bootstrap, get_config
+from dlab.hardware.wrappers.pressure_sensor import PressureMonitorWidget
+from dlab.diagnostics.utils import GUI_LOG_DATE_FORMAT
+
+CFG = bootstrap(ROOT / "config" / "config.yaml")
+
+
+class DlabControllerWindow(QMainWindow):
+    """Main window for the Dlab Controller application."""
+    def __init__(self):
+        super().__init__()
+
+        # Child windows
+        self.andor_window = None
+        self.avaspec_window = None
+        self.daheng_windows: dict[str, object] = {}
+        self.stage_control_window = None
+        self.slm_window = None
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.setWindowTitle("DlabControllerWindow")
+        self.resize(300, 300)
+
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+
+        left_panel = QVBoxLayout()
+        windows_group = QGroupBox("Windows")
+        view_layout = QVBoxLayout()
+
+        # SLM
+        self.slm_button = QPushButton("Open SLM Window")
+        self.slm_button.clicked.connect(self.open_slm_window)
+        view_layout.addWidget(self.slm_button)
+
+        # Andor
+        self.andor_button = QPushButton("Open Andor Window")
+        self.andor_button.clicked.connect(self.open_andor_window)
+        view_layout.addWidget(self.andor_button)
+
+        # Avaspec
+        self.avaspec_button = QPushButton("Open Avaspec Window")
+        self.avaspec_button.clicked.connect(self.open_avaspec_window)
+        view_layout.addWidget(self.avaspec_button)
+        
+        # Thorlabs
+        self.thorlabs_button = QPushButton("Open Stage Control Window")
+        self.thorlabs_button.clicked.connect(self.open_stage_control_window)
+        view_layout.addWidget(self.thorlabs_button)
+
+        # Daheng x3
+        self.camera_controls = {}
+        default_indices = {"Nomarski": 1, "Nozzle": 2, "Focus": 3}
+        for label in ["Nomarski", "Nozzle", "Focus"]:
+            box = QGroupBox(f"Daheng – {label}")
+            layout = QHBoxLayout()
+
+            spinbox = QSpinBox()
+            spinbox.setRange(1, 5)
+            spinbox.setValue(default_indices[label])
+            layout.addWidget(QLabel("Index:"))
+            layout.addWidget(spinbox)
+
+            button = QPushButton("Open")
+            layout.addWidget(button)
+            button.clicked.connect(lambda _, name=label, sb=spinbox: self.open_daheng_window(name, sb.value()))
+
+            box.setLayout(layout)
+            view_layout.addWidget(box)
+            self.camera_controls[label] = spinbox
+
+        windows_group.setLayout(view_layout)
+        left_panel.addWidget(windows_group)
+
+        # Dashboard Grafana
+        grafana_url = (get_config() or {}).get("metrics", {}).get(
+            "grafana_url", "http://localhost:3000"
+        )
+        self.path_label = QLabel(f'Dashboard URL: <a href="{grafana_url}">{grafana_url}</a>')
+        self.path_label.setOpenExternalLinks(True)
+        left_panel.addWidget(self.path_label)
+
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        left_panel.addWidget(self.log_text)
+
+        left_panel.addStretch(1)
+        main_layout.addLayout(left_panel)
+
+        self.setup_pressure_log()
+
+    def append_log(self, message: str):
+        now = datetime.datetime.now().strftime(GUI_LOG_DATE_FORMAT)
+        self.log_text.append(f"[{now}] {message}")
+
+    def setup_pressure_log(self):
+        self.pressure_monitor = PressureMonitorWidget(self)
+        self.pressure_monitor.log_signal.connect(self.append_log)
+
+    # ---------- Child windows ----------
+    # Andor
+    def open_andor_window(self):
+        from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
+        if self.andor_window is None:
+            self.andor_window = AndorLiveWindow()
+            self.andor_window.closed.connect(self.on_andor_window_closed)
+            self.andor_window.show()
+            self.andor_window.raise_()
+            self.andor_window.activateWindow()
+            self.append_log("Andor window opened.")
+        else:
+            self.append_log("Andor window is already open.")
+
+    def on_andor_window_closed(self):
+        self.andor_window = None
+        self.append_log("Andor window closed.")
+
+    # Avaspec
+    def open_avaspec_window(self):
+        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
+        if self.avaspec_window is None:
+            self.avaspec_window = AvaspecLiveWindow()
+            self.avaspec_window.closed.connect(self.on_avaspec_window_closed)
+            self.avaspec_window.show()
+            self.avaspec_window.raise_()
+            self.avaspec_window.activateWindow()
+            self.append_log("Avaspec window opened.")
+        else:
+            self.append_log("Avaspec window is already open.")
+
+    def on_avaspec_window_closed(self):
+        self.avaspec_window = None
+        self.append_log("Avaspec window closed.")
+
+    # SLM
+    def open_slm_window(self):
+        from dlab.diagnostics.ui.slm_window import SlmWindow
+        if self.slm_window is None:
+            self.slm_window = SlmWindow()
+            self.slm_window.closed.connect(self.on_slm_window_closed)
+            self.slm_window.show()
+            self.slm_window.raise_()
+            self.slm_window.activateWindow()
+            self.append_log("SLM window opened.")
+        else:
+            self.append_log("SLM window is already open.")
+
+    def on_slm_window_closed(self):
+        self.slm_window = None
+        self.append_log("SLM window closed.")
+
+    # Thorlabs
+    def open_stage_control_window(self):
+        from dlab.diagnostics.ui.stage_control_window import StageControlWindow
+        if self.stage_control_window is None:
+            self.stage_control_window = StageControlWindow()
+        self.stage_control_window.show()
+        self.stage_control_window.raise_()
+        self.stage_control_window.activateWindow()
+        self.append_log("Stage Control window opened.")
+
+    # Daheng
+    def open_daheng_window(self, camera_name: str, fixed_index: int):
+        from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
+        if camera_name not in self.daheng_windows:
+            win = DahengLiveWindow(camera_name=camera_name, fixed_index=fixed_index)
+            win.closed.connect(lambda name=camera_name: self.on_daheng_window_closed(name))
+            self.daheng_windows[camera_name] = win
+            win.show()
+            win.raise_()
+            win.activateWindow()
+            self.append_log(f"Daheng window opened for '{camera_name}'.")
+        else:
+            self.append_log(f"Daheng window for '{camera_name}' is already open.")
+
+    def on_daheng_window_closed(self, camera_name: str):
+        if camera_name in self.daheng_windows:
+            del self.daheng_windows[camera_name]
+        self.append_log(f"Daheng window closed for '{camera_name}'.")
+
+
+def main():
+    import sys
+    app = QApplication(sys.argv)
+    window = DlabControllerWindow()
+    window.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
