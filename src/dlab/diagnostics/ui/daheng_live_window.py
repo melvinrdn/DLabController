@@ -100,7 +100,8 @@ class DahengLiveWindow(QWidget):
 
     def __init__(self, camera_name: str = "Daheng", fixed_index: int = 1):
         super().__init__()
-        self.capture_lock = threading.RLock()
+        self.live_running = False
+        self.capture_lock = threading.Lock()
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.camera_name = camera_name
         self.fixed_index = fixed_index
@@ -321,6 +322,7 @@ class DahengLiveWindow(QWidget):
         self.thread = LiveCaptureThread(self.cam, exp_us, gain, interval_us, cap_lock=self.capture_lock)
         self.thread.image_signal.connect(self.update_image)
         self.thread.start()
+        self.live_running = True
         self.log("Live capture started")
         self.start_capture_btn.setEnabled(False)
         self.stop_capture_btn.setEnabled(True)
@@ -330,6 +332,7 @@ class DahengLiveWindow(QWidget):
             self.thread.stop()
             self.thread.wait()
             self.thread = None
+            self.live_running = False
             self.log("Live capture stopped")
         self.start_capture_btn.setEnabled(True)
         self.stop_capture_btn.setEnabled(False)
@@ -475,34 +478,101 @@ class DahengLiveWindow(QWidget):
             self.log(f"Error writing log: {e}")
             QMessageBox.critical(self, "Error", f"Error writing log: {e}")
             
-    def grab_frame_for_scan(self):
+    def grab_frame_for_scan(
+        self,
+        averages: int = 1,
+        adaptive: dict | None = None,
+        dead_pixel_cleanup: bool = True,
+        background: bool = False,
+    ):
         """
-        Capture one frame synchronously for external scans.
-        Returns (frame_u16, meta_dict).
+        Synchronous capture for scans.
+        - If live is running, stop it, capture, and update the view with the averaged frame.
+        - Adaptive exposure finds a good exposure first; that exposure is then LOCKED
+        for the averaging frames (no _1/_2 files; we return one averaged frame).
+        - Dead pixels/hot pixels are zeroed.
+        Returns (frame_u16, meta_dict) with Gain intentionally blank.
         """
         if not self.cam:
             raise DahengControllerError("Camera not activated.")
 
-        # Use current GUI parameters
+        was_live = bool(self.live_running)
+        if was_live:
+            try:
+                self.stop_capture()
+            except Exception:
+                pass
+
+        # Parse GUI
         try:
             exp_us = int(self.exposure_edit.text())
         except ValueError:
             exp_us = DEFAULT_EXPOSURE_US
-        try:
-            gain = int(self.gain_edit.text())
-        except ValueError:
-            gain = DEFAULT_GAIN
 
-        frame = self._capture_one(exp_us, gain)  # already raises if cam not active
-        frame_u16 = np.clip(frame, 0, 65535).astype(np.uint16, copy=False)
+        # Device needs a gain value; but scans must log Gain as blank.
+        try:
+            device_gain = int(self.gain_edit.text())
+        except ValueError:
+            device_gain = DEFAULT_GAIN
+
+        # Adaptive config
+        cfg = adaptive or {}
+        use_adapt   = bool(cfg.get("enabled", False))
+        target_frac = float(cfg.get("target_frac", 0.75))
+        lo_frac     = float(cfg.get("low_frac", 0.60))
+        hi_frac     = float(cfg.get("high_frac", 0.90))
+        min_us      = int(cfg.get("min_us", 20))
+        max_us      = int(cfg.get("max_us", 1_000_000))
+        floor_cnt   = float(cfg.get("floor_counts", 200.0))
+        max_iters   = int(cfg.get("max_iters", 6))
+
+        def _cap_once(cur_exp_us: int):
+            self.cam.set_exposure(cur_exp_us)
+            self.cam.set_gain(device_gain)
+            return self.cam.capture_single(cur_exp_us, device_gain)
+
+        # --- Adaptive step (prepass) ---
+        if use_adapt:
+            cur = exp_us
+            for _ in range(max_iters):
+                f0 = np.asarray(_cap_once(cur), dtype=np.float64, copy=False)
+                robust_max = float(np.percentile(f0, 99.9))
+                if robust_max < floor_cnt:
+                    robust_max = floor_cnt
+                frac = robust_max / 65535.0
+                if lo_frac <= frac <= hi_frac:
+                    break
+                scale = (target_frac / frac) if frac > 1e-9 else 2.0
+                cur = int(max(min_us, min(max_us, cur * scale)))
+            exp_us = cur  # lock exposure for averaging
+
+        # --- Averaging at LOCKED exposure ---
+        n = max(1, int(averages))
+        acc = None
+        for _ in range(n):
+            f = np.asarray(_cap_once(exp_us), dtype=np.float64, copy=False)
+            acc = f if acc is None else (acc + f)
+        avg = acc / n
+
+        # Dead/hot pixel cleanup
+        if dead_pixel_cleanup:
+            avg[avg >= 65535.0] = 0.0
+            avg[avg < 0.0] = 0.0
+            p9999 = np.percentile(avg, 99.99)
+            if p9999 > 65535.0:
+                avg[avg > p9999] = 0.0
+
+        frame_u16 = np.clip(avg, 0, 65535).astype(np.uint16, copy=False)
+        self.update_image(frame_u16)
 
         meta = {
-            "CameraName": self.camera_name,
+            "CameraName": f"DahengCam_{self.fixed_index}",  # enforce naming
+            "CameraIndex": self.fixed_index,
             "Exposure_us": exp_us,
-            "Gain": gain,
+            "Gain": "",                                    # blank in scans
+            "Background": "1" if background else "0",
         }
         return frame_u16, meta
-
 
     # -------- close --------
 

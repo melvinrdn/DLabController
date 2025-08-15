@@ -197,7 +197,7 @@ class DlabControllerWindow(QMainWindow):
         self.append_log(f"Daheng window closed for '{camera_name}'.")
         
     def open_scan_window(self):
-        from dlab.diagnostics.ui.scan_window import ScanWindow
+        from dlab.diagnostics.ui.scans.scan_window import ScanWindow
         if self.scan_window is None:
             self.scan_window = ScanWindow()
             self.scan_window.closed.connect(self.on_scan_window_closed)
