@@ -25,6 +25,8 @@ from dlab.hardware.wrappers.andor_controller import (
 )
 from dlab.diagnostics.utils import white_turbo
 from dlab.boot import get_config
+from dlab.core.device_registry import REGISTRY
+from dlab.hardware.wrappers.andor_registry_adapter import AndorRegistryCamera
 
 # Quiet down noisy matplotlib logs
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
@@ -103,6 +105,7 @@ class LiveCaptureThread(QThread):
 class AndorLiveWindow(QWidget):
     """PyQt5 GUI for live Andor capture without averaging."""
     closed = pyqtSignal()
+    external_image_signal = pyqtSignal(np.ndarray)
 
     def __init__(self):
         super().__init__()
@@ -116,6 +119,7 @@ class AndorLiveWindow(QWidget):
         self.current_interval_ms = None
         self.fixed_cbar_max: float | None = None
         self.last_frame: np.ndarray | None = None
+        self.external_image_signal.connect(self.update_image)
 
         self._logger = logging.getLogger("dlab.ui.AndorLiveWindow")
 
@@ -275,6 +279,12 @@ class AndorLiveWindow(QWidget):
             self.cam = AndorController(device_index=0)
             self.cam.activate()
             self.log("Camera 0 activated.")
+
+            # >>> REGISTRY: enregistrement Andor <<<
+            self.adapter = AndorRegistryCamera(self.cam, name="AndorCam_1", live_window=self)
+            REGISTRY.register("camera:andor:andorcam_1", self.adapter)
+            self.log("Registered camera:andor:andorcam_1 in DeviceRegistry.")
+
             self.activate_button.setEnabled(False)
             self.activate_dummy_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
@@ -282,7 +292,7 @@ class AndorLiveWindow(QWidget):
         except AndorControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to activate camera: {ce}")
             self.log(f"Error activating camera: {ce}")
-
+            
     # Simple dummy controller for UI testing
     class _DummyAndorController:
         def __init__(self, device_index=0):
@@ -307,6 +317,9 @@ class AndorLiveWindow(QWidget):
             self.cam = AndorLiveWindow._DummyAndorController(device_index=666)
             self.cam.activate()
             self.log("Dummy camera activated.")
+            self.adapter = AndorRegistryCamera(self.cam, name="AndorCam_Dummy")
+            REGISTRY.register("camera:andor:andorcam_dummy", self.adapter)
+            self.log("Registered camera:andor:andorcam_dummy in DeviceRegistry.")
             self.activate_button.setEnabled(False)
             self.activate_dummy_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
@@ -317,6 +330,14 @@ class AndorLiveWindow(QWidget):
 
     def deactivate_camera(self):
         try:
+            try:
+                if hasattr(self, "adapter") and self.adapter is not None:
+                    REGISTRY.unregister("camera:andor:andorcam_1")
+                    self.log("Unregistered camera:andor:andorcam_1 from DeviceRegistry.")
+                    self.adapter = None
+            except Exception:
+                pass
+
             if self.cam:
                 self.cam.deactivate()
                 self.log("Camera 0 deactivated.")

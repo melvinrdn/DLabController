@@ -1,28 +1,12 @@
 # src/dlab/diagnostics/ui/scan_window.py
 from __future__ import annotations
-import os, datetime, time
-from pathlib import Path
-from typing import Iterable
-
-import numpy as np
-from PIL import Image, PngImagePlugin
-
-from PyQt5.QtCore import QObject, pyqtSignal, QThread
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTextEdit, QComboBox, QTabWidget, QDoubleSpinBox,
-    QGroupBox, QMessageBox, QSpinBox
+    QApplication, QMainWindow, QTabWidget,
 )
 
-from dlab.boot import ROOT, get_config
-from dlab.core.device_registry import REGISTRY
 from dlab.diagnostics.ui.scans.m2_measurement_tab import M2Tab
-
-def _data_root() -> Path:
-    cfg = get_config() or {}
-    base = cfg.get("paths", {}).get("data_root", "C:/data")
-    return (ROOT / base).resolve()
-
+from dlab.diagnostics.ui.scans.grid_scan_tab import GridScanTab
 
 # ---------- worker ----------
 import logging
@@ -38,6 +22,7 @@ class ScanWindow(QMainWindow):
         self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
 
         self.tabs.addTab(M2Tab(), "M2 measurement")
+        self.tabs.addTab(GridScanTab(), "Grid scan")
 
         # Future: add more tabs easily
         # self.tabs.addTab(SomeOtherScanTab(), "Whatever")
