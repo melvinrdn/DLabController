@@ -13,6 +13,7 @@ from PyQt5.QtGui import QIntValidator, QDoubleValidator
 from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
 from dlab.hardware.wrappers.waveplate_calib import WaveplateCalibWidget, NUM_WAVEPLATES
 from dlab.diagnostics.ui.auto_waveplate_calib_window import AutoWaveplateCalibWindow
+from dlab.diagnostics.ui.grating_compressor import GratingCompressorWindow
 
 import logging
 logger = logging.getLogger("dlab.ui.StageControlWindow")
@@ -423,11 +424,11 @@ class StageControlWindow(QMainWindow):
 
         # Create the ThorlabsView (first tab).
         self.thorlabs_view = ThorlabsView()
-        self.tabs.addTab(self.thorlabs_view, "Stage Control")
+        self.tabs.addTab(self.thorlabs_view, "Thorlabs Control")
+        
+        self.gc_view = GratingCompressorWindow()
+        self.tabs.addTab(self.gc_view, "Grating Compressor")
 
-        # Create the WaveplateCalibWidget (second tab).
-        # Pass the ThorlabsView.log_message as the log callback.
-        # Also, supply a calibration_changed_callback that updates only the relevant stage.
         self.calib_widget = WaveplateCalibWidget(
             log_callback=self.thorlabs_view.log_message,
             calibration_changed_callback=self.update_stage_calibrations
@@ -437,6 +438,7 @@ class StageControlWindow(QMainWindow):
         # Create the AutoWavepalteCalib
         self.autocalib_view = AutoWaveplateCalibWindow()
         self.tabs.addTab(self.autocalib_view, "Automatic Waveplate Calibration")
+        
 
     def update_stage_calibrations(self, wp_index, calibration):
         """

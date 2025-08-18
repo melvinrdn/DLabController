@@ -14,15 +14,19 @@ class ZaberBinaryController:
     """
     Thin wrapper for Zaber Binary devices.
     Public API mirrors ThorlabsController: activate/home/move_to/get_position/identify/disable.
+    Always uses millimetres.
     """
 
-    def __init__(self, port: str, baud_rate: int = 9600, units: Units = Units.LENGTH_MILLIMETRES):
+    def __init__(self, port: str, baud_rate: int = 9600,
+                 range_min: float = 0.0, range_max: float = 50.0):
         self.port = port
         self.baud_rate = baud_rate
-        self.units = units
-
         self.conn: Optional[Connection] = None
         self.device: Optional[Device] = None
+
+        # Configured limits (mm)
+        self.range_min = range_min
+        self.range_max = range_max
 
     def _ensure(self) -> Device:
         if self.device is None:
@@ -49,17 +53,18 @@ class ZaberBinaryController:
             dev.wait_until_idle()
 
     def move_to(self, position: float, blocking: bool = True) -> None:
-        """Move to an absolute position in units (default mm)."""
+        """Move to an absolute position in mm."""
         dev = self._ensure()
-        dev.move_absolute(float(position), self.units)
+        pos = max(self.range_min, min(self.range_max, float(position)))  # clamp to range
+        dev.move_absolute(pos, Units.LENGTH_MILLIMETRES)
         if blocking:
             dev.wait_until_idle()
 
     def get_position(self) -> Optional[float]:
-        """Return the current position in configured units."""
+        """Return the current position in mm."""
         if self.device is None:
             return None
-        return float(self.device.get_position(self.units))
+        return float(self.device.get_position(Units.LENGTH_MILLIMETRES))
 
     def identify(self) -> None:
         """Flash LEDs or otherwise identify the device."""

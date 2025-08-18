@@ -24,6 +24,13 @@ stages:
     7: "00000000"
     8: "00000000"
 
+zaber:
+  port: COM4
+  baud: 9600
+  range:
+    min: 0.0
+    max: 50.0
+
 waveplates:
   calibration_files:
     "1": "calibration/wp1/default_wp1.txt"

@@ -1,18 +1,26 @@
 # test/test_zaber.py
 from dlab.hardware.wrappers.zaber_controller import ZaberBinaryController
+from dlab.boot import get_config
 
-PORT = "COM4"   # change if needed
-BAUD = 9600
 
 def main():
-    stage = ZaberBinaryController(PORT, BAUD)
+    cfg = get_config()
+    zcfg = cfg.get("zaber", {})
+
+    stage = ZaberBinaryController(
+        port=zcfg.get("port", "COM4"),
+        baud_rate=zcfg.get("baud"),
+        range_min=zcfg.get("range", {}).get("min"),
+        range_max=zcfg.get("range", {}).get("max"),
+)
+
     try:
         print("[TEST] Activating stage...")
         stage.activate(homing=True)
         print(f"[OK] Stage homed. Current pos = {stage.get_position():.3f} mm")
 
-        print("[TEST] Moving to 5.0 mm...")
-        stage.move_to(5.0)
+        print("[TEST] Moving to 50.0 mm...")
+        stage.move_to(50.0)
         print(f"[OK] Position = {stage.get_position():.3f} mm")
 
         print("[TEST] Identify device...")
