@@ -18,7 +18,8 @@ dependencies = [
   "ThorlabsPM100",
   "thorlabs-apt",
   "pyvisa",
-  "scipy"
+  "scipy",
+  "zaber-motion",
 ]
 
 [project.scripts]
