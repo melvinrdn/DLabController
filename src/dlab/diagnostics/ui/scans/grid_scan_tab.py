@@ -53,7 +53,8 @@ class GridScanWorker(QObject):
     log = pyqtSignal(str)
     finished = pyqtSignal(str)
     andor_frame = pyqtSignal(object, object, str)  # (axis_indices, frame_u16, camera_key)
-
+    spec_updated = pyqtSignal(object, object)  # (wavelength, counts)
+    
     def __init__(
         self,
         axes: List[Tuple[str, List[float]]],      # [(stage_key, [pos...]), ...]
@@ -115,29 +116,39 @@ class GridScanWorker(QObject):
                 return
             stages[stage_key] = stg
 
-        # --- resolve cameras and apply fixed exposure if possible ---
-        cameras = {}
-        for cam_key, (expo_us, _avg) in self.camera_params.items():
-            camwin = REGISTRY.get(cam_key)
-            if camwin is None:
-                self._emit(f"Camera '{cam_key}' not found.")
+        detectors = {}
+        for det_key, (expo_us_or_int_ms, _avg) in self.camera_params.items():
+            dev = REGISTRY.get(det_key)
+            if dev is None:
+                self._emit(f"Detector '{det_key}' not found.")
                 self.finished.emit("")
                 return
-            if not hasattr(camwin, "grab_frame_for_scan"):
-                self._emit(f"Camera '{cam_key}' missing grab_frame_for_scan().")
+
+            # feature detection: camera-like vs spectro-like
+            is_camera = hasattr(dev, "grab_frame_for_scan")
+            is_spectro = (hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"))
+
+            if not (is_camera or is_spectro):
+                self._emit(f"Detector '{det_key}' doesn't expose a scan API.")
                 self.finished.emit("")
                 return
-            cameras[cam_key] = camwin
+
+            # best-effort preset
             try:
-                # Best-effort exposure preset; grab() also passes exposure_us
-                if hasattr(camwin, "set_exposure_us"):
-                    camwin.set_exposure_us(int(expo_us))
-                elif hasattr(camwin, "setExposureUS"):
-                    camwin.setExposureUS(int(expo_us))
-                elif hasattr(camwin, "set_exposure"):
-                    camwin.set_exposure(int(expo_us))  # if this expects µs in your Andor wrapper
+                if is_camera:
+                    if hasattr(dev, "set_exposure_us"):
+                        dev.set_exposure_us(int(expo_us_or_int_ms))
+                    elif hasattr(dev, "setExposureUS"):
+                        dev.setExposureUS(int(expo_us_or_int_ms))
+                    elif hasattr(dev, "set_exposure"):
+                        # selon ton wrapper Andor (µs ou s), adapte si besoin
+                        dev.set_exposure(int(expo_us_or_int_ms))
+                else:
+                    pass # Avaspec spectro, no preset needed
             except Exception as e:
-                self._emit(f"Warning: failed to preset exposure on '{cam_key}': {e}")
+                self._emit(f"Warning: failed to preset on '{det_key}': {e}")
+
+            detectors[det_key] = dev
 
         now = datetime.datetime.now()
         root = _data_root()
@@ -148,7 +159,7 @@ class GridScanWorker(QObject):
         header_cols = []
         for i, (ax, _) in enumerate(self.axes, 1):
             header_cols += [f"Stage_{i}", f"Pos_{i}"]
-        header_cols += ["CameraKey", "ImageFile", "Exposure_us", "Averages", "MCP_Voltage", "Comment"]
+        header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage", "Comment"]
         scan_log = scan_dir / f"{self.scan_name}_log_{now:%Y-%m-%d}.log"
         if not scan_log.exists():
             with open(scan_log, "w", encoding="utf-8") as f:
@@ -166,22 +177,60 @@ class GridScanWorker(QObject):
                 camel = base[:1].upper() + base[1:]
             return camel + (("_" + "_".join(rest)) if rest else "")
 
-        def _camera_display_name(cam_key: str, camwin, meta: dict | None) -> str:
-            if meta and str(meta.get("CameraName", "")).strip():
-                return str(meta["CameraName"]).strip()
+        def _detector_display_name(det_key: str, dev, meta: dict | None) -> str:
+            if meta and str(meta.get("DeviceName", "")).strip():
+                return str(meta["DeviceName"]).strip()
             for attr in ("name", "camera_name", "model_name"):
-                v = getattr(camwin, attr, None)
+                v = getattr(dev, attr, None)
                 if isinstance(v, str) and v.strip():
                     return v.strip()
-            return _pretty_from_key(cam_key)
+            return _pretty_from_key(det_key)
+        
+        def _save_txt_with_meta(folder: Path, filename: str, x: np.ndarray, y: np.ndarray, header: dict) -> Path:
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / filename
+            lines = []
+            for k, v in header.items():
+                lines.append(f"# {k}: {v}")
+            lines.append("Wavelength_nm;Counts")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+                for xv, yv in zip(x, y):
+                    f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
+            return path
 
-        def _save_one(cam_key: str, camwin, frame_u16: np.ndarray, exposure_us: int, tag: str, meta: dict | None) -> str:
-            cam_name = _camera_display_name(cam_key, camwin, meta)
-            cam_day = root / f"{now:%Y-%m-%d}" / cam_name
+        def _append_avaspec_log(spec_folder: Path, spec_name: str, fn: str, int_ms: float, averages: int, comment: str) -> None:
+            log_path = spec_folder / f"{spec_name}_log_{datetime.datetime.now():%Y-%m-%d}.log"
+            header = "File Name\tIntegration_ms\tAverages\tComment\n"
+            exists = log_path.exists()
+            with open(log_path, "a", encoding="utf-8") as f:
+                if not exists:
+                    f.write(header)
+                f.write(f"{fn}\t{int_ms}\t{averages}\t{comment}\n")
+
+
+        def _save_image(det_key: str, dev, frame_u16: np.ndarray, exposure_us: int, tag: str, meta: dict | None) -> str:
+            det_name = _detector_display_name(det_key, dev, meta)
+            det_day = root / f"{now:%Y-%m-%d}" / det_name
             ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            fn = f"{cam_name}_{tag}_{ts_ms}.png"
-            _save_png_with_meta(cam_day, fn, frame_u16, {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
-            _append_daheng_log(cam_day, cam_name, fn, exposure_us, self.comment)
+            fn = f"{det_name}_{tag}_{ts_ms}.png"
+            _save_png_with_meta(det_day, fn, frame_u16, {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
+            _append_daheng_log(det_day, det_name, fn, exposure_us, self.comment)   # reuse daheng-style
+            return fn
+        
+        def _save_spectrum(det_key: str, dev, wl_nm: np.ndarray, counts: np.ndarray, int_ms: float, averages: int) -> str:
+            det_day = root / f"{now:%Y-%m-%d}" / "Avaspec"
+            safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
+            ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            fn = f"{safe_name}_Spectrum_{ts_ms}.txt"
+            header = {
+                "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "IntegrationTime_ms": int_ms,
+                "Averages": averages,
+                "Comment": self.comment,
+            }
+            _save_txt_with_meta(det_day, fn, wl_nm, counts, header)
+            _append_avaspec_log(det_day, safe_name, fn, int_ms, averages, self.comment)
             return fn
 
         # --- indexing utilities (raster, last axis is inner loop) ---
@@ -226,60 +275,92 @@ class GridScanWorker(QObject):
 
                 time.sleep(self.settle_s)
 
-                # capture on each camera
-                for cam_key, camwin in cameras.items():
+                # capture on each detector
+                for det_key, dev in detectors.items():
                     if self.abort:
                         self._emit("Scan aborted.")
                         self.finished.emit("")
                         return
 
-                    exposure_us, averages = self.camera_params.get(cam_key, (0, 1))
+                    exposure_or_int, averages = self.camera_params.get(det_key, (0, 1))
                     try:
-                        # try passing exposure_us; fall back if signature doesn't allow it
-                        try:
-                            frame_u16, meta = camwin.grab_frame_for_scan(
-                                averages=int(averages),
-                                background=self.background,
-                                dead_pixel_cleanup=True,
-                                exposure_us=int(exposure_us),
-                            )
-                        except TypeError:
-                            frame_u16, meta = camwin.grab_frame_for_scan(
-                                averages=int(averages),
-                                background=self.background,
-                                dead_pixel_cleanup=True,
-                            )
+                        if hasattr(dev, "grab_frame_for_scan"):
+                            # CAMERA PATH
+                            try:
+                                frame_u16, meta = dev.grab_frame_for_scan(
+                                    averages=int(averages),
+                                    background=self.background,
+                                    dead_pixel_cleanup=True,
+                                    exposure_us=int(exposure_or_int),
+                                )
+                            except TypeError:
+                                frame_u16, meta = dev.grab_frame_for_scan(
+                                    averages=int(averages),
+                                    background=self.background,
+                                    dead_pixel_cleanup=True,
+                                )
 
-                        exp_meta = int(meta.get("Exposure_us", int(exposure_us)))
-                        tag = "Background" if self.background else "Image"
-                        cam_fn = _save_one(cam_key, camwin, frame_u16, exp_meta, tag, meta)
+                            exp_meta = int((meta or {}).get("Exposure_us", int(exposure_or_int)))
+                            tag = "Background" if self.background else "Image"
+                            data_fn = _save_image(det_key, dev, frame_u16, exp_meta, tag, meta)
+
+                            if det_key.startswith("camera:andor:"):
+                                self.andor_frame.emit(list(idxs), frame_u16, det_key)
+
+                            saved_label = f"exp {exp_meta} µs"
+
+                        else:
+                            # SPECTRO PATH (Avaspec)
+                            # Try a scan-oriented API, otherwise do N averages with measure_spectrum
+                            wl = getattr(dev, "wavelength", None)
+                            if wl is None:
+                                # certain wrappers exposent get_wavelengths()
+                                wl = np.asarray(dev.get_wavelengths(), dtype=float)
+                            else:
+                                wl = np.asarray(wl, dtype=float)
+
+                            if hasattr(dev, "grab_spectrum_for_scan"):
+                                counts, meta = dev.grab_spectrum_for_scan(int_ms=float(exposure_or_int), averages=int(averages))
+                                counts = np.asarray(counts, dtype=float)
+                                int_ms = float((meta or {}).get("Integration_ms", float(exposure_or_int)))
+                            else:
+                                # fallback: mesure et moyenne côté appli
+                                _buf = []
+                                for _ in range(int(averages)):
+                                    _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
+                                    _buf.append(np.asarray(_data, dtype=float))
+                                counts = np.mean(np.stack(_buf, axis=0), axis=0)
+                                int_ms = float(exposure_or_int)
+
+                            data_fn = _save_spectrum(det_key, dev, wl, counts, int_ms, int(averages))
+                            saved_label = f"int {int_ms:.0f} ms"
+                            
+                            try:
+                                self.spec_updated.emit(wl, counts)
+                            except Exception:
+                                pass    
 
                         # append scan log row
                         row = []
                         for ax, pos in combo:
                             row += [ax, f"{pos:.9f}"]
-                        row += [cam_key, cam_fn, str(exp_meta), str(int(averages)), str(self.mcp_voltage), self.comment]
-                        try:
-                            with open(scan_log, "a", encoding="utf-8") as f:
-                                f.write("\t".join(row) + "\n")
-                        except Exception as e:
-                            self._emit(f"Scan log write failed: {e}")
-
-                        # emit Andor live feed if available
-                        if cam_key.startswith("camera:andor:"):
-                                self.andor_frame.emit(list(idxs), frame_u16, cam_key)
+                        row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage), self.comment]
+                        with open(scan_log, "a", encoding="utf-8") as f:
+                            f.write("\t".join(row) + "\n")
 
                         self._emit(
-                            f"Saved {cam_fn} @ " +
+                            f"Saved {data_fn} @ " +
                             ", ".join([f"{ax}={pos:.6f}" for ax, pos in combo]) +
-                            f" on {cam_key} (exp {exp_meta} µs, avg {int(averages)})"
+                            f" on {det_key} ({saved_label}, avg {int(averages)})"
                         )
+
                     except Exception as e:
                         self._emit(
                             f"Capture failed @ " +
                             ", ".join([f"{ax}={pos:.6f}" for ax, pos in combo]) +
-                            f" on {cam_key}: {e}"
+                            f" on {det_key}: {e}"
                         )
+
 
                     done += 1
                     self.progress.emit(done, total_images)
@@ -351,21 +432,21 @@ class GridScanTab(QWidget):
         main.addWidget(axes_box)
 
         # Cameras with fixed exposure & averages
-        cams_box = QGroupBox("Cameras")
+        cams_box = QGroupBox("Detectors")
         cams_l = QVBoxLayout(cams_box)
 
         cam_pick_row = QHBoxLayout()
         self.cam_picker = QComboBox()
-        self.add_cam_btn = QPushButton("Add Camera")
+        self.add_cam_btn = QPushButton("Add detector")
         self.add_cam_btn.clicked.connect(self._add_cam_row)
-        cam_pick_row.addWidget(QLabel("Camera:"))
+        cam_pick_row.addWidget(QLabel("Detector:"))
         cam_pick_row.addWidget(self.cam_picker, 1)
         cam_pick_row.addWidget(self.add_cam_btn)
         cams_l.addLayout(cam_pick_row)
 
         # Camera table: CameraKey | Exposure_us | Averages
         self.cam_tbl = QTableWidget(0, 3)
-        self.cam_tbl.setHorizontalHeaderLabels(["CameraKey", "Exposure_us", "Averages"])
+        self.cam_tbl.setHorizontalHeaderLabels(["DetectorsKey", "Exposure_us/Int_ms", "Averages"])
         self.cam_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.cam_tbl.setEditTriggers(QAbstractItemView.AllEditTriggers)
         cams_l.addWidget(self.cam_tbl)
@@ -489,7 +570,7 @@ class GridScanTab(QWidget):
             self.stage_picker.addItem(k)
         # cameras (daheng + andor)
         self.cam_picker.clear()
-        for prefix in ("camera:daheng:", "camera:andor:"):
+        for prefix in ("camera:daheng:", "camera:andor:","spectrometer:avaspec:"):
             for k in REGISTRY.keys(prefix):
                 if ":index:" in k:
                     continue
@@ -532,20 +613,20 @@ class GridScanTab(QWidget):
         # cameras + exposure + averages
         cam_params: Dict[str, Tuple[int,int]] = {}
         if self.cam_tbl.rowCount() == 0:
-            raise ValueError("Add at least one camera.")
+            raise ValueError("Add at least one detector.")
         for r in range(self.cam_tbl.rowCount()):
             cam_key = (self.cam_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
             if not cam_key:
-                raise ValueError(f"Empty camera key in row {r+1}.")
+                raise ValueError(f"Empty detector key in row {r+1}.")
             try:
                 expo = int(float((self.cam_tbl.item(r, 1) or QTableWidgetItem("0")).text()))
                 avg  = int(float((self.cam_tbl.item(r, 2) or QTableWidgetItem("1")).text()))
             except ValueError:
-                raise ValueError(f"Invalid exposure/averages in camera row {r+1}.")
+                raise ValueError(f"Invalid exposure/averages in detector row {r+1}.")
             if expo <= 0:
-                raise ValueError(f"Exposure must be > 0 in camera row {r+1}.")
+                raise ValueError(f"Exposure must be > 0 in detector row {r+1}.")
             if avg <= 0:
-                raise ValueError(f"Averages must be > 0 in camera row {r+1}.")
+                raise ValueError(f"Averages must be > 0 in detector row {r+1}.")
             cam_params[cam_key] = (expo, avg)
 
         settle = float(self.settle_sb.value())
@@ -665,7 +746,14 @@ class GridScanTab(QWidget):
             except Exception:
                 pass
 
-        
+        try:
+            from PyQt5.QtCore import Qt
+            ui_spec = REGISTRY.get("ui:avaspec_live")
+            if ui_spec is not None and hasattr(ui_spec, "set_spectrum_from_scan"):
+                self._worker.spec_updated.connect(ui_spec.set_spectrum_from_scan, Qt.QueuedConnection)
+        except Exception:
+            pass
+    
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.log.connect(self._log)

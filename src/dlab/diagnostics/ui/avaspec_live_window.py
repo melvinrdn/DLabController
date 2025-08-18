@@ -14,10 +14,22 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from dlab.boot import ROOT, get_config
 from dlab.hardware.wrappers.avaspec_controller import AvaspecController, AvaspecError
+from dlab.core.device_registry import REGISTRY
 
 def _data_root() -> str:
     cfg = get_config() or {}
     return str((ROOT / (cfg.get("paths", {}).get("data_root", "C:/data"))).resolve())
+
+def _ensure_dir(p): os.makedirs(p, exist_ok=True); return p
+
+def _append_avaspec_log(folder: str, spec_name: str, fn: str, int_ms: float, averages: int, comment: str) -> None:
+    log_path = os.path.join(folder, f"{spec_name}_log_{datetime.datetime.now():%Y-%m-%d}.log")
+    exists = os.path.exists(log_path)
+    with open(log_path, "a", encoding="utf-8") as f:
+        if not exists:
+            f.write("File Name\tIntegration_ms\tAverages\tComment\n")
+        f.write(f"{fn}\t{int_ms}\t{averages}\t{comment}\n")
+
 
 class LiveMeasurementThread(QThread):
     spectrum_signal = pyqtSignal(float, object)
@@ -59,8 +71,15 @@ class AvaspecLiveWindow(QWidget):
         self.line = None
         self.fit_line = None
         self.last_data = None
+        self.registry_key = None
 
         self._build_ui()
+        
+        try:
+            REGISTRY.register("ui:avaspec_live", self)
+        except Exception:
+            pass
+
 
     def _build_ui(self):
         main = QHBoxLayout(self)
@@ -151,10 +170,28 @@ class AvaspecLiveWindow(QWidget):
             self.ctrl = AvaspecController(self.handles[idx])
             self.ctrl.activate()
             self._ui_log("Spectrometer activated.")
-            self.btn_act.setEnabled(False); self.btn_deact.setEnabled(True)
+
+            from dlab.core.device_registry import REGISTRY
+            key = f"spectrometer:avaspec:spec_{idx+1}"
+
+            # évite doublons (même key ou même objet)
+            try:
+                for k, v in REGISTRY.items(prefix="spectrometer:avaspec:"):
+                    if k == key or v is self.ctrl:
+                        REGISTRY.unregister(k)
+            except Exception:
+                pass
+
+            REGISTRY.register(key, self.ctrl)
+            self.registry_key = key
+            self._ui_log(f"Registered '{key}' in device registry.")
+
+            self.btn_act.setEnabled(False)
+            self.btn_deact.setEnabled(True)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate: {e}")
             self._ui_log(f"Activate failed: {e}")
+
 
     def deactivate_hardware(self):
         try:
@@ -162,8 +199,19 @@ class AvaspecLiveWindow(QWidget):
                 self.ctrl.deactivate()
                 self._ui_log("Spectrometer deactivated.")
         finally:
+            # unregister propre
+            try:
+                if self.registry_key:
+                    from dlab.core.device_registry import REGISTRY
+                    REGISTRY.unregister(self.registry_key)
+                    self._ui_log(f"Unregistered '{self.registry_key}' from device registry.")
+            except Exception:
+                pass
+            self.registry_key = None
             self.ctrl = None
-            self.btn_act.setEnabled(True); self.btn_deact.setEnabled(False)
+            self.btn_act.setEnabled(True)
+            self.btn_deact.setEnabled(False)
+
 
     # ---- live ----
     def start_live(self):
@@ -251,13 +299,17 @@ class AvaspecLiveWindow(QWidget):
             return
 
         now = datetime.datetime.now()
-        folder = os.path.join(_data_root(), f"{now:%Y-%m-%d}", "AvaspecLiveWindow")
-        os.makedirs(folder, exist_ok=True)
-        safe_ts = now.strftime("%Y-%m-%d_%H-%M-%S")
-        fn = os.path.join(folder, f"AvaspecLiveWindow_Spectrum_{safe_ts}.txt")
+        # Folder name forced to lowercase 'avaspec' as requested
+        folder = os.path.join(_data_root(), f"{now:%Y-%m-%d}", "avaspec")
+        _ensure_dir(folder)
 
-        comment = self.comment_edit.text()
+        safe_ts = now.strftime("%Y-%m-%d_%H-%M-%S")
+        base = "Avaspec"
+        fn = os.path.join(folder, f"{base}_Spectrum_{safe_ts}.txt")
+
+        comment = self.comment_edit.text() or ""
         try:
+            wl = np.asarray(self.ctrl.wavelength, dtype=float)
             with open(fn, "w", encoding="utf-8") as f:
                 if comment:
                     f.write(f"# Comment: {comment}\n")
@@ -265,12 +317,74 @@ class AvaspecLiveWindow(QWidget):
                 f.write(f"# IntegrationTime_ms: {self.int_edit.text()}\n")
                 f.write(f"# Averages: {self.avg_edit.text()}\n")
                 f.write("Wavelength_nm;Counts\n")
-                for wl, c in zip(self.ctrl.wavelength, self.last_data):
-                    f.write(f"{wl:.6f};{float(c):.6f}\n")
+                for x, y in zip(wl, self.last_data):
+                    f.write(f"{float(x):.6f};{float(y):.6f}\n")
+
+            # append avaspec log
+            try:
+                int_ms = float(self.int_edit.text())
+            except Exception:
+                int_ms = float("nan")
+            try:
+                averages = int(self.avg_edit.text())
+            except Exception:
+                averages = 1
+
+            _append_avaspec_log(folder, base, os.path.basename(fn), int_ms, averages, comment)
+
             self._ui_log(f"Spectrum saved to {fn}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save: {e}")
             self._ui_log(f"Save failed: {e}")
+            
+            
+    def set_spectrum_from_scan(self, wl, counts):
+        try:
+            # si le live tourne, ne pas écraser
+            if self.thread is not None:
+                return
+
+            import numpy as np
+            wl = np.asarray(wl, dtype=float)
+            counts = np.asarray(counts, dtype=float)
+            self.last_data = counts  # pour le bouton 'Save Spectrum'
+
+            # initialisation/MAJ des courbes
+            if self.line is None:
+                (self.line,) = self.ax.plot(wl, counts, label="Data")
+            else:
+                # si taille identique : MAJ y ; sinon on replot
+                if self.line.get_xdata() is not None and len(self.line.get_xdata()) == len(wl):
+                    self.line.set_ydata(counts)
+                else:
+                    self.ax.cla()
+                    self.ax.set_xlabel("Wavelength (nm)")
+                    self.ax.set_ylabel("Counts")
+                    self.ax.grid(True)
+                    (self.line,) = self.ax.plot(wl, counts, label="Data")
+                    # reset éventuel de la courbe de fit
+                    if self.fit_line is not None:
+                        self.fit_line.remove()
+                        self.fit_line = None
+                        self.ax.set_title("")
+
+            # autoscale/log comme dans update_spectrum()
+            if self.cb_log.isChecked():
+                self.ax.set_yscale("log")
+                import numpy as np
+                ymin = max(1e-12, float(np.nanmin(counts[np.isfinite(counts)])))
+                self.ax.set_ylim(bottom=ymin)
+            else:
+                self.ax.set_yscale("linear")
+
+            if self.cb_autoscale.isChecked():
+                self.ax.relim()
+                self.ax.autoscale_view()
+
+            self.canvas.draw_idle()
+        except Exception as e:
+            self._ui_log(f"Scan-plot update failed: {e}")
+
 
     # ---- lifecycle ----
     def closeEvent(self, event):
@@ -278,11 +392,27 @@ class AvaspecLiveWindow(QWidget):
             self.stop_live()
         finally:
             try:
-                if self.ctrl: self.ctrl.deactivate()
+                if self.ctrl:
+                    self.ctrl.deactivate()
             finally:
+                # idem: clean registry si besoin
+                try:
+                    if self.registry_key:
+                        from dlab.core.device_registry import REGISTRY
+                        REGISTRY.unregister(self.registry_key)
+                        self._ui_log(f"Unregistered '{self.registry_key}' from device registry.")
+                except Exception:
+                    pass
+                
+                try:
+                    REGISTRY.unregister("ui:avaspec_live")
+                except Exception:
+                    pass
+                self.registry_key = None
                 self.ctrl = None
         self.closed.emit()
         super().closeEvent(event)
+
 
 if __name__ == "__main__":
     import sys
