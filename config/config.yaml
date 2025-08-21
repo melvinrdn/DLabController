@@ -28,7 +28,7 @@ zaber:
   port: COM4
   baud: 9600
   range:
-    min: 23.0
+    min: 24.0
     max: 25.0
 
 waveplates:

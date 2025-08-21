@@ -7,11 +7,17 @@ from typing import Iterable, List
 import numpy as np
 from PIL import Image, PngImagePlugin
 
-from PyQt5.QtCore import QObject, pyqtSignal, QThread
+from PyQt5.QtCore import QObject, pyqtSignal, QThread, Qt
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit,
-    QGroupBox, QMessageBox, QDoubleSpinBox, QComboBox, QProgressBar, QCheckBox
+    QGroupBox, QMessageBox, QDoubleSpinBox, QComboBox, QProgressBar, QCheckBox,
+    QSizePolicy, QApplication
 )
+
+
+# --- matplotlib embed ---
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
@@ -51,6 +57,9 @@ class GCWorker(QObject):
     progress = pyqtSignal(int, int)      # (i, n)
     log = pyqtSignal(str)
     finished = pyqtSignal(str)           # scan log path
+    live_point = pyqtSignal(float, float)  # NEW: (position_mm, sum_counts)
+    best_ready = pyqtSignal(float, float)  # NEW: (best_pos_mm, best_sum)
+
 
     def __init__(
         self,
@@ -60,9 +69,10 @@ class GCWorker(QObject):
         exposure_us: int,
         averages: int,
         settle_s: float,
-        scan_name: str,
         comment: str,
+        mcp_voltage: str,                # logged per-row
         do_background: bool = False,
+        existing_scan_log: str | None = None,  # append to an existing log if provided
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -72,14 +82,47 @@ class GCWorker(QObject):
         self.exposure_us = int(exposure_us)
         self.averages = int(max(1, averages))
         self.settle_s = float(settle_s)
-        self.scan_name = scan_name
+        self.scan_name = "grating_compressor"   # fixed
         self.comment = comment
+        self.mcp_voltage = str(mcp_voltage)
         self.do_background = bool(do_background)
+        self.existing_scan_log = existing_scan_log
         self.abort = False
+        self._best_sum = float("-inf")
+        self._best_pos = None
 
     def _emit(self, msg: str) -> None:
         self.log.emit(msg)
         logger.info(msg)
+
+    def _open_or_create_scan_log(self, root: Path, now: datetime.datetime) -> Path:
+        """
+        If an existing log path is provided (e.g. for background-only worker), use it.
+        Otherwise, create a new numbered log file and write header + comment line.
+        """
+        if self.existing_scan_log:
+            scan_log = Path(self.existing_scan_log)
+            if not scan_log.exists():
+                scan_log.parent.mkdir(parents=True, exist_ok=True)
+                with open(scan_log, "w", encoding="utf-8") as f:
+                    f.write("ImageFile\tStageKey\tPosition_mm\tExposure_us\tAverages\tMCP_Voltage\n")
+                    f.write(f"# {self.comment}\n")
+            return scan_log
+
+        scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
+        scan_dir.mkdir(parents=True, exist_ok=True)
+        date_str = now.strftime("%Y-%m-%d")
+        idx = 1
+        while True:
+            candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
+            if not candidate.exists():
+                break
+            idx += 1
+        scan_log = candidate
+        with open(scan_log, "w", encoding="utf-8") as f:
+            f.write("ImageFile\tStageKey\tPosition_mm\tExposure_us\tAverages\tMCP_Voltage\n")
+            f.write(f"# {self.comment}\n")
+        return scan_log
 
     def run(self) -> None:
         import datetime
@@ -106,7 +149,6 @@ class GCWorker(QObject):
             elif hasattr(camwin, "setExposureUS"):
                 camwin.setExposureUS(self.exposure_us)
             elif hasattr(camwin, "set_exposure"):
-                # some wrappers expect µs, some s; your Andor wrapper uses µs
                 camwin.set_exposure(self.exposure_us)
         except Exception as e:
             self._emit(f"Warning: failed to preset exposure on '{self.andor_key}': {e}")
@@ -114,13 +156,8 @@ class GCWorker(QObject):
         now = datetime.datetime.now()
         root = _data_root()
 
-        # scan log (under Scans/scan_name)
-        scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
-        scan_dir.mkdir(parents=True, exist_ok=True)
-        scan_log = scan_dir / f"{self.scan_name}_log_{now:%Y-%m-%d}.log"
-        if not scan_log.exists():
-            with open(scan_log, "w", encoding="utf-8") as f:
-                f.write("ImageFile\tStageKey\tPosition_mm\tExposure_us\tAverages\tComment\n")
+        # open or create the appropriate log
+        scan_log = self._open_or_create_scan_log(root, now)
 
         total = len(self.positions)
         done = 0
@@ -128,7 +165,7 @@ class GCWorker(QObject):
         for pos in self.positions:
             if self.abort:
                 self._emit("Scan aborted.")
-                self.finished.emit("")
+                self.finished.emit(scan_log.as_posix())
                 return
 
             # move stage
@@ -170,6 +207,18 @@ class GCWorker(QObject):
             cam_day = root / f"{now:%Y-%m-%d}" / cam_name
             cam_fn = f"{cam_name}_{tag}_{ts_ms}.png"
 
+            # live metric: sum of pixels
+            try:
+                # ensure uint16 to avoid overflow in Python int sum
+                sum_counts = float(np.sum(frame_u16, dtype=np.uint64))
+            except Exception:
+                sum_counts = float(np.sum(frame_u16))
+                
+            # update best (only for main images)
+            if sum_counts > self._best_sum:
+                self._best_sum = sum_counts
+                self._best_pos = float(pos)
+
             try:
                 _save_png_with_meta(
                     cam_day, cam_fn, frame_u16,
@@ -182,22 +231,26 @@ class GCWorker(QObject):
                 self.progress.emit(done, total)
                 continue
 
-            # append scan log
+            # append scan log row
             try:
                 with open(scan_log, "a", encoding="utf-8") as f:
-                    f.write(f"{cam_fn}\t{self.stage_key}\t{pos:.6f}\t{exp_meta}\t{self.averages}\t{self.comment}\n")
+                    f.write(f"{cam_fn}\t{self.stage_key}\t{pos:.6f}\t{exp_meta}\t{self.averages}\t{self.mcp_voltage}\n")
             except Exception as e:
                 self._emit(f"Scan log write failed: {e}")
+
+            # emit live point for the viewer
+            try:
+                self.live_point.emit(float(pos), float(sum_counts))
+            except Exception:
+                pass
 
             self._emit(f"Saved {cam_fn} @ {pos:.3f} mm (exp {exp_meta} µs, avg {self.averages}).")
             done += 1
             self.progress.emit(done, total)
 
-        # Optional background pass
+        # Optional background pass (appends to same log; NOT sent to live plot)
         if self.do_background and (not self.abort):
-            # ask user handled in UI; here we only run if requested
             try:
-                # single background frame at current position
                 frame_u16, meta = camwin.grab_frame_for_scan(
                     averages=self.averages,
                     background=True,
@@ -226,12 +279,74 @@ class GCWorker(QObject):
                     )
                     _append_cam_log(cam_day, cam_name, cam_fn, exp_meta, self.comment)
                     with open(scan_log, "a", encoding="utf-8") as f:
-                        f.write(f"{cam_fn}\t{self.stage_key}\tBG\t{exp_meta}\t{self.averages}\t{self.comment}\n")
+                        f.write(f"{cam_fn}\t{self.stage_key}\tBG\t{exp_meta}\t{self.averages}\t{self.mcp_voltage}\n")
                     self._emit(f"Saved background: {cam_fn}")
                 except Exception as e:
                     self._emit(f"Background save/log failed: {e}")
-
+                    
+        try:
+            if self._best_pos is not None and np.isfinite(self._best_sum):
+                self.best_ready.emit(self._best_pos, float(self._best_sum))
+        except Exception:
+            pass
+                    
         self.finished.emit(scan_log.as_posix())
+
+
+# ---------- live viewer ----------
+class GCScanLiveView(QWidget):
+    """Floating live plot window: sum of pixels vs grating position (mm)."""
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(None)  # top-level window
+        self.setWindowTitle("GC scan — live view (sum vs position)")
+        self.setWindowFlags(self.windowFlags() | Qt.Window)
+        self.setWindowModality(Qt.NonModal)
+        self.setMinimumSize(700, 420)
+        self.resize(880, 520)
+
+        self._xs: List[float] = []
+        self._ys: List[float] = []
+
+        layout = QVBoxLayout(self)
+        self.figure = Figure(figsize=(8, 5))  # un peu plus compact
+        self.figure.subplots_adjust(left=0.12, right=0.98, top=0.92, bottom=0.12)
+        self.canvas = FigureCanvas(self.figure)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout.addWidget(self.canvas)
+
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_xlabel("Position (mm)")
+        self.ax.set_ylabel("Sum of pixels (a.u.)")
+        self.ax.grid(True, which="both", linestyle="--", alpha=0.3)
+        (self.line,) = self.ax.plot([], [], linestyle="-")  # <-- pas de marker
+        self.canvas.draw_idle()
+
+        self._center_on_screen()
+
+    def _center_on_screen(self) -> None:
+        try:
+            screen_geo = QApplication.primaryScreen().availableGeometry()
+            geo = self.frameGeometry()
+            geo.moveCenter(screen_geo.center())
+            self.move(geo.topLeft())
+        except Exception:
+            pass
+
+    def reset(self) -> None:
+        self._xs.clear()
+        self._ys.clear()
+        self.line.set_data([], [])
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw_idle()
+
+    def add_point(self, x: float, y: float) -> None:
+        self._xs.append(x)
+        self._ys.append(y)
+        self.line.set_data(self._xs, self._ys)
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw_idle()
 
 
 # ---------- tab ----------
@@ -243,8 +358,12 @@ class GCScanTab(QWidget):
         super().__init__(parent)
         self._thread: QThread | None = None
         self._worker: GCWorker | None = None
+        self._last_scan_log_path: str | None = None  # track last log for background
+        self._live_view: GCScanLiveView | None = None
         self._build_ui()
         self._refresh_devices()
+        self._best_pos: float | None = None  # NEW
+        self._best_sum: float | None = None  # NEW
 
     def _build_ui(self) -> None:
         main = QVBoxLayout(self)
@@ -263,27 +382,35 @@ class GCScanTab(QWidget):
         # Parameters
         p_box = QGroupBox("Scan parameters")
         pl = QHBoxLayout(p_box)
-        self.start_sb  = QDoubleSpinBox(); self.start_sb.setDecimals(3); self.start_sb.setRange(-1e6, 1e6); self.start_sb.setValue(0.0)
-        self.end_sb    = QDoubleSpinBox(); self.end_sb.setDecimals(3);   self.end_sb.setRange(-1e6, 1e6);   self.end_sb.setValue(10.0)
-        self.step_sb   = QDoubleSpinBox(); self.step_sb.setDecimals(3);  self.step_sb.setRange(1e-6, 1e6);  self.step_sb.setValue(0.5)
+        self.start_sb  = QDoubleSpinBox(); self.start_sb.setDecimals(3); self.start_sb.setRange(-1e6, 1e6); self.start_sb.setValue(24.0)
+        self.end_sb    = QDoubleSpinBox(); self.end_sb.setDecimals(3);   self.end_sb.setRange(-1e6, 1e6);   self.end_sb.setValue(25.0)
+        self.step_sb   = QDoubleSpinBox(); self.step_sb.setDecimals(3);  self.step_sb.setRange(1e-6, 1e6);  self.step_sb.setValue(0.005)
         self.settle_sb = QDoubleSpinBox(); self.settle_sb.setDecimals(2);self.settle_sb.setRange(0.0, 60.0);self.settle_sb.setValue(0.30)
-        self.exp_sb    = QDoubleSpinBox(); self.exp_sb.setDecimals(0);   self.exp_sb.setRange(1, 5_000_000);self.exp_sb.setValue(5_000)  # µs
+        self.exp_sb    = QDoubleSpinBox(); self.exp_sb.setDecimals(0);   self.exp_sb.setRange(1, 5_000_000);self.exp_sb.setValue(3000000)  # µs
         self.avg_sb    = QDoubleSpinBox(); self.avg_sb.setDecimals(0);   self.avg_sb.setRange(1, 1000);     self.avg_sb.setValue(1)
-        self.name_edit = QLineEdit("grating_compressor")
-        self.comment   = QLineEdit("")
+
+        # Comment (line 2 of log) and MCP Voltage (per-row column)
+        self.comment_edit = QLineEdit("")
+        self.mcp_edit = QLineEdit("")  # free text, e.g. "1600 V" or "1.6 kV"
+
         pl.addWidget(QLabel("Start (mm)"));   pl.addWidget(self.start_sb)
         pl.addWidget(QLabel("End (mm)"));     pl.addWidget(self.end_sb)
         pl.addWidget(QLabel("Step (mm)"));    pl.addWidget(self.step_sb)
         pl.addWidget(QLabel("Settle (s)"));   pl.addWidget(self.settle_sb)
         pl.addWidget(QLabel("Exposure (µs)"));pl.addWidget(self.exp_sb)
         pl.addWidget(QLabel("Averages"));     pl.addWidget(self.avg_sb)
+        pl.addWidget(QLabel("MCP Voltage"));  pl.addWidget(self.mcp_edit)
+        pl.addWidget(QLabel("Comment"));      pl.addWidget(self.comment_edit, 1)
         main.addWidget(p_box)
 
         # Options
         opt = QGroupBox("Options")
         ol = QHBoxLayout(opt)
         self.bg_cb = QCheckBox("Record background after scan"); self.bg_cb.setChecked(False)
-        ol.addWidget(self.bg_cb); ol.addStretch(1)
+        self.goto_best_cb = QCheckBox("Go to best compression after scan")  # NEW
+        ol.addWidget(self.bg_cb)
+        ol.addWidget(self.goto_best_cb)  # NEW
+        ol.addStretch(1)
         main.addWidget(opt)
 
         # Controls
@@ -291,7 +418,16 @@ class GCScanTab(QWidget):
         self.btn_start = QPushButton("Start"); self.btn_start.clicked.connect(self._start)
         self.btn_abort = QPushButton("Abort"); self.btn_abort.setEnabled(False); self.btn_abort.clicked.connect(self._abort)
         self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)
-        ctl.addWidget(self.btn_start); ctl.addWidget(self.btn_abort); ctl.addWidget(self.prog, 1)
+
+        # NEW: Live view toggle
+        self.btn_live = QPushButton("Live view (GC scan)")
+        self.btn_live.setCheckable(True)
+        self.btn_live.toggled.connect(self._toggle_live_view)
+
+        ctl.addWidget(self.btn_start)
+        ctl.addWidget(self.btn_abort)
+        ctl.addWidget(self.btn_live)
+        ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
 
         # Log
@@ -336,8 +472,8 @@ class GCScanTab(QWidget):
             settle = float(self.settle_sb.value())
             expo   = int(self.exp_sb.value())
             avg    = int(self.avg_sb.value())
-            name   = self.name_edit.text().strip() or "grating_compressor"
-            comment= self.comment.text()
+            comment = self.comment_edit.text()
+            mcp_voltage = self.mcp_edit.text()
 
         except Exception as e:
             QMessageBox.critical(self, "Invalid parameters", str(e))
@@ -352,21 +488,44 @@ class GCScanTab(QWidget):
             exposure_us=expo,
             averages=avg,
             settle_s=settle,
-            scan_name=name,
             comment=comment,
-            do_background=False,   # handled by UI prompt below
+            mcp_voltage=mcp_voltage,
+            do_background=False,                 # background handled after
+            existing_scan_log=None,              # will be created
         )
+        # reset best for this run
+        self._best_pos = None
+        self._best_sum = None
+
+        # connect live stream if viewer is open
+        if self._live_view:
+            self._live_view.reset()
+            self._worker.live_point.connect(self._live_view.add_point)
+
+        # NEW: receive best at end
+        self._worker.best_ready.connect(self._on_best_ready)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.log.connect(self._log)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._finished)
+
+        # connect live stream if viewer is open
+        if self._live_view:
+            self._live_view.reset()
+            self._worker.live_point.connect(self._live_view.add_point)
+
         self._thread.finished.connect(self._thread.deleteLater)
 
         self.prog.setMaximum(len(pos)); self.prog.setValue(0)
         self.btn_start.setEnabled(False); self.btn_abort.setEnabled(True)
         self._thread.start()
         self._log("Grating compressor scan started…")
+        
+    def _on_best_ready(self, pos_mm: float, sum_val: float) -> None:
+        self._best_pos = float(pos_mm)
+        self._best_sum = float(sum_val)
+
 
     def _abort(self) -> None:
         if self._worker:
@@ -381,19 +540,36 @@ class GCScanTab(QWidget):
 
     def _finished(self, log_path: str) -> None:
         if log_path:
+            self._last_scan_log_path = log_path
             self._log(f"Scan finished. Log: {log_path}")
         else:
             self._log("Scan finished with errors or aborted.")
+            self._last_scan_log_path = None
 
-        # optional background capture after scan
-        if self.bg_cb.isChecked():
+        # NEW: print best in the UI log
+        if self._best_pos is not None and self._best_sum is not None:
+            self._log(f"Best compression at {self._best_pos:.3f} mm (sum {self._best_sum:.0f}).")
+
+            # Optionally go to best position
+            if self.goto_best_cb.isChecked():
+                try:
+                    stg = REGISTRY.get("stage:zaber:grating_compressor")
+                    if stg is None:
+                        raise RuntimeError("Stage not found to move to best compression.")
+                    self._log(f"Moving to best compression: {self._best_pos:.3f} mm…")
+                    stg.move_to(float(self._best_pos), blocking=True)
+                    self._log("Stage moved to best compression.")
+                except Exception as e:
+                    self._log(f"Failed to move to best compression: {e}")
+
+        # optional background capture after scan — append to the SAME log
+        if self.bg_cb.isChecked() and self._last_scan_log_path:
             reply = QMessageBox.information(
                 self, "Background",
                 "Block the beam, then click OK to record one background image.",
                 QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok
             )
-            if reply == QMessageBox.Ok and self._worker and not self._worker.abort:
-                # reuse same worker in a tiny 1-step pass at current position
+            if reply == QMessageBox.Ok and (not self._worker or not self._worker.abort):
                 try:
                     cam_key = self.cam_combo.currentText().strip()
                     stage_key = "stage:zaber:grating_compressor"
@@ -401,20 +577,21 @@ class GCScanTab(QWidget):
                     w = GCWorker(
                         stage_key=stage_key,
                         andor_key=cam_key,
-                        positions=[],
+                        positions=[],                    # no moves; only background
                         exposure_us=int(self.exp_sb.value()),
                         averages=int(self.avg_sb.value()),
                         settle_s=0.0,
-                        scan_name=self.name_edit.text().strip() or "grating_compressor",
-                        comment=self.comment.text(),
+                        comment=self.comment_edit.text(),
+                        mcp_voltage=self.mcp_edit.text(),
                         do_background=True,
+                        existing_scan_log=self._last_scan_log_path,  # append here
                     )
                     t = QThread(self)
                     w.moveToThread(t)
                     t.started.connect(w.run)
                     w.log.connect(self._log)
-                    # no progress bar for bg
-                    def _bg_done(_path): 
+                    # background frames are NOT plotted live (by design here)
+                    def _bg_done(_path):
                         self._log("Background captured.")
                         t.quit(); t.wait()
                     w.finished.connect(_bg_done)
@@ -427,6 +604,20 @@ class GCScanTab(QWidget):
         if self._thread and self._thread.isRunning():
             self._thread.quit(); self._thread.wait()
         self._thread = None; self._worker = None
+
+    def _toggle_live_view(self, checked: bool) -> None:
+        if checked:
+            if self._live_view is None:
+                self._live_view = GCScanLiveView(None)  # top-level, no parent
+            self._live_view.reset()
+            self._live_view._center_on_screen()
+            self._live_view.show()
+            self._live_view.raise_()
+            self._live_view.activateWindow()
+        else:
+            if self._live_view:
+                self._live_view.hide()
+
 
     def _log(self, msg: str) -> None:
         ts = datetime.datetime.now().strftime("%H:%M:%S")
