@@ -7,12 +7,12 @@ import numpy as np
 from pylablib.devices import Andor
 
 # Defaults (microseconds)
-DEFAULT_EXPOSURE_US = 100_000  # 100 ms
+DEFAULT_EXPOSURE_US = 500_000  # 100 ms
 DEFAULT_AVERAGES = 1
 
 # Exposure limits (microseconds) — tune to your camera
 MIN_EXPOSURE_US = 1_000
-MAX_EXPOSURE_US = 1_000_000
+MAX_EXPOSURE_US = 10000000
 
 class AndorControllerError(Exception):
     """Raised for Andor camera operation errors."""

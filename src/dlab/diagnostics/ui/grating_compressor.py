@@ -69,7 +69,6 @@ class GratingCompressorWindow(QWidget):
 
         row1 = QHBoxLayout()
         self.target_abs = QLineEdit(); self.target_abs.setPlaceholderText("Absolute position (mm)")
-        self.target_abs.setValidator(QDoubleValidator(-1e6, 1e6, 3, self))
         self.btn_move_abs = QPushButton("Move To")
         self.btn_move_abs.setEnabled(False)
         self.btn_move_abs.clicked.connect(self._on_move_abs)
@@ -161,9 +160,9 @@ class GratingCompressorWindow(QWidget):
                 range_min=self.range_min,
                 range_max=self.range_max,
             )
-            stg.activate(homing=True)
+            stg.activate(homing=False)
             self.stage = stg
-            self._log(f"Activated on {port} @ {baud}. Homed.")
+            self._log(f"Activated on {port} @ {baud}.")
             # registry
             key = "stage:zaber:grating_compressor"
             try:
