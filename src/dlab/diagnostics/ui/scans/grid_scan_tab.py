@@ -2,8 +2,8 @@
 from __future__ import annotations
 import datetime, time
 from pathlib import Path
-from typing import Iterable, Dict, List, Tuple
-import sip 
+from typing import Iterable, Dict, List, Tuple, Optional
+import sip
 import numpy as np
 from PIL import Image, PngImagePlugin
 
@@ -37,33 +37,24 @@ def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta
     img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
     return path
 
-def _append_daheng_log(cam_folder: Path, cam_name: str, fn: str, exposure_us: int, comment: str) -> None:
-    log_path = cam_folder / f"{cam_name}_log_{datetime.datetime.now():%Y-%m-%d}.log"
-    header = "File Name\tExposure_us\tGain\tComment\n"
-    exists = log_path.exists()
-    with open(log_path, "a", encoding="utf-8") as f:
-        if not exists:
-            f.write(header)
-        f.write(f"{fn}\t{exposure_us}\t\t{comment}\n")
-
-
 # ---------- worker ----------
 class GridScanWorker(QObject):
     progress = pyqtSignal(int, int)
     log = pyqtSignal(str)
     finished = pyqtSignal(str)
     andor_frame = pyqtSignal(object, object, str)  # (axis_indices, frame_u16, camera_key)
-    spec_updated = pyqtSignal(object, object)  # (wavelength, counts)
+    spec_updated = pyqtSignal(object, object)      # (wavelength, counts)
     
     def __init__(
         self,
         axes: List[Tuple[str, List[float]]],      # [(stage_key, [pos...]), ...]
-        camera_params: Dict[str, Tuple[int,int]], # camera_key -> (exposure_us, averages)
+        camera_params: Dict[str, Tuple[int,int]], # camera_key -> (exposure_us, averages) OR (int_ms, averages)
         settle_s: float,
         scan_name: str,
         comment: str,
         mcp_voltage: str,                          # logged only
         background: bool = False,
+        existing_scan_log: Optional[str] = None,   # NEW: append to this log if provided
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -74,6 +65,7 @@ class GridScanWorker(QObject):
         self.comment = comment
         self.mcp_voltage = mcp_voltage
         self.background = bool(background)
+        self.existing_scan_log = existing_scan_log
         self.abort = False
 
     def _emit(self, msg: str) -> None:
@@ -116,6 +108,7 @@ class GridScanWorker(QObject):
                 return
             stages[stage_key] = stg
 
+        # --- resolve detectors ---
         detectors = {}
         for det_key, (expo_us_or_int_ms, _avg) in self.camera_params.items():
             dev = REGISTRY.get(det_key)
@@ -124,7 +117,6 @@ class GridScanWorker(QObject):
                 self.finished.emit("")
                 return
 
-            # feature detection: camera-like vs spectro-like
             is_camera = hasattr(dev, "grab_frame_for_scan")
             is_spectro = (hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"))
 
@@ -141,10 +133,9 @@ class GridScanWorker(QObject):
                     elif hasattr(dev, "setExposureUS"):
                         dev.setExposureUS(int(expo_us_or_int_ms))
                     elif hasattr(dev, "set_exposure"):
-                        # selon ton wrapper Andor (µs ou s), adapte si besoin
                         dev.set_exposure(int(expo_us_or_int_ms))
                 else:
-                    pass # Avaspec spectro, no preset needed
+                    pass  # Avaspec: no preset needed
             except Exception as e:
                 self._emit(f"Warning: failed to preset on '{det_key}': {e}")
 
@@ -153,22 +144,43 @@ class GridScanWorker(QObject):
         now = datetime.datetime.now()
         root = _data_root()
 
-        # --- scan folder + log header ---
+        # --- per-scan log selection/creation ---
         scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
         scan_dir.mkdir(parents=True, exist_ok=True)
-        header_cols = []
-        for i, (ax, _) in enumerate(self.axes, 1):
-            header_cols += [f"Stage_{i}", f"Pos_{i}"]
-        header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage", "Comment"]
-        scan_log = scan_dir / f"{self.scan_name}_log_{now:%Y-%m-%d}.log"
-        if not scan_log.exists():
+
+        if self.existing_scan_log:
+            scan_log = Path(self.existing_scan_log)
+            # if somehow missing, create with header+comment
+            if not scan_log.exists():
+                header_cols = []
+                for i, (ax, _) in enumerate(self.axes, 1):
+                    header_cols += [f"Stage_{i}", f"Pos_{i}"]
+                header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage"]
+                with open(scan_log, "w", encoding="utf-8") as f:
+                    f.write("\t".join(header_cols) + "\n")
+                    f.write(f"# {self.comment}\n")
+        else:
+            date_str = f"{now:%Y-%m-%d}"
+            idx = 1
+            while True:
+                candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
+                if not candidate.exists():
+                    break
+                idx += 1
+            scan_log = candidate
+
+            # header line + comment line
+            header_cols = []
+            for i, (ax, _) in enumerate(self.axes, 1):
+                header_cols += [f"Stage_{i}", f"Pos_{i}"]
+            header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage"]
             with open(scan_log, "w", encoding="utf-8") as f:
                 f.write("\t".join(header_cols) + "\n")
+                f.write(f"# {self.comment}\n")
 
         # --- helpers for names/saving ---
         def _pretty_from_key(cam_key: str) -> str:
-            # "camera:daheng:dahengcam_1" -> "DahengCam_1", "camera:andor:andorcam_1" -> "AndorCam_1"
-            suffix = cam_key.split(":")[-1]  # "dahengcam_1"
+            suffix = cam_key.split(":")[-1]
             base, *rest = suffix.split("_")
             if base.lower().endswith("cam"):
                 vendor = base[:-3]
@@ -199,23 +211,12 @@ class GridScanWorker(QObject):
                     f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
             return path
 
-        def _append_avaspec_log(spec_folder: Path, spec_name: str, fn: str, int_ms: float, averages: int, comment: str) -> None:
-            log_path = spec_folder / f"{spec_name}_log_{datetime.datetime.now():%Y-%m-%d}.log"
-            header = "File Name\tIntegration_ms\tAverages\tComment\n"
-            exists = log_path.exists()
-            with open(log_path, "a", encoding="utf-8") as f:
-                if not exists:
-                    f.write(header)
-                f.write(f"{fn}\t{int_ms}\t{averages}\t{comment}\n")
-
-
         def _save_image(det_key: str, dev, frame_u16: np.ndarray, exposure_us: int, tag: str, meta: dict | None) -> str:
             det_name = _detector_display_name(det_key, dev, meta)
             det_day = root / f"{now:%Y-%m-%d}" / det_name
             ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             fn = f"{det_name}_{tag}_{ts_ms}.png"
             _save_png_with_meta(det_day, fn, frame_u16, {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
-            _append_daheng_log(det_day, det_name, fn, exposure_us, self.comment)   # reuse daheng-style
             return fn
         
         def _save_spectrum(det_key: str, dev, wl_nm: np.ndarray, counts: np.ndarray, int_ms: float, averages: int) -> str:
@@ -231,22 +232,10 @@ class GridScanWorker(QObject):
                 "Comment": self.comment,
             }
             _save_txt_with_meta(det_day, fn, wl_nm, counts, header)
-            _append_avaspec_log(det_day, safe_name, fn, int_ms, averages, self.comment)
             return fn
 
-
-        # --- indexing utilities (raster, last axis is inner loop) ---
+        # --- totals for progress ---
         lengths = [len(pos) for _, pos in self.axes]
-        def _cartesian_indices():
-            def rec(level: int, idxs: list[int]):
-                if level == len(lengths):
-                    yield list(idxs); return
-                for i in range(lengths[level]):
-                    idxs.append(i)
-                    yield from rec(level + 1, idxs)
-                    idxs.pop()
-            yield from rec(0, [])
-
         total_points = 1
         for L in lengths:
             total_points *= max(1, L)
@@ -255,7 +244,7 @@ class GridScanWorker(QObject):
 
         # --- main loop ---
         try:
-            for idxs in _cartesian_indices():
+            for idxs in self._cartesian_indices():
                 if self.abort:
                     self._emit("Scan aborted.")
                     self.finished.emit("")
@@ -313,10 +302,8 @@ class GridScanWorker(QObject):
 
                         else:
                             # SPECTRO PATH (Avaspec)
-                            # Try a scan-oriented API, otherwise do N averages with measure_spectrum
                             wl = getattr(dev, "wavelength", None)
                             if wl is None:
-                                # certain wrappers exposent get_wavelengths()
                                 wl = np.asarray(dev.get_wavelengths(), dtype=float)
                             else:
                                 wl = np.asarray(wl, dtype=float)
@@ -326,7 +313,6 @@ class GridScanWorker(QObject):
                                 counts = np.asarray(counts, dtype=float)
                                 int_ms = float((meta or {}).get("Integration_ms", float(exposure_or_int)))
                             else:
-                                # fallback: mesure et moyenne côté appli
                                 _buf = []
                                 for _ in range(int(averages)):
                                     _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
@@ -342,11 +328,11 @@ class GridScanWorker(QObject):
                             except Exception:
                                 pass    
 
-                        # append scan log row
+                        # append scan log row (no Comment column)
                         row = []
                         for ax, pos in combo:
                             row += [ax, f"{pos:.9f}"]
-                        row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage), self.comment]
+                        row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage)]
                         with open(scan_log, "a", encoding="utf-8") as f:
                             f.write("\t".join(row) + "\n")
 
@@ -363,7 +349,6 @@ class GridScanWorker(QObject):
                             f" on {det_key}: {e}"
                         )
 
-
                     done += 1
                     self.progress.emit(done, total_images)
 
@@ -379,7 +364,7 @@ class GridScanWorker(QObject):
 class GridScanTab(QWidget):
     """
     Multiple axes (stages) + multiple cameras with fixed exposure & per-camera averages.
-    Background pass optional.
+    Background pass optional (appended to the same scan log).
     """
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -388,6 +373,7 @@ class GridScanTab(QWidget):
         self._live_view: AndorGridScanLiveView | None = None
         self._doing_background = False
         self._cached_params = None
+        self._last_scan_log_path: Optional[str] = None  # NEW: remember last log for background append
         self._build_ui()
         self._refresh_devices()
 
@@ -433,7 +419,7 @@ class GridScanTab(QWidget):
         axes_l.addLayout(rm_row)
         main.addWidget(axes_box)
 
-        # Cameras with fixed exposure & averages
+        # Detectors
         cams_box = QGroupBox("Detectors")
         cams_l = QVBoxLayout(cams_box)
 
@@ -446,7 +432,7 @@ class GridScanTab(QWidget):
         cam_pick_row.addWidget(self.add_cam_btn)
         cams_l.addLayout(cam_pick_row)
 
-        # Camera table: CameraKey | Exposure_us | Averages
+        # Camera table: DetectorKey | Exposure_us/Int_ms | Averages
         self.cam_tbl = QTableWidget(0, 3)
         self.cam_tbl.setHorizontalHeaderLabels(["DetectorsKey", "Exposure_us/Int_ms", "Averages"])
         self.cam_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -464,7 +450,7 @@ class GridScanTab(QWidget):
         params = QGroupBox("Scan parameters")
         p = QHBoxLayout(params)
         self.settle_sb = QDoubleSpinBox(); self.settle_sb.setDecimals(2); self.settle_sb.setRange(0.0, 60.0); self.settle_sb.setValue(0.50)
-        self.scan_name = QLineEdit("grid_scan")
+        self.scan_name = QLineEdit("")   # NO DEFAULT NAME
         self.comment   = QLineEdit("")
         self.mcp_voltage = QLineEdit("")   # logged only
         p.addWidget(QLabel("Settle (s)")); p.addWidget(self.settle_sb)
@@ -519,7 +505,6 @@ class GridScanTab(QWidget):
         self.axes_tbl.selectRow(dest)
 
     def _swap_axis_rows(self, r1: int, r2: int) -> None:
-        # swap cell contents between two rows
         for c in range(self.axes_tbl.columnCount()):
             i1 = self.axes_tbl.item(r1, c)
             i2 = self.axes_tbl.item(r2, c)
@@ -570,9 +555,9 @@ class GridScanTab(QWidget):
             if k.startswith("stage:serial:"):
                 continue
             self.stage_picker.addItem(k)
-        # cameras (daheng + andor)
+        # cameras (daheng + andor + avaspec)
         self.cam_picker.clear()
-        for prefix in ("camera:daheng:", "camera:andor:","spectrometer:avaspec:"):
+        for prefix in ("camera:daheng:", "camera:andor:", "spectrometer:avaspec:"):
             for k in REGISTRY.keys(prefix):
                 if ":index:" in k:
                     continue
@@ -632,7 +617,9 @@ class GridScanTab(QWidget):
             cam_params[cam_key] = (expo, avg)
 
         settle = float(self.settle_sb.value())
-        scan_name = self.scan_name.text().strip() or "grid_scan"
+        scan_name = self.scan_name.text().strip()
+        if not scan_name:
+            raise ValueError("Please enter a scan name before starting.")
         comment = self.comment.text()
         mcp_voltage = self.mcp_voltage.text().strip()
 
@@ -648,7 +635,7 @@ class GridScanTab(QWidget):
     # --- helpers to read current UI without full validation ---
     def _read_axes_from_table(self):
         """Return [(stage_key, [positions...]), ...] using current table values."""
-        import numpy as np  # local import in case module top didn't import np
+        import numpy as np
         axes = []
         for r in range(self.axes_tbl.rowCount()):
             stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
@@ -660,7 +647,6 @@ class GridScanTab(QWidget):
                 step  = float((self.axes_tbl.item(r, 3) or QTableWidgetItem("1")).text())
                 if step <= 0:
                     continue
-                # build positions (inclusive of end), raster order, last axis is inner
                 if end >= start:
                     n = int(np.floor((end - start) / step))
                     pos = [start + i*step for i in range(n + 1)]
@@ -673,7 +659,6 @@ class GridScanTab(QWidget):
                         pos.append(end)
                 axes.append((stage_key, pos))
             except Exception:
-                # skip malformed rows
                 pass
         return axes
 
@@ -685,8 +670,6 @@ class GridScanTab(QWidget):
             if cam_key.startswith("camera:andor:"):
                 andor.append(cam_key)
         return andor
-
-            
 
     def _open_live_view(self) -> None:
         axes = self._read_axes_from_table()
@@ -703,10 +686,6 @@ class GridScanTab(QWidget):
 
         self._live_view.show(); self._live_view.raise_(); self._live_view.activateWindow()
 
-
-
-
-
     # ----- control flow -----
     def _start(self) -> None:
         try:
@@ -717,10 +696,11 @@ class GridScanTab(QWidget):
 
         self._cached_params = p
         self._doing_background = False
-        self._launch(background=False)
+        self._last_scan_log_path = None
+        self._launch(background=False, existing_scan_log=None)
         self._log("Grid scan started…")
 
-    def _launch(self, background: bool) -> None:
+    def _launch(self, background: bool, existing_scan_log: Optional[str]) -> None:
         p = self._cached_params
         if not p:
             return
@@ -733,15 +713,14 @@ class GridScanTab(QWidget):
             comment=p["comment"],
             mcp_voltage=p["mcp_voltage"],
             background=background,
+            existing_scan_log=existing_scan_log,  # <— append to same log if provided
         )
         
         # Live view wiring (Andor only)
         if self._live_view is not None and self._live_view.isVisible():
             andor_keys = [k for k in p["camera_params"].keys() if k.startswith("camera:andor:")]
-            # preserve current user choices; just refresh axes/cameras
             self._live_view.set_context(p["axes"], andor_keys, preserve=True)
             self._live_view.prepare_for_run()
-            # connect with queued connection since worker runs in another thread
             try:
                 from PyQt5.QtCore import Qt
                 self._worker.andor_frame.connect(self._live_view.on_andor_frame, Qt.QueuedConnection)
@@ -763,7 +742,7 @@ class GridScanTab(QWidget):
         self._worker.finished.connect(self._finished)
         self._thread.finished.connect(self._thread.deleteLater)
         
-        # progress: #points * #cameras (1 image sauvegardée par caméra et par point)
+        # progress: #points * #cameras
         total_points = 1
         for _, pos in p["axes"]:
             total_points *= max(1, len(pos))
@@ -788,11 +767,13 @@ class GridScanTab(QWidget):
 
     def _finished(self, log_path: str) -> None:
         if log_path:
+            self._last_scan_log_path = log_path  # remember for background
             self._log(f"Grid scan finished. Log: {log_path}")
         else:
             self._log("Scan finished with errors or aborted.")
+            self._last_scan_log_path = None
 
-        # Optional background pass
+        # Optional background pass — append to the SAME log
         if self._cached_params and self.bg_cb.isChecked() and not self._doing_background:
             self._doing_background = True
             reply = QMessageBox.information(
@@ -802,10 +783,11 @@ class GridScanTab(QWidget):
             )
             if reply == QMessageBox.Ok:
                 self._log("Starting background pass…")
+                # restart worker on same params, with existing_scan_log set
                 if self._thread and self._thread.isRunning():
                     self._thread.quit(); self._thread.wait()
                 self._thread = None; self._worker = None
-                self._launch(background=True)
+                self._launch(background=True, existing_scan_log=self._last_scan_log_path)
                 return
 
         self.abort_btn.setEnabled(False)

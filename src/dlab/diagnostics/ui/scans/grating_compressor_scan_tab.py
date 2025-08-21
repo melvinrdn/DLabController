@@ -38,17 +38,6 @@ def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta
     img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
     return path
 
-def _append_cam_log(cam_folder: Path, cam_name: str, fn: str, exposure_us: int, comment: str) -> None:
-    import datetime
-    log_path = cam_folder / f"{cam_name}_log_{datetime.datetime.now():%Y-%m-%d}.log"
-    header = "File Name\tExposure_us\tGain\tComment\n"
-    exists = log_path.exists()
-    with open(log_path, "a", encoding="utf-8") as f:
-        if not exists:
-            f.write(header)
-        f.write(f"{fn}\t{exposure_us}\t\t{comment}\n")
-
-
 # ---------- worker ----------
 import logging
 logger = logging.getLogger("dlab.scans.gc_scan")
@@ -224,7 +213,6 @@ class GCWorker(QObject):
                     cam_day, cam_fn, frame_u16,
                     {"Exposure_us": exp_meta, "Gain": "", "Comment": self.comment}
                 )
-                _append_cam_log(cam_day, cam_name, cam_fn, exp_meta, self.comment)
             except Exception as e:
                 self._emit(f"Save failed at {pos:.3f}: {e}")
                 done += 1
@@ -277,7 +265,6 @@ class GCWorker(QObject):
                         cam_day, cam_fn, frame_u16,
                         {"Exposure_us": exp_meta, "Gain": "", "Comment": self.comment}
                     )
-                    _append_cam_log(cam_day, cam_name, cam_fn, exp_meta, self.comment)
                     with open(scan_log, "a", encoding="utf-8") as f:
                         f.write(f"{cam_fn}\t{self.stage_key}\tBG\t{exp_meta}\t{self.averages}\t{self.mcp_voltage}\n")
                     self._emit(f"Saved background: {cam_fn}")
