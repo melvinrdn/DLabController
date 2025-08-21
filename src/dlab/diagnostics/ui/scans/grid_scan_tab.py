@@ -222,7 +222,8 @@ class GridScanWorker(QObject):
             det_day = root / f"{now:%Y-%m-%d}" / "Avaspec"
             safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
             ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            fn = f"{safe_name}_Spectrum_{ts_ms}.txt"
+            tag = "Background" if self.background else "Spectrum"
+            fn = f"{safe_name}_{tag}_{ts_ms}.txt"
             header = {
                 "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "IntegrationTime_ms": int_ms,
@@ -232,6 +233,7 @@ class GridScanWorker(QObject):
             _save_txt_with_meta(det_day, fn, wl_nm, counts, header)
             _append_avaspec_log(det_day, safe_name, fn, int_ms, averages, self.comment)
             return fn
+
 
         # --- indexing utilities (raster, last axis is inner loop) ---
         lengths = [len(pos) for _, pos in self.axes]

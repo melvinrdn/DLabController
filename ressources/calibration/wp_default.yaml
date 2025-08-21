@@ -1,7 +1,7 @@
 wp_defaults:
-  1: "wp1/default_wp1.txt"
-  2: "wp2/default_wp2.txt"
-  3: "wp3/default_wp3.txt"
-  4: "wp4/default_wp4.txt"
-  5: "wp5/default_wp5.txt"
-  6: "wp6/default_wp6.txt" 
+  '1': wp1/default_wp1.txt
+  '2': wp2/default_wp2.txt
+  '3': wp3/default_wp3.txt
+  '4': wp4/default_wp4.txt
+  '5': wp5/default_wp5.txt
+  '6': wp6/calib_2025_08_20-3.txt

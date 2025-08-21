@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
 
 from dlab.diagnostics.ui.scans.m2_measurement_tab import M2Tab
 from dlab.diagnostics.ui.scans.grid_scan_tab import GridScanTab
+from dlab.diagnostics.ui.scans.grating_compressor_scan_tab import GCScanTab
 
 # ---------- worker ----------
 import logging
@@ -21,8 +22,9 @@ class ScanWindow(QMainWindow):
         self.setWindowTitle("Scan")
         self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
 
-        self.tabs.addTab(M2Tab(), "M2 measurement")
+        self.tabs.addTab(M2Tab(), "M2")
         self.tabs.addTab(GridScanTab(), "Grid scan")
+        self.tabs.addTab(GCScanTab(), "Grating compressor scan")
 
         # Future: add more tabs easily
         # self.tabs.addTab(SomeOtherScanTab(), "Whatever")
