@@ -1,17 +1,22 @@
+# src/dlab/diagnostics/ui/scans/m2_measurement_tab.py
 from __future__ import annotations
 import os, datetime, time
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image, PngImagePlugin
 
 from PyQt5.QtCore import QObject, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QLineEdit, QTextEdit, QComboBox, QTabWidget, QDoubleSpinBox,
-    QGroupBox, QMessageBox, QSpinBox, QCheckBox, QProgressBar
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel,
+    QPushButton, QLineEdit, QTextEdit, QComboBox, QDoubleSpinBox,
+    QGroupBox, QMessageBox, QCheckBox, QProgressBar
 )
+
+# --- matplotlib live view ---
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
@@ -31,6 +36,7 @@ class M2Worker(QObject):
     progress = pyqtSignal(int, int)          # i, n
     log = pyqtSignal(str)
     finished = pyqtSignal(str)               # log path
+    live_som = pyqtSignal(float, float, float)  # (position_mm, som_x_px, som_y_px)
 
     def __init__(
         self,
@@ -43,6 +49,7 @@ class M2Worker(QObject):
         averages: int = 1,
         adaptive: dict | None = None,
         background: bool = False,
+        existing_scan_log: str | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -56,12 +63,14 @@ class M2Worker(QObject):
         self.adaptive = adaptive or {}
         self.background = bool(background)
         self.abort = False
+        self.existing_scan_log = existing_scan_log
 
     def _emit(self, msg: str) -> None:
         self.log.emit(msg)
         logger.info(msg)
 
     def _save_png_with_meta(self, folder: Path, filename: str, frame_u16: np.ndarray, meta: dict) -> Path:
+        folder.mkdir(parents=True, exist_ok=True)
         path = folder / filename
         img = Image.fromarray(frame_u16, mode="I;16")
         pnginfo = PngImagePlugin.PngInfo()
@@ -70,15 +79,37 @@ class M2Worker(QObject):
         img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
         return path
 
-    def _append_daheng_log(self, cam_folder: Path, cam_name: str, fn: str, exposure_us: int, comment: str) -> None:
-        log_path = cam_folder / f"{cam_name}_log_{datetime.datetime.now():%Y-%m-%d}.log"
-        header = "File Name\tExposure_us\tGain\tComment\n"
-        exists = log_path.exists()
-        with open(log_path, "a", encoding="utf-8") as f:
-            if not exists:
-                f.write(header)
-            # Gain intentionally left blank for scans
-            f.write(f"{fn}\t{exposure_us}\t\t{comment}\n")
+    @staticmethod
+    def _som_xy(frame_u16: np.ndarray) -> Tuple[float, float]:
+        """
+        Second-order moment widths along x and y (pixels), i.e. sqrt( Σ I (x-μ)^2 / Σ I ).
+        Returns (som_x, som_y). Robust to all-zero images (returns 0,0).
+        """
+        f = np.asarray(frame_u16, dtype=np.float64)
+        total = f.sum()
+        if total <= 0:
+            return 0.0, 0.0
+
+        # axes: y (rows), x (cols)
+        h, w = f.shape
+        xs = np.arange(w, dtype=np.float64)
+        ys = np.arange(h, dtype=np.float64)
+
+        # projections
+        px = f.sum(axis=0)  # shape (w,)
+        py = f.sum(axis=1)  # shape (h,)
+
+        # centroids
+        mu_x = (px * xs).sum() / total
+        mu_y = (py * ys).sum() / total
+
+        # second central moments
+        var_x = (px * (xs - mu_x) ** 2).sum() / total
+        var_y = (py * (ys - mu_y) ** 2).sum() / total
+
+        som_x = float(np.sqrt(max(var_x, 0.0)))
+        som_y = float(np.sqrt(max(var_y, 0.0)))
+        return som_x, som_y
 
     def run(self) -> None:
         stage = REGISTRY.get(self.stage_key)
@@ -100,14 +131,28 @@ class M2Worker(QObject):
         now = datetime.datetime.now()
         root = _data_root()
 
-        # ---- Scan daily log (append) ----
+        # ---- per-scan log (numbered) ----
         scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
         scan_dir.mkdir(parents=True, exist_ok=True)
-        scan_log = scan_dir / f"{self.scan_name}_log_{now:%Y-%m-%d}.log"
-        scan_header = "ImageFile\tStageKey\tPosition\tExposure_us\tComment\n"
-        if not scan_log.exists():
+
+        if self.existing_scan_log:
+            scan_log = Path(self.existing_scan_log)
+            if not scan_log.exists():
+                with open(scan_log, "w", encoding="utf-8") as lf:
+                    lf.write("ImageFile\tStageKey\tPosition\tExposure_us\n")
+                    lf.write(f"# {self.comment}\n")
+        else:
+            date_str = f"{now:%Y-%m-%d}"
+            idx = 1
+            while True:
+                candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
+                if not candidate.exists():
+                    break
+                idx += 1
+            scan_log = candidate
             with open(scan_log, "w", encoding="utf-8") as lf:
-                lf.write(scan_header)
+                lf.write("ImageFile\tStageKey\tPosition\tExposure_us\n")
+                lf.write(f"# {self.comment}\n")
 
         n = len(self.positions)
         for i, pos in enumerate(self.positions, 1):
@@ -121,6 +166,7 @@ class M2Worker(QObject):
                 self._emit(f"Moved {self.stage_key} to {pos:.3f}.")
             except Exception as e:
                 self._emit(f"Move to {pos:.3f} failed: {e}")
+                self.progress.emit(i, n)
                 continue
 
             time.sleep(self.settle_s)
@@ -135,9 +181,10 @@ class M2Worker(QObject):
                 )
             except Exception as e:
                 self._emit(f"Capture failed at {pos:.3f}: {e}")
+                self.progress.emit(i, n)
                 continue
 
-            cam_name  = meta.get("CameraName", "DahengCam")
+            cam_name  = str(meta.get("CameraName", "DahengCam")).strip() or "DahengCam"
             exposure  = int(meta.get("Exposure_us", 0))
             tag       = "Background" if self.background else "Image"
 
@@ -145,7 +192,7 @@ class M2Worker(QObject):
             cam_day = root / f"{now:%Y-%m-%d}" / cam_name
             cam_day.mkdir(parents=True, exist_ok=True)
 
-            # unique name (no _1/_2 suffix here — averaging returns one image)
+            # unique name
             ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             cam_fn = f"{cam_name}_{tag}_{ts_ms}.png"
 
@@ -154,24 +201,78 @@ class M2Worker(QObject):
                     cam_day, cam_fn, frame_u16,
                     {"Exposure_us": exposure, "Gain": "", "Comment": self.comment}
                 )
-                # Daheng-style daily log (append)
-                self._append_daheng_log(cam_day, cam_name, cam_fn, exposure, self.comment)
             except Exception as e:
                 self._emit(f"Save to camera folder failed at {pos:.3f}: {e}")
+                self.progress.emit(i, n)
                 continue
 
-            # ---- Append the (single) scan daily log ----
+            # ---- Append to the per-scan log (no Comment column) ----
             try:
                 with open(scan_log, "a", encoding="utf-8") as lf:
-                    lf.write(f"{cam_fn}\t{self.stage_key}\t{pos:.6f}\t{exposure}\t{self.comment}\n")
+                    lf.write(f"{cam_fn}\t{self.stage_key}\t{pos:.6f}\t{exposure}\n")
             except Exception as e:
                 self._emit(f"Scan log write failed: {e}")
 
-            self._emit(f"Saved to camera: {cam_fn}")
+            # ---- Live SOM (skip background in plot) ----
+            if not self.background:
+                try:
+                    som_x, som_y = self._som_xy(frame_u16)
+                    self.live_som.emit(float(pos), float(som_x), float(som_y))
+                except Exception:
+                    pass
+
+            self._emit(f"Saved {cam_fn} @ {pos:.3f} (exp {exposure} µs, avg {self.averages}).")
             self.progress.emit(i, n)
 
         self.finished.emit(scan_log.as_posix())
 
+
+# ---------- live viewer ----------
+class M2LiveView(QWidget):
+    """
+    Free-floating live window: plots SOM_x and SOM_y (px) vs stage position (mm).
+    Scatter only (points), no lines.
+    """
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("M² — live SOM (px) vs position (mm)")
+        # reasonable default size; resizable
+        self.resize(800, 500)
+        self._xs: List[float] = []
+        self._sx: List[float] = []
+        self._sy: List[float] = []
+
+        layout = QVBoxLayout(self)
+        self.figure = Figure(figsize=(7, 4.5), tight_layout=True)
+        self.canvas = FigureCanvas(self.figure)
+        layout.addWidget(self.canvas)
+
+        self.ax = self.figure.add_subplot(111)
+        self.ax.set_xlabel("Position (mm)")
+        self.ax.set_ylabel("SOM (pixels)")
+        self.ax.grid(True, which="both", linestyle="--", alpha=0.3)
+
+        # Scatter (markers only, no line)
+        self.scat_x, = self.ax.plot([], [], "o", markersize=4, linestyle="None", label="SOM_x")
+        self.scat_y, = self.ax.plot([], [], "o", markersize=4, linestyle="None", label="SOM_y")
+        self.ax.legend(loc="best")
+        self.canvas.draw_idle()
+
+    def reset(self) -> None:
+        self._xs.clear(); self._sx.clear(); self._sy.clear()
+        self.scat_x.set_data([], [])
+        self.scat_y.set_data([], [])
+        self.ax.relim(); self.ax.autoscale_view()
+        self.canvas.draw_idle()
+
+    def add_point(self, pos_mm: float, som_x_px: float, som_y_px: float) -> None:
+        self._xs.append(pos_mm)
+        self._sx.append(som_x_px)
+        self._sy.append(som_y_px)
+        self.scat_x.set_data(self._xs, self._sx)
+        self.scat_y.set_data(self._xs, self._sy)
+        self.ax.relim(); self.ax.autoscale_view()
+        self.canvas.draw_idle()
 
 
 # ---------- tab widget ----------
@@ -182,6 +283,8 @@ class M2Tab(QWidget):
         self._worker: M2Worker | None = None
         self._last_params: dict | None = None
         self._doing_background = False
+        self._last_scan_log_path: Optional[str] = None
+        self._live_view: Optional[M2LiveView] = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -206,15 +309,15 @@ class M2Tab(QWidget):
         self.end_sb   = QDoubleSpinBox(); self.end_sb.setDecimals(3);   self.end_sb.setRange(-1e6, 1e6);   self.end_sb.setValue(10.0)
         self.step_sb  = QDoubleSpinBox(); self.step_sb.setDecimals(3);  self.step_sb.setRange(1e-6, 1e6);  self.step_sb.setValue(1.0)
         self.settle_sb= QDoubleSpinBox(); self.settle_sb.setDecimals(2);self.settle_sb.setRange(0.0, 60.0);self.settle_sb.setValue(0.50)
-        self.avg_sb   = QDoubleSpinBox(); self.avg_sb.setDecimals(0);   self.avg_sb.setRange(1, 1000);     self.avg_sb.setValue(1)   # NEW
+        self.avg_sb   = QDoubleSpinBox(); self.avg_sb.setDecimals(0);   self.avg_sb.setRange(1, 1000);     self.avg_sb.setValue(1)
 
-        self.scan_name_edit = QLineEdit("m_squared")   # forced later, but visible
+        self.scan_name_edit = QLineEdit("m_squared")   # enforced programmatically
         self.comment_edit = QLineEdit("")
         p.addWidget(QLabel("Start"));     p.addWidget(self.start_sb)
         p.addWidget(QLabel("End"));       p.addWidget(self.end_sb)
         p.addWidget(QLabel("Step"));      p.addWidget(self.step_sb)
         p.addWidget(QLabel("Settle (s)"));p.addWidget(self.settle_sb)
-        p.addWidget(QLabel("Avg"));       p.addWidget(self.avg_sb)       # NEW
+        p.addWidget(QLabel("Avg"));       p.addWidget(self.avg_sb)
         main.addWidget(params)
 
         # Adaptive exposure box
@@ -224,9 +327,9 @@ class M2Tab(QWidget):
         self.adapt_target = QDoubleSpinBox(); self.adapt_target.setRange(0.1, 0.99); self.adapt_target.setSingleStep(0.05); self.adapt_target.setValue(0.75)
         self.adapt_low    = QDoubleSpinBox(); self.adapt_low.setRange(0.1, 0.99);    self.adapt_low.setSingleStep(0.05);    self.adapt_low.setValue(0.60)
         self.adapt_high   = QDoubleSpinBox(); self.adapt_high.setRange(0.1, 0.999);  self.adapt_high.setSingleStep(0.05);   self.adapt_high.setValue(0.90)
-        self.adapt_min    = QDoubleSpinBox(); self.adapt_min.setRange(1, 2_000_000); self.adapt_min.setDecimals(0);          self.adapt_min.setValue(50)
-        self.adapt_max    = QDoubleSpinBox(); self.adapt_max.setRange(1, 2_000_000); self.adapt_max.setDecimals(0);          self.adapt_max.setValue(2_000_000)
-        self.bg_cb        = QCheckBox("Do background after scan")   # NEW
+        self.adapt_min    = QDoubleSpinBox(); self.adapt_min.setRange(1, 900_000); self.adapt_min.setDecimals(0);          self.adapt_min.setValue(50)
+        self.adapt_max    = QDoubleSpinBox(); self.adapt_max.setRange(1, 900_000); self.adapt_max.setDecimals(0);          self.adapt_max.setValue(900_000)
+        self.bg_cb        = QCheckBox("Do background after scan")
         a.addWidget(self.adapt_cb)
         a.addWidget(QLabel("target")); a.addWidget(self.adapt_target)
         a.addWidget(QLabel("low"));    a.addWidget(self.adapt_low)
@@ -245,8 +348,13 @@ class M2Tab(QWidget):
         ctl = QHBoxLayout()
         self.start_btn = QPushButton("Start"); self.start_btn.clicked.connect(self._start)
         self.abort_btn = QPushButton("Abort"); self.abort_btn.setEnabled(False); self.abort_btn.clicked.connect(self._abort)
-        self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)   # NEW
-        ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.prog, 1)
+        self.live_btn = QPushButton("Live view (M²)")
+        self.live_btn.setCheckable(True)
+        self.live_btn.toggled.connect(self._toggle_live_view)
+
+        self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)
+        ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.live_btn)
+        ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
 
         # Log
@@ -255,12 +363,11 @@ class M2Tab(QWidget):
 
         self._refresh_devices()
 
-
     def _refresh_devices(self) -> None:
         self.stage_combo.clear()
         for k in REGISTRY.keys("stage:"):
             if k.startswith("stage:serial:"):
-                continue # hide serial keys
+                continue  # hide serial keys
             self.stage_combo.addItem(k)
 
         self.cam_combo.clear()
@@ -268,7 +375,6 @@ class M2Tab(QWidget):
             if ":index:" in k:
                 continue  # hide index keys
             self.cam_combo.addItem(k)
-
 
     def _start(self) -> None:
         try:
@@ -310,15 +416,16 @@ class M2Tab(QWidget):
 
         # save for background pass
         self._last_params = dict(stage_key=stage_key, cam_key=cam_key,
-                                positions=positions, settle=settle,
-                                avg=avg, scan_name=scan_name,
-                                comment=comment, adaptive=adaptive)
+                                 positions=positions, settle=settle,
+                                 avg=avg, scan_name=scan_name,
+                                 comment=comment, adaptive=adaptive)
         self._doing_background = False
+        self._last_scan_log_path = None
 
-        self._launch_worker(background=False)
+        self._launch_worker(background=False, existing_scan_log=None)
         self._log("Scan started…")
         
-    def _launch_worker(self, background: bool):
+    def _launch_worker(self, background: bool, existing_scan_log: Optional[str]) -> None:
         p = self._last_params
         if not p:
             return
@@ -333,12 +440,23 @@ class M2Tab(QWidget):
             averages=p["avg"],
             adaptive=p["adaptive"],
             background=background,
+            existing_scan_log=existing_scan_log,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.log.connect(self._log)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._finished)
+
+        # live view wiring
+        if self._live_view:
+            self._live_view.reset()
+            try:
+                from PyQt5.QtCore import Qt
+                self._worker.live_som.connect(self._live_view.add_point, Qt.QueuedConnection)
+            except Exception:
+                pass
+
         self._thread.finished.connect(self._thread.deleteLater)
 
         # progress bar maximum for this pass
@@ -349,13 +467,23 @@ class M2Tab(QWidget):
         self.abort_btn.setEnabled(True)
         self._thread.start()
 
-
-
     def _abort(self) -> None:
         if self._worker:
             self._worker.abort = True
             self._log("Abort requested.")
             self.abort_btn.setEnabled(False)
+
+    def _toggle_live_view(self, checked: bool) -> None:
+        if checked:
+            if self._live_view is None:
+                self._live_view = M2LiveView(None)  # free window, no parent
+            self._live_view.reset()
+            self._live_view.show()
+            self._live_view.raise_()
+            self._live_view.activateWindow()
+        else:
+            if self._live_view:
+                self._live_view.hide()
 
     def _log(self, msg: str) -> None:
         ts = datetime.datetime.now().strftime("%H:%M:%S")
@@ -369,6 +497,7 @@ class M2Tab(QWidget):
 
     def _finished(self, log_path: str) -> None:
         if log_path:
+            self._last_scan_log_path = log_path
             self._log(f"Scan finished. Log: {log_path}")
         else:
             self._log("Scan finished with errors.")
@@ -386,7 +515,8 @@ class M2Tab(QWidget):
                 if self._thread and self._thread.isRunning():
                     self._thread.quit(); self._thread.wait()
                 self._thread = None; self._worker = None
-                self._launch_worker(background=True)
+                # re-launch on same log file
+                self._launch_worker(background=True, existing_scan_log=self._last_scan_log_path)
                 return  # keep UI in scanning mode
 
         # done

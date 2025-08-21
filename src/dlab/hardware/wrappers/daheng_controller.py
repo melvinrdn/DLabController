@@ -10,7 +10,7 @@ from dlab.hardware.drivers import gxipy_driver as gx
 DEFAULT_EXPOSURE_US = 1_000
 DEFAULT_GAIN = 0
 MIN_EXPOSURE_US = 20
-MAX_EXPOSURE_US = 100_000
+MAX_EXPOSURE_US = 900_000
 MIN_GAIN = 0
 MAX_GAIN = 24
 
