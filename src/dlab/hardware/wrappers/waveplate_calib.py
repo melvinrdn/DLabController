@@ -60,26 +60,43 @@ def _load_xy_file(path: Path) -> tuple[np.ndarray, np.ndarray]:
     """
     Robust loader for 2-column data.
     - Skips lines starting with '#'
+    - Skips any line containing non-numeric tokens (e.g., headers like 'Angle_deg Power_W')
     - Accepts tab/space/semicolon/comma separators
     - Handles .txt/.twt produced by AutoWaveplateCalib
     """
-    buf_lines = []
+    xs: list[float] = []
+    ys: list[float] = []
+
+    def _try_float(tok: str) -> float | None:
+        try:
+            return float(tok)
+        except Exception:
+            return None
+
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
+        for raw in f:
+            s = raw.strip()
             if not s or s.startswith("#"):
                 continue
-            s = s.replace(";", " ").replace(",", " ")
-            buf_lines.append(s + "\n")
-    if not buf_lines:
+            # Normalize separators
+            for sep in (";", ",", "\t"):
+                s = s.replace(sep, " ")
+            # Collapse multiple spaces
+            parts = [p for p in s.split(" ") if p]
+            if len(parts) < 2:
+                continue
+            x = _try_float(parts[0])
+            y = _try_float(parts[1])
+            if x is None or y is None:
+                # Non-numeric line (e.g., "Angle_deg Power_W") → skip
+                continue
+            xs.append(float(x))
+            ys.append(float(y))
+
+    if not xs:
         return np.array([]), np.array([])
-    from io import StringIO
-    arr = np.loadtxt(StringIO("".join(buf_lines)))
-    if arr.ndim == 1:
-        if arr.size < 2:
-            return np.array([]), np.array([])
-        arr = arr.reshape(1, -1)
-    return arr[:, 0], arr[:, 1]
+    return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+
 
 
 class WaveplateCalibWidget(QWidget):

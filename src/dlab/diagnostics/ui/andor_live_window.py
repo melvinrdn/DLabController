@@ -9,9 +9,10 @@ from PIL import Image, PngImagePlugin
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
+    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QSpinBox, QGroupBox,
+    QDoubleSpinBox,
 )
-    # QSpinBox, etc. not needed
+
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -34,6 +35,16 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 LOG_FORMAT = "[%(asctime)s] %(message)s"
 DATE_FORMAT = "%H:%M:%S"
 
+try:
+    from skimage.transform import rotate as _sk_rotate
+    _HAS_SKIMAGE = True
+except Exception:
+    _HAS_SKIMAGE = False
+try:
+    from scipy.ndimage import rotate as _sp_rotate
+    _HAS_SCIPY = True
+except Exception:
+    _HAS_SCIPY = False
 
 def _data_root() -> str:
     """Base folder for saved frames, from YAML or default."""
@@ -220,6 +231,42 @@ class AndorLiveWindow(QWidget):
         btn_layout.addWidget(self.save_button)
 
         param_layout.addLayout(btn_layout)
+        
+        # --- Display-only preprocess (rotate + crop), same defaults as grid live view
+        pre_grp = QGroupBox("Display Preprocess (rotate + crop)")
+        pre_lay = QVBoxLayout(pre_grp)
+
+        self.pre_enable_cb = QCheckBox("Enable")
+        self.pre_enable_cb.setChecked(False)
+        pre_lay.addWidget(self.pre_enable_cb)
+
+        row_angle = QHBoxLayout()
+        row_angle.addWidget(QLabel("Angle (°):"))
+        self.pre_angle_sb = QDoubleSpinBox()
+        self.pre_angle_sb.setRange(-360.0, 360.0)
+        self.pre_angle_sb.setDecimals(2)
+        self.pre_angle_sb.setSingleStep(1.0)
+        self.pre_angle_sb.setValue(-95.0)  # default like grid live view
+        row_angle.addWidget(self.pre_angle_sb)
+        pre_lay.addLayout(row_angle)
+
+        row_x = QHBoxLayout()
+        self.pre_x0_sb = QSpinBox(); self.pre_x1_sb = QSpinBox()
+        self.pre_x0_sb.setRange(0, 99999); self.pre_x1_sb.setRange(1, 99999)
+        self.pre_x0_sb.setValue(165); self.pre_x1_sb.setValue(490)  # defaults
+        row_x.addWidget(QLabel("Crop x0:")); row_x.addWidget(self.pre_x0_sb)
+        row_x.addWidget(QLabel("x1:")); row_x.addWidget(self.pre_x1_sb)
+        pre_lay.addLayout(row_x)
+
+        row_y = QHBoxLayout()
+        self.pre_y0_sb = QSpinBox(); self.pre_y1_sb = QSpinBox()
+        self.pre_y0_sb.setRange(0, 99999); self.pre_y1_sb.setRange(1, 99999)
+        self.pre_y0_sb.setValue(210); self.pre_y1_sb.setValue(340)  # defaults
+        row_y.addWidget(QLabel("Crop y0:")); row_y.addWidget(self.pre_y0_sb)
+        row_y.addWidget(QLabel("y1:")); row_y.addWidget(self.pre_y1_sb)
+        pre_lay.addLayout(row_y)
+
+        param_layout.addWidget(pre_grp)
 
         # Log box + handler
         self.log_text = QTextEdit()
@@ -256,6 +303,54 @@ class AndorLiveWindow(QWidget):
         self.log_text.append(f"[{current_time}] {message}")
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
         logging.getLogger("dlab.ui.AndorLiveWindow").info(message)
+        
+    def _profile_axis_for_display(self) -> int:
+        """
+        Choose which axis to sum over for the profile *after* display preprocessing.
+        Returns 1 (sum over columns → vertical profile vs rows) by default.
+        If rotation is enabled and closer to 90° than to 0°/180°, swap to axis 0.
+        """
+        if not self.pre_enable_cb.isChecked():
+            return 1
+        ang = float(self.pre_angle_sb.value()) % 180.0
+        ang = min(ang, 180.0 - ang)  # distance to nearest 0/180
+        # nearer to 90° -> use axis=0 (sum over rows → profile vs columns)
+        return 0 if ang > 45.0 else 1
+
+        
+        
+    def _display_preprocess(self, image: np.ndarray) -> np.ndarray:
+        """Rotate then crop the image for display only."""
+        out = image
+
+        if self.pre_enable_cb.isChecked():
+            angle = float(self.pre_angle_sb.value())
+            # rotate (resize to keep full content)
+            if abs(angle) > 1e-9:
+                try:
+                    if _HAS_SKIMAGE:
+                        out = _sk_rotate(out, angle, resize=True, order=3, mode="edge", preserve_range=True).astype(image.dtype)
+                    elif _HAS_SCIPY:
+                        out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
+                except Exception:
+                    # if rotation fails, just skip it
+                    pass
+
+            # crop y, x
+            y0, y1 = int(self.pre_y0_sb.value()), int(self.pre_y1_sb.value())
+            x0, x1 = int(self.pre_x0_sb.value()), int(self.pre_x1_sb.value())
+
+            h, w = out.shape[:2]
+            # clamp + ensure y1>y0 and x1>x0
+            y0 = max(0, min(y0, max(0, h - 1)))
+            y1 = max(y0 + 1, min(y1, h))
+            x0 = max(0, min(x0, max(0, w - 1)))
+            x1 = max(x0 + 1, min(x1, w))
+
+            out = out[y0:y1, x0:x1]
+
+        return out
+
 
     # ----------------------- Param updates -----------------------
 
@@ -410,20 +505,25 @@ class AndorLiveWindow(QWidget):
 
     def update_image(self, image: np.ndarray):
         """Update the displayed image and an integrated profile (preserve zoom)."""
+        # Keep raw for saving
         self.last_frame = image
-        max_val = float(np.max(image))
-        min_val = float(np.min(image))
+
+        # Use a processed copy for display only
+        disp = self._display_preprocess(image)
+
+        max_val = float(np.max(disp))
+        min_val = float(np.min(disp))
         title_text = f"Live Andor Camera Image - Max: {max_val:.0f}"
 
         if self.image_artist is None:
             self.ax_img.clear()
-            self.image_artist = self.ax_img.imshow(image, cmap=white_turbo(512))
+            self.image_artist = self.ax_img.imshow(disp, cmap=white_turbo(512))
             self.ax_img.set_title(title_text)
             self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax_img, fraction=0.046, pad=0.04)
         else:
             xlim = self.ax_img.get_xlim()
             ylim = self.ax_img.get_ylim()
-            self.image_artist.set_data(image)
+            self.image_artist.set_data(disp)
             self.ax_img.set_xlim(xlim)
             self.ax_img.set_ylim(ylim)
             self.ax_img.set_title(title_text)
@@ -434,13 +534,29 @@ class AndorLiveWindow(QWidget):
                 self.image_artist.set_clim(min_val, max_val)
             self.cbar.update_normal(self.image_artist)
 
-        profile = np.sum(image, axis=1)
+        # Profile from the *displayed* frame
+        axis = self._profile_axis_for_display()
+        profile = np.sum(disp, axis=axis)
+
         self.ax_profile.clear()
-        self.ax_profile.plot(np.arange(image.shape[0]), profile)
-        self.ax_profile.set_xlabel("(px)")
-        self.ax_profile.set_ylabel("Integrated Intensity")
-        self.ax_profile.set_xlim(0, image.shape[0])
+        if axis == 1:
+            # summed over columns → profile vs row index
+            x = np.arange(disp.shape[0])
+            self.ax_profile.plot(x, profile)
+            self.ax_profile.set_xlabel("Row (px)")
+            self.ax_profile.set_ylabel("Integrated Intensity (Σ cols)")
+            self.ax_profile.set_xlim(0, disp.shape[0])
+        else:
+            # summed over rows → profile vs column index
+            x = np.arange(disp.shape[1])
+            self.ax_profile.plot(x, profile)
+            self.ax_profile.set_xlabel("Column (px)")
+            self.ax_profile.set_ylabel("Integrated Intensity (Σ rows)")
+            self.ax_profile.set_xlim(0, disp.shape[1])
+
         self.canvas.draw_idle()
+
+        
 
     # ----------------------- Save frames (N sequential captures) -----------------------
 

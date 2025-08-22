@@ -29,7 +29,7 @@ zaber:
   baud: 9600
   range:
     min: 24.0
-    max: 25.0
+    max: 25.3
 
 waveplates:
   calibration_files:
