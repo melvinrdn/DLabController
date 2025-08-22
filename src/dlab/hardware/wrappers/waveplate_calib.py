@@ -16,8 +16,6 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.lines import Line2D
 
-from dlab.core.device_registry import REGISTRY 
-
 from dlab.boot import ROOT, get_config
 
 # ----------------------------
@@ -109,7 +107,7 @@ class WaveplateCalibWidget(QWidget):
 
         self._init_ui()
         self._load_defaults_from_yaml()
-        self._load_all_calibrations()
+        #self._load_all_calibrations()
 
     # ---------- UI ----------
 
@@ -200,13 +198,29 @@ class WaveplateCalibWidget(QWidget):
             self._open_calibration_file(wp, p)
         self._update_global_legend()
         self.canvas.draw()
+        
+    def load_waveplate_calibration(self, wp_index: int) -> bool:
+        """
+        Load calibration for a single waveplate and push (max, offset) via the
+        existing calibration_changed_callback. Returns True on success.
+        """
+        p = self.default_calib.get(wp_index)
+        if not p or not p.exists():
+            self.log(f"Calibration file for WP{wp_index} not found.")
+            return False
+
+        self._open_calibration_file(wp_index, p)  # this triggers calibration_changed_callback(...)
+        # keep the plot up-to-date, but don’t load others
+        self._update_global_legend()
+        self.canvas.draw()
+        return True
+
 
     def _open_calibration_file(self, wp_index: int, filepath: Path) -> None:
         try:
             angles, powers = _load_xy_file(filepath)
             if angles.size == 0:
                 raise ValueError("Empty calibration file")
-
             amp, phase = self._cos_fit(angles, powers)
             self.calibration_params[wp_index] = (2 * amp, phase)
 
@@ -216,18 +230,10 @@ class WaveplateCalibWidget(QWidget):
             ax = self.axes[wp_index - 1]
             self._plot_waveplate(ax, angles, powers, COLORS[(wp_index - 1) % len(COLORS)], amp, phase)
 
-            # --- NEW: publish both params and file path so GridScan can log it
-            REGISTRY.register(f"waveplate:calib:{wp_index}", (float(2 * amp), float(phase)))
-
-            # store a nice relative path under calibration root so the log is readable
             rel = _rel_to_root(filepath)
-            REGISTRY.register(f"waveplate:calib_path:{wp_index}", f"./{rel}")
-
             self.log(f"WP{wp_index} loaded from ./{rel}")
             if self.calibration_changed_callback:
                 self.calibration_changed_callback(wp_index, self.calibration_params[wp_index])
-
-            self.canvas.draw_idle()
         except Exception as e:
             self.log(f"Failed to load calibration for WP{wp_index}: {e}")
 

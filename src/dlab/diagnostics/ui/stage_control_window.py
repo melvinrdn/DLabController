@@ -148,31 +148,30 @@ class StageRow(QWidget):
         ph = "Angle (deg)" if self.is_waveplate else "Position"
         self.target_edit.setPlaceholderText(ph)
         self.target_edit.setFixedWidth(100)
-        self.target_edit.setValidator(QDoubleValidator(-1e6, 1e6, 3, self))
         layout.addWidget(self.target_edit)
 
         # Power mode (waveplates only)
         self.power_mode_checkbox = QCheckBox("Power Mode")
         if self.is_waveplate:
-            # Load previous state if any
             wp_idx = _wp_index_from_stage_number(self.stage_number)
             pm = REGISTRY.get(_reg_key_powermode(wp_idx))
             if isinstance(pm, bool):
                 self.power_mode_checkbox.setChecked(pm)
 
-            # When toggled here, publish to REGISTRY
             def _on_pm_toggled(checked: bool):
                 REGISTRY.register(_reg_key_powermode(wp_idx), bool(checked))
-                # nothing else to do; GridScan will see it
+                self._refresh_target_placeholder()   # <-- update placeholder when toggled
 
             self.power_mode_checkbox.toggled.connect(_on_pm_toggled)
-        if not self.is_waveplate:
-            # Translation stages: disable & hide power mode
+        else:
             self.power_mode_checkbox.setChecked(False)
             self.power_mode_checkbox.setEnabled(False)
             self.power_mode_checkbox.setVisible(False)
             self.power_mode_checkbox.setToolTip("Disabled for translation stages")
         layout.addWidget(self.power_mode_checkbox)
+
+        # make sure placeholder matches current state at startup
+        self._refresh_target_placeholder()
 
         # Move
         self.move_btn = QPushButton("Move To")
@@ -206,6 +205,20 @@ class StageRow(QWidget):
         except Exception as e:
             self._poll.stop()
             self.log(f"Position read failed: {e}")
+            
+    def _refresh_target_placeholder(self) -> None:
+        if not self.is_waveplate:
+            self.target_edit.setPlaceholderText("Position")
+            self.target_edit.setToolTip("")
+            return
+
+        if self.power_mode_checkbox.isChecked():
+            self.target_edit.setPlaceholderText("Power (W)")
+            self.target_edit.setToolTip("Enter desired power; will be converted to angle via calibration.")
+        else:
+            self.target_edit.setPlaceholderText("Angle (deg)")
+            self.target_edit.setToolTip("Enter target angle in degrees.")
+
 
     def activate_stage(self) -> None:
         from dlab.core.device_registry import REGISTRY
@@ -242,7 +255,22 @@ class StageRow(QWidget):
             REGISTRY.register(key_ui,  self.controller)
             REGISTRY.register(key_ser, self.controller)
             
+            if self.is_waveplate:
+                wp_idx = _wp_index_from_stage_number(self.stage_number)
+                calib_ui = REGISTRY.get("ui:waveplate_calib_widget")
+                if calib_ui and hasattr(calib_ui, "load_waveplate_calibration"):
+                    ok = calib_ui.load_waveplate_calibration(wp_idx)
+                    if ok:
+                        # read back what the callback stored, or directly from the widget cache
+                        calib = REGISTRY.get(_reg_key_calib(wp_idx))
+                        if isinstance(calib, (tuple, list)) and len(calib) >= 2:
+                            self.amplitude, self.offset = float(calib[0]), float(calib[1])
+                            self.log(f"WP{wp_idx} calibration loaded (A={self.amplitude:.2f}, off={self.offset:.2f}).")
+                    else:
+                        self.log(f"No calibration found for WP{wp_idx}.")
+            
             self._poll.start()
+            self._refresh_target_placeholder()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate stage: {e}")
             self.log(f"Activation failed: {e}")
@@ -277,37 +305,52 @@ class StageRow(QWidget):
         if not self.controller:
             QMessageBox.warning(self, "Error", "Stage not activated.")
             return
+
         t = self.target_edit.text().strip()
         if not t:
             QMessageBox.warning(self, "Error", "Please enter a target value.")
             return
+
         try:
             if self.is_waveplate and self.power_mode_checkbox.isChecked():
-                # power→angle conversion
-                desired_power = float(t)
-                if desired_power > self.amplitude:
-                    self.log(f"Desired power {desired_power} exceeds max {self.amplitude:.2f}; capping.")
-                    desired_power = self.amplitude
-                value = power_to_angle(desired_power, self.amplitude, self.offset)
-                # wrap angles for waveplates
+                # Interpret entry as POWER, convert to ANGLE via calibration
+                requested_power = float(t)
+
+                # Cap to calibration max
+                max_power = float(self.amplitude)
+                if requested_power > max_power + 1e-12:
+                    self.log(f"Desired power {requested_power:.3g} exceeds max {max_power:.3g}; capping.")
+                power = min(requested_power, max_power)
+
+                # Reflect the actual used power back into the UI box
+                if abs(power - requested_power) > 1e-12:
+                    self.target_edit.blockSignals(True)
+                    self.target_edit.setText(f"{power:.3f}")
+                    self.target_edit.blockSignals(False)
+
+                # Convert to an angle and wrap
+                angle_deg = power_to_angle(power, float(self.amplitude), float(self.offset)) % 360.0
+
+                # Move and log with both angle and power
+                self.controller.move_to(angle_deg, blocking=False)
+                self.log(f"Moving to {angle_deg:.3f}° ({power:.3g} W) …")
+                self._poll.start()
+                return
+
+            # Default path: interpret entry as direct position (angle for WPs, linear for others)
+            value = float(t)
+            units = "°" if self.is_waveplate else ""
+            if self.is_waveplate:
                 value = value % 360.0
-                units = "°"
-            else:
-                # direct move: angle for waveplates, linear position for translation stages
-                value = float(t)
-                if self.is_waveplate:
-                    value = value % 360.0
-                    units = "°"
-                else:
-                    units = ""  # mm or native units depending on stage; keep generic
 
             self.controller.move_to(value, blocking=False)
             self.log(f"Moving to {value:.3f}{units} …")
             self._poll.start()
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to move stage: {e}")
             self.log(f"Move failed: {e}")
-            
+   
 
 
 class ThorlabsView(QWidget):
@@ -458,6 +501,7 @@ class StageControlWindow(QMainWindow):
             calibration_changed_callback=self.update_stage_calibrations
         )
         self.tabs.addTab(self.calib_widget, "Waveplate Calibration")
+        REGISTRY.register("ui:waveplate_calib_widget", self.calib_widget)
 
         # Create the AutoWavepalteCalib
         self.autocalib_view = AutoWaveplateCalibWindow()
