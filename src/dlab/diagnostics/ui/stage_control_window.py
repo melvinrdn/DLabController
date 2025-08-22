@@ -14,12 +14,22 @@ from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
 from dlab.hardware.wrappers.waveplate_calib import WaveplateCalibWidget, NUM_WAVEPLATES
 from dlab.diagnostics.ui.auto_waveplate_calib_window import AutoWaveplateCalibWindow
 from dlab.diagnostics.ui.grating_compressor import GratingCompressorWindow
+from dlab.core.device_registry import REGISTRY
 
 import logging
 logger = logging.getLogger("dlab.ui.StageControlWindow")
 
 
-# helper pour charger les IDs depuis config.yaml
+def _wp_index_from_stage_number(stage_number: int) -> int:
+    # StageRow.stage_number is 0-based for waveplates. Convert to 1-based index.
+    return stage_number + 1
+
+def _reg_key_powermode(wp_index: int) -> str:
+    return f"waveplate:powermode:{wp_index}"  # bool
+
+def _reg_key_calib(wp_index: int) -> str:
+    return f"waveplate:calib:{wp_index}"      # (amplitude, offset)
+
 def load_default_ids() -> dict[int, str]:
     """
     Returns a mapping {row_index -> motor_id_string} from YAML.
@@ -143,6 +153,19 @@ class StageRow(QWidget):
 
         # Power mode (waveplates only)
         self.power_mode_checkbox = QCheckBox("Power Mode")
+        if self.is_waveplate:
+            # Load previous state if any
+            wp_idx = _wp_index_from_stage_number(self.stage_number)
+            pm = REGISTRY.get(_reg_key_powermode(wp_idx))
+            if isinstance(pm, bool):
+                self.power_mode_checkbox.setChecked(pm)
+
+            # When toggled here, publish to REGISTRY
+            def _on_pm_toggled(checked: bool):
+                REGISTRY.register(_reg_key_powermode(wp_idx), bool(checked))
+                # nothing else to do; GridScan will see it
+
+            self.power_mode_checkbox.toggled.connect(_on_pm_toggled)
         if not self.is_waveplate:
             # Translation stages: disable & hide power mode
             self.power_mode_checkbox.setChecked(False)
@@ -399,15 +422,16 @@ class ThorlabsView(QWidget):
     def update_stage_calibration(self, wp_index, calibration):
         """
         Update calibration parameters for a single StageRow corresponding to a waveplate.
-        wp_index: waveplate index (1-indexed)
-        calibration: tuple (amplitude, offset)
+        Also publish to REGISTRY so GridScan can use it.
         """
         for row in self.stage_rows:
-            # Only update rows representing waveplates (stage_number 0 to 5)
             if row.stage_number < NUM_WAVEPLATES and (row.stage_number + 1) == wp_index:
                 row.amplitude, row.offset = calibration
+                # Publish (amplitude, offset)
+                REGISTRY.register(_reg_key_calib(wp_index), (float(calibration[0]), float(calibration[1])))
                 self.log_message(
-                    f"Updated calibration for Stage {row.stage_number + 1}: amplitude={calibration[0]:.2f}, offset={calibration[1]:.2f}")
+                    f"Updated calibration for Stage {row.stage_number + 1}: amplitude={calibration[0]:.2f}, offset={calibration[1]:.2f}"
+                )
 
 
 # ----------------------------

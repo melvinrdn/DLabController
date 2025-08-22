@@ -517,7 +517,7 @@ class AndorLiveWindow(QWidget):
             return
 
         # Append to TSV log (no Averages column)
-        log_file_name = f"AndorCamera_log_{now.strftime('%Y-%m-%d')}.log"
+        log_file_name = f"AndorCam_1_log_{now.strftime('%Y-%m-%d')}.log"
         log_file_path = os.path.join(dir_path, log_file_name)
         header = "File Name\tExposure (µs)\tMCP Voltage\tComment\n"
 
