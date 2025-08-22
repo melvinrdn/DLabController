@@ -201,19 +201,30 @@ class WaveplateCalibWidget(QWidget):
         
     def load_waveplate_calibration(self, wp_index: int) -> bool:
         """
-        Load calibration for a single waveplate and push (max, offset) via the
-        existing calibration_changed_callback. Returns True on success.
+        Load WP calibration for one index from the defaults map,
+        update the internal fit, and publish both (amplitude, offset)
+        and the file path to the REGISTRY so scanners can log it.
         """
         p = self.default_calib.get(wp_index)
         if not p or not p.exists():
-            self.log(f"Calibration file for WP{wp_index} not found.")
+            self.log(f"No default calibration file for WP{wp_index}.")
             return False
 
-        self._open_calibration_file(wp_index, p)  # this triggers calibration_changed_callback(...)
-        # keep the plot up-to-date, but don’t load others
-        self._update_global_legend()
-        self.canvas.draw()
+        # Reuse your existing loader (fills self.calibration_params[wp_index])
+        self._open_calibration_file(wp_index, p)
+
+        try:
+            from dlab.core.device_registry import REGISTRY
+            # Keep key names consistent with GridScanTab
+            REGISTRY.register(f"waveplate:calib:{wp_index}",
+                            tuple(self.calibration_params[wp_index]))
+            REGISTRY.register(f"waveplate:calib_path:{wp_index}",
+                            p.as_posix())
+        except Exception:
+            pass
+
         return True
+
 
 
     def _open_calibration_file(self, wp_index: int, filepath: Path) -> None:

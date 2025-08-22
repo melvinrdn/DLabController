@@ -833,11 +833,13 @@ class GridScanTab(QWidget):
         return bool(w.isChecked()) if w else False
 
 
-    def _read_axes_from_table(self):
-        """Return [(stage_key, [positions...]), ...] using current table values.
-        If 'Power mode' is ON for a Thorlabs waveplate, Start/End/Step are POWER,
-        converted here to ANGLES using the calibration in REGISTRY."""
-        axes = []
+    def _read_axes_from_table(self) -> List[Tuple[str, List[float]]]:
+        """Return [(stage_key, [positions...]), ...] from the table so Live View
+        can be configured before a scan. Uses Start/End/Step and (if present)
+        the per-row Power mode checkbox to convert to angles for WPs when off,
+        or leave as power when on.
+        """
+        axes: List[Tuple[str, List[float]]] = []
         for r in range(self.axes_tbl.rowCount()):
             stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
             if not stage_key:
@@ -848,16 +850,24 @@ class GridScanTab(QWidget):
                 step  = float((self.axes_tbl.item(r, 3) or QTableWidgetItem("1")).text())
                 if step <= 0:
                     continue
-
-                pm = self._pm_checked_for_row(r, stage_key)
-
-                pos = self._positions_from_row(
-                    start=start, end=end, step=step,
-                    stage_key=stage_key, power_mode=pm
-                )
-                axes.append((stage_key, pos))
             except Exception:
-                pass
+                continue
+
+            # build positions in the “input” space
+            vals: List[float] = []
+            if end >= start:
+                n = int(np.floor((end - start) / step))
+                vals = [start + i * step for i in range(n + 1)]
+                if vals[-1] < end - 1e-12:
+                    vals.append(end)
+            else:
+                n = int(np.floor((start - end) / step))
+                vals = [start - i * step for i in range(n + 1)]
+                if vals[-1] > end + 1e-12:
+                    vals.append(end)
+
+
+            axes.append((stage_key, vals))
         return axes
 
 
@@ -874,16 +884,24 @@ class GridScanTab(QWidget):
         axes = self._read_axes_from_table()
         andor_keys = self._read_andor_keys_from_cam_table()
 
-        need_new = (self._live_view is None) or (sip.isdeleted(self._live_view)) or (not self._live_view.isVisible())
+        need_new = (
+            self._live_view is None
+            or sip.isdeleted(self._live_view)
+            or not self._live_view.isVisible()
+        )
         if need_new:
             from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView
-            self._live_view = AndorGridScanLiveView(None)
+            self._live_view = AndorGridScanLiveView(self)
             self._live_view.destroyed.connect(lambda: setattr(self, "_live_view", None))
             self._live_view.preconfigure(axes, andor_keys)
         else:
             self._live_view.set_context(axes, andor_keys, preserve=True)
 
-        self._live_view.show(); self._live_view.raise_(); self._live_view.activateWindow()
+        self._live_view.show()
+        self._live_view.raise_()
+        self._live_view.activateWindow()
+
+
 
     # ----- control flow -----
     def _start(self) -> None:

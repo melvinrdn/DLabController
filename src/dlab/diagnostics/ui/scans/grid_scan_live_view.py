@@ -24,6 +24,25 @@ try:
 except Exception:
     _HAS_SCIPY = False
 
+# --- helpers (kept in sync with grid_scan_tab / StageControl conventions)
+from dlab.core.device_registry import REGISTRY
+
+def _wp_index_from_stage_key(stage_key: str) -> int | None:
+    try:
+        if not stage_key.startswith("stage:"):
+            return None
+        i = int(stage_key.split(":")[1])
+        from dlab.hardware.wrappers.waveplate_calib import NUM_WAVEPLATES
+        return i if 1 <= i <= NUM_WAVEPLATES else None
+    except Exception:
+        return None
+
+def _reg_key_powermode(wp_index: int) -> str:
+    return f"waveplate:powermode:{wp_index}"
+
+def _reg_key_calib(wp_index: int) -> str:
+    return f"waveplate:calib:{wp_index}"  # (amplitude, offset)
+
 
 class AndorGridScanLiveView(QWidget):
     """
@@ -48,6 +67,8 @@ class AndorGridScanLiveView(QWidget):
         self.axis_names: List[str] = []
         self.axis_lengths: List[int] = []
         self.axis_index: Dict[str, int] = {}
+        self.axis_positions: List[List[float]] = []  # raw move values (angles/mm)
+        self.axis_units: List[str] = []              # default guess ('°' for WP, 'mm' for others)
 
         # Cameras (Andor only)
         self.cameras: List[str] = []
@@ -113,7 +134,7 @@ class AndorGridScanLiveView(QWidget):
 
         # small footer
         foot = QHBoxLayout()
-        self.note = QLabel("Tip: set Y source to 'time' for scan order along Y.")
+        self.note = QLabel("Tip: set Y source to a stage to see real values; 'time' shows scan order.")
         foot.addWidget(self.note)
         foot.addStretch(1)
         main.addLayout(foot)
@@ -124,6 +145,8 @@ class AndorGridScanLiveView(QWidget):
         self.axis_names = [ax for ax, _ in axes]
         self.axis_lengths = [len(pos) for _, pos in axes]
         self.axis_index = {name: i for i, name in enumerate(self.axis_names)}
+        self.axis_positions = [list(pos) for _, pos in axes]
+        self.axis_units = [("°" if _wp_index_from_stage_key(name) is not None else "mm") for name, _ in axes]
         self.cameras = list(andor_camera_keys)
 
         for idx, p in enumerate(self.panels):
@@ -155,6 +178,8 @@ class AndorGridScanLiveView(QWidget):
         self.axis_names = [ax for ax, _ in axes]
         self.axis_lengths = [len(pos) for _, pos in axes]
         self.axis_index = {name: i for i, name in enumerate(self.axis_names)}
+        self.axis_positions = [list(pos) for _, pos in axes]
+        self.axis_units = [("°" if _wp_index_from_stage_key(name) is not None else "mm") for name, _ in axes]
         self.cameras = list(andor_camera_keys)
 
         for i, p in enumerate(self.panels):
@@ -182,6 +207,38 @@ class AndorGridScanLiveView(QWidget):
     def reset_all(self) -> None:
         for p in self.panels:
             p.clear_data()
+
+    def _display_value_for_source(self, src: str, idxs: List[int]) -> tuple[float, str, str]:
+        """
+        Return (value, unit, label_text) for 'src' at the current sample.
+        Uses the actual scan axis values provided by GridScan:
+        - WP + PowerMode ON  -> power (W)
+        - WP + PowerMode OFF -> angle (°)
+        - Other stages       -> position (mm)
+        - 'time'             -> linear order index
+        """
+        # synthetic "time" source
+        if src == "time" or src not in self.axis_index:
+            return float(self._index_for_source("time", idxs)), "", "time"
+
+        j = self.axis_index[src]
+        if j >= len(self.axis_positions) or j >= len(idxs):
+            return float(idxs[j] if j < len(idxs) else 0.0), "", src
+
+        raw = float(self.axis_positions[j][idxs[j]])  # <-- THIS is what the UI scanned (power/angle/mm)
+        wp = _wp_index_from_stage_key(src)
+        if wp is not None:
+            pm = bool(REGISTRY.get(_reg_key_powermode(wp)) or False)
+            if pm:
+                # Already power because the UI scanned power when PowerMode is ON
+                return raw, "W", f"{src} (power)"
+            else:
+                # Angle when PowerMode is OFF
+                return raw, "°", f"{src} (angle)"
+
+        # Translation stages (or anything else)
+        return raw, "mm", src
+
 
     def on_andor_frame(self, axis_indices: List[int], frame_u16: np.ndarray, camera_key: str) -> None:
         """Called by GridScanWorker for each Andor frame (uint16)."""
@@ -215,22 +272,25 @@ class AndorGridScanLiveView(QWidget):
 
             if metric == "Total sum vs Y":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
+                yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
                 val = float(np.sum(img, dtype=np.float64))
-                p.update_line(yi, val)
+                p.update_line_value(yi, yval, val, y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
 
             elif metric == "Sum by columns":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
+                yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
                 prof = np.sum(img, axis=0, dtype=np.float64)
-                p.update_heatmap_row(yi, prof, x_len=prof.shape[0])
+                p.update_heatmap_row_value(yi, yval, prof, x_len=prof.shape[0],
+                                           y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
                 p.ax.set_xlabel("pixel (column)")
-                p.ax.set_ylabel(f"{p.y_source_combo.currentText()} index")
 
             elif metric == "Sum by rows":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
+                yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
                 prof = np.sum(img, axis=1, dtype=np.float64)
-                p.update_heatmap_row(yi, prof, x_len=prof.shape[0])
+                p.update_heatmap_row_value(yi, yval, prof, x_len=prof.shape[0],
+                                           y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
                 p.ax.set_xlabel("pixel (row)")
-                p.ax.set_ylabel(f"{p.y_source_combo.currentText()} index")
 
             else:  # "Total sum map (axes)"
                 yname = p.y_source_combo.currentText()
@@ -241,10 +301,13 @@ class AndorGridScanLiveView(QWidget):
                 xi = self._index_for_source(xname, axis_indices)
                 y_len = self.axis_lengths[self.axis_index[yname]]
                 x_len = self.axis_lengths[self.axis_index[xname]]
+                yval, yunit, ylabel = self._display_value_for_source(yname, axis_indices)
+                xval, xunit, xlabel = self._display_value_for_source(xname, axis_indices)
                 val = float(np.sum(img, dtype=np.float64))
-                p.update_stage_map(yi, xi, x_len=x_len, y_len=y_len, value=val)
-                p.ax.set_xlabel(f"{xname} index")
-                p.ax.set_ylabel(f"{yname} index")
+                p.update_stage_map_value(yi, xi, x_len=x_len, y_len=y_len, value=val,
+                                         x_val=xval, y_val=yval,
+                                         x_label=f"{xlabel} [{xunit}]" if xunit else xlabel,
+                                         y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
 
     # ----------- Preprocess helpers -----------
     def _preprocess(self, image: np.ndarray) -> np.ndarray:
@@ -256,10 +319,8 @@ class AndorGridScanLiveView(QWidget):
             if _HAS_SKIMAGE:
                 out = _sk_rotate(out, angle, resize=True, order=3, mode="edge", preserve_range=True).astype(image.dtype)
             elif _HAS_SCIPY:
-                # scipy rotates CCW degrees; reshape=True ~ resize
                 out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
             else:
-                # no deps: skip rotation
                 pass
 
         # crop (y, x)
@@ -353,6 +414,12 @@ class _Panel(QWidget):
         self._mat: Optional[np.ndarray] = None  # (Y, X) for heatmaps
         self._vec: Optional[np.ndarray] = None  # (Y,) for lines
 
+        # extra storage for stage values / labels
+        self._y_vals: Optional[np.ndarray] = None
+        self._x_vals_for_map: Optional[np.ndarray] = None
+        self._y_label_txt: str = "Y"
+        self._x_label_txt: str = "X"
+
         # React to metric changes
         self.metric_combo.currentTextChanged.connect(self._on_metric_changed)
 
@@ -380,10 +447,12 @@ class _Panel(QWidget):
         # allocate blank containers
         if self._is_line:
             self._vec = np.full((self._y_len,), np.nan, dtype=float)
+            self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
             self._mat = None
             self._ensure_line_artist()
         else:
-            self._mat = np.full((self._y_len, 0), np.nan, dtype=float)  # will set width on first row
+            self._mat = np.full((self._y_len, 0), np.nan, dtype=float)  # width set on first row
+            self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
             self._vec = None
             self._ensure_heatmap_artist()
 
@@ -393,28 +462,40 @@ class _Panel(QWidget):
         if self._is_line:
             if self._vec is not None:
                 self._vec[:] = np.nan
+            if self._y_vals is not None:
+                self._y_vals[:] = np.nan
         else:
             if self._mat is not None and self._mat.size:
                 self._mat[:] = np.nan
+            if self._y_vals is not None:
+                self._y_vals[:] = np.nan
+            if self._x_vals_for_map is not None and self._x_vals_for_map.size:
+                self._x_vals_for_map[:] = np.nan
         self._redraw()
 
-    def update_line(self, yi: int, value: float) -> None:
+    def update_line_value(self, yi: int, y_value: float, value: float, y_label: str):
         if not self._is_line:
             self._switch_to_line()
         if yi >= (self._vec.shape[0] if self._vec is not None else 0):
             new_len = yi + 1
-            tmp = np.full((new_len,), np.nan, dtype=float)
+            tmpv = np.full((new_len,), np.nan, dtype=float)
+            tmpy = np.full((new_len,), np.nan, dtype=float)
             if self._vec is not None:
-                tmp[: self._vec.shape[0]] = self._vec
-            self._vec = tmp
+                tmpv[: self._vec.shape[0]] = self._vec
+            if self._y_vals is not None:
+                tmpy[: self._y_vals.shape[0]] = self._y_vals
+            self._vec, self._y_vals = tmpv, tmpy
         self._vec[yi] = value
+        self._y_vals[yi] = float(y_value)
+        self._y_label_txt = y_label or "Y"
         self._redraw()
 
-    def update_heatmap_row(self, yi: int, row: np.ndarray, x_len: int) -> None:
+    def update_heatmap_row_value(self, yi: int, y_value: float, row: np.ndarray, x_len: int, y_label: str):
         if self._is_line:
             self._switch_to_heatmap()
         if self._mat is None or self._mat.shape[0] != self._y_len:
             self._mat = np.full((self._y_len, x_len), np.nan, dtype=float)
+            self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
         if self._mat.shape[1] != x_len:
             M = np.full((self._mat.shape[0], x_len), np.nan, dtype=float)
             c = min(self._mat.shape[1], x_len)
@@ -423,9 +504,13 @@ class _Panel(QWidget):
             self._mat = M
         if 0 <= yi < self._mat.shape[0]:
             self._mat[yi, :] = row
+            self._y_vals[yi] = float(y_value)
+        self._y_label_txt = y_label or "Y"
         self._redraw()
 
-    def update_stage_map(self, yi: int, xi: int, x_len: int, y_len: int, value: float) -> None:
+    def update_stage_map_value(self, yi: int, xi: int, x_len: int, y_len: int, value: float,
+                               x_val: float, y_val: float,
+                               x_label: str, y_label: str):
         if self._is_line:
             self._switch_to_heatmap()
         need_new = (self._mat is None or self._mat.shape[0] != y_len or self._mat.shape[1] != x_len)
@@ -436,8 +521,15 @@ class _Panel(QWidget):
                 cy, cx = min(oy, y_len), min(ox, x_len)
                 M[:cy, :cx] = self._mat[:cy, :cx]
             self._mat = M
+            self._y_vals = np.full((y_len,), np.nan, dtype=float)
+            self._x_vals_for_map = np.full((x_len,), np.nan, dtype=float)
         if 0 <= yi < self._mat.shape[0] and 0 <= xi < self._mat.shape[1]:
             self._mat[yi, xi] = value
+            self._y_vals[yi] = float(y_val)
+            if self._x_vals_for_map is not None:
+                self._x_vals_for_map[xi] = float(x_val)
+        self._x_label_txt = x_label or "X"
+        self._y_label_txt = y_label or "Y"
         self._redraw()
 
     # ---- internals ----
@@ -454,12 +546,14 @@ class _Panel(QWidget):
     def _switch_to_line(self) -> None:
         self._is_line = True
         self._vec = np.full((self._y_len,), np.nan, dtype=float)
+        self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
         self._mat = None
         self._ensure_line_artist()
 
     def _switch_to_heatmap(self) -> None:
         self._is_line = False
         self._mat = np.full((self._y_len, 0), np.nan, dtype=float)
+        self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
         self._vec = None
         self._ensure_heatmap_artist()
 
@@ -469,7 +563,7 @@ class _Panel(QWidget):
             np.arange(max(1, self._y_len)),
             np.full((max(1, self._y_len),), np.nan, dtype=float)
         )[0]
-        self.ax.set_xlabel("Y index")
+        self.ax.set_xlabel("Y value")
         self.ax.set_ylabel("Total sum")
         self.ax.grid(True, alpha=0.3)
         self._im = None
@@ -478,9 +572,9 @@ class _Panel(QWidget):
     def _ensure_heatmap_artist(self) -> None:
         self.ax.cla()
         mat = np.zeros((max(1, self._y_len), 1), dtype=float)
-        self._im = self.ax.imshow(mat, origin="lower", aspect="auto")
+        self._im = self.ax.imshow(mat, origin="lower", aspect="auto",cmap='turbo')
         self.ax.set_xlabel("pixel")
-        self.ax.set_ylabel("Y index")
+        self.ax.set_ylabel("Y value")
         self._line = None
         self.canvas.draw_idle()
 
@@ -491,9 +585,12 @@ class _Panel(QWidget):
             y = self._vec
             if self._line is None:
                 self._ensure_line_artist()
-            x = np.arange(y.shape[0])
+            # X axis = actual Y values
+            x = np.arange(y.shape[0]) if self._y_vals is None else self._y_vals
             self._line.set_xdata(x)
             self._line.set_ydata(y)
+            self.ax.set_xlabel(self._y_label_txt)
+            self.ax.set_ylabel("Total sum")
             self.ax.relim()
             self.ax.autoscale_view()
         else:
@@ -505,10 +602,29 @@ class _Panel(QWidget):
                 self._im.set_data(M)
             else:
                 self._im.set_data(M)
+
+            # color scale
             finite = np.isfinite(M)
             if finite.any():
                 vmin = float(np.nanmin(M)); vmax = float(np.nanmax(M))
                 if vmin == vmax:
                     vmax = vmin + 1.0
                 self._im.set_clim(vmin, vmax)
+
+            # Y ticks from real values (sparse)
+            self.ax.set_ylabel(self._y_label_txt)
+            if self._y_vals is not None and self._y_vals.size:
+                n = self._y_vals.size
+                idxs = np.linspace(0, n-1, num=min(8, n), dtype=int)
+                self.ax.set_yticks(idxs)
+                self.ax.set_yticklabels([f"{self._y_vals[i]:.3g}" if np.isfinite(self._y_vals[i]) else "" for i in idxs])
+
+            # X ticks for 2D stage map if present
+            if self._x_vals_for_map is not None and self._x_vals_for_map.size:
+                m = self._x_vals_for_map.size
+                idxs = np.linspace(0, m-1, num=min(8, m), dtype=int)
+                self.ax.set_xticks(idxs)
+                self.ax.set_xticklabels([f"{self._x_vals_for_map[i]:.3g}" if np.isfinite(self._x_vals_for_map[i]) else "" for i in idxs])
+                self.ax.set_xlabel(self._x_label_txt)
+
         self.canvas.draw_idle()

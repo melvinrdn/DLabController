@@ -261,11 +261,13 @@ class StageRow(QWidget):
                 if calib_ui and hasattr(calib_ui, "load_waveplate_calibration"):
                     ok = calib_ui.load_waveplate_calibration(wp_idx)
                     if ok:
-                        # read back what the callback stored, or directly from the widget cache
-                        calib = REGISTRY.get(_reg_key_calib(wp_idx))
+                        calib = REGISTRY.get(f"waveplate:calib:{wp_idx}")
                         if isinstance(calib, (tuple, list)) and len(calib) >= 2:
                             self.amplitude, self.offset = float(calib[0]), float(calib[1])
-                            self.log(f"WP{wp_idx} calibration loaded (A={self.amplitude:.2f}, off={self.offset:.2f}).")
+                            self.log(
+                                f"WP{wp_idx} calibration loaded "
+                                f"(A={self.amplitude:.2f}, off={self.offset:.2f})."
+                            )
                     else:
                         self.log(f"No calibration found for WP{wp_idx}.")
             
