@@ -1,5 +1,5 @@
-import os
-import json
+from __future__ import annotations
+
 import datetime
 from pathlib import Path
 from typing import Dict, Tuple
@@ -13,8 +13,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from matplotlib.figure import Figure
+        # backend
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.lines import Line2D
 
 from dlab.boot import ROOT, get_config
 
@@ -22,26 +22,21 @@ from dlab.boot import ROOT, get_config
 # Waveplate Calibration Widget
 # ----------------------------
 
-# How many WPs you want to show
 NUM_WAVEPLATES = 6
-
 COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
 
 
 def _calibration_root() -> Path:
-    """Base folder for calibration; default 'ressources/calibration'."""
     cfg = get_config() or {}
     rel = (cfg.get("paths", {}) or {}).get("calibration", "ressources/calibration")
     return (ROOT / rel).resolve()
 
 
 def _wp_default_yaml() -> Path:
-    """Location of the YAML with default WP files."""
     return _calibration_root() / "wp_default.yaml"
 
 
 def _resolve_path(p: str | Path) -> Path:
-    """Resolve a path relative to the calibration root if not absolute."""
     p = Path(p)
     if p.is_absolute():
         return p
@@ -49,7 +44,6 @@ def _resolve_path(p: str | Path) -> Path:
 
 
 def _rel_to_root(p: Path) -> str:
-    """Make a path relative to calibration root for nice YAML writes."""
     try:
         return p.resolve().relative_to(_calibration_root()).as_posix()
     except Exception:
@@ -57,13 +51,7 @@ def _rel_to_root(p: Path) -> str:
 
 
 def _load_xy_file(path: Path) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Robust loader for 2-column data.
-    - Skips lines starting with '#'
-    - Skips any line containing non-numeric tokens (e.g., headers like 'Angle_deg Power_W')
-    - Accepts tab/space/semicolon/comma separators
-    - Handles .txt/.twt produced by AutoWaveplateCalib
-    """
+
     xs: list[float] = []
     ys: list[float] = []
 
@@ -78,33 +66,22 @@ def _load_xy_file(path: Path) -> tuple[np.ndarray, np.ndarray]:
             s = raw.strip()
             if not s or s.startswith("#"):
                 continue
-            # Normalize separators
             for sep in (";", ",", "\t"):
                 s = s.replace(sep, " ")
-            # Collapse multiple spaces
             parts = [p for p in s.split(" ") if p]
             if len(parts) < 2:
                 continue
-            x = _try_float(parts[0])
-            y = _try_float(parts[1])
+            x = _try_float(parts[0]); y = _try_float(parts[1])
             if x is None or y is None:
-                # Non-numeric line (e.g., "Angle_deg Power_W") → skip
                 continue
-            xs.append(float(x))
-            ys.append(float(y))
+            xs.append(float(x)); ys.append(float(y))
 
     if not xs:
         return np.array([]), np.array([])
     return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
 
 
-
 class WaveplateCalibWidget(QWidget):
-    """
-    Loads default calibration files from `wp_default.yaml`, plots each WP, and
-    exposes a single waveplate selector to replace its file. After loading or
-    updating a calibration, calls `calibration_changed_callback(wp_index, (max_val, offset))`.
-    """
 
     def __init__(self, log_callback=None, calibration_changed_callback=None, parent=None):
         super().__init__(parent)
@@ -115,16 +92,16 @@ class WaveplateCalibWidget(QWidget):
 
         # {wp_index (int): absolute Path to file}
         self.default_calib: Dict[int, Path] = {}
-
-        # {wp_index (int): (max_value, offset)}
+        # {wp_index (int): (1.0, phase_deg)}
         self.calibration_params: Dict[int, Tuple[float, float]] = {}
+        # {wp_index (int): max power seen in file (W) — informational only}
+        self.max_abs_power: Dict[int, float] = {}
 
-        # per-WP line edits for displaying current params
+        # per-WP UI
         self.wp_entries: Dict[str, Dict[str, QLineEdit]] = {}
 
         self._init_ui()
         self._load_defaults_from_yaml()
-        #self._load_all_calibrations()
 
     # ---------- UI ----------
 
@@ -139,12 +116,12 @@ class WaveplateCalibWidget(QWidget):
             row = QHBoxLayout()
             row.addWidget(QLabel(f"WP{i}:"), stretch=0)
 
-            row.addWidget(QLabel("Max:"), stretch=0)
-            max_edit = QLineEdit("0"); max_edit.setFixedWidth(70)
+            row.addWidget(QLabel("Max (norm):"), stretch=0)
+            max_edit = QLineEdit("1.00"); max_edit.setFixedWidth(70); max_edit.setReadOnly(True)
             row.addWidget(max_edit, stretch=0)
 
-            row.addWidget(QLabel("Offset:"), stretch=0)
-            off_edit = QLineEdit("0"); off_edit.setFixedWidth(70)
+            row.addWidget(QLabel("Phase (deg):"), stretch=0)
+            off_edit = QLineEdit("0"); off_edit.setFixedWidth(70); off_edit.setReadOnly(True)
             row.addWidget(off_edit, stretch=0)
 
             self.wp_entries[str(i)] = {"max": max_edit, "offset": off_edit}
@@ -203,65 +180,89 @@ class WaveplateCalibWidget(QWidget):
         except Exception as e:
             self.log(f"Failed to write wp_default.yaml: {e}")
 
-    # ---------- Calibration loading ----------
+    # ---------- Model: normalized cos + phase-only fit ----------
 
-    def _load_all_calibrations(self) -> None:
-        # Try to load configured files for 1..N
-        for wp in range(1, NUM_WAVEPLATES + 1):
-            p = self.default_calib.get(wp)
-            if not p or not p.exists():
-                self.log(f"Calibration file for WP{wp} not found.")
-                continue
-            self._open_calibration_file(wp, p)
-        self._update_global_legend()
-        self.canvas.draw()
-        
+    @staticmethod
+    def _cos01(x_deg: np.ndarray | float, phase_deg: float) -> np.ndarray | float:
+        # y ∈ [0,1] with period 180° for a half-wave plate
+        return 0.5 * (1.0 + np.cos(2.0 * np.pi / 90.0 * (np.asarray(x_deg) - phase_deg)))
+
+    def _fit_phase_only(self, x: np.ndarray, y01: np.ndarray) -> float:
+        def f(xx, phase):
+            return self._cos01(xx, phase)
+        popt, _ = curve_fit(f, x, y01, p0=(0.0,))
+        return float(popt[0])
+
+    # ---------- Public API used by StageControl ----------
+
     def load_waveplate_calibration(self, wp_index: int) -> bool:
-        """
-        Load WP calibration for one index from the defaults map,
-        update the internal fit, and publish both (amplitude, offset)
-        and the file path to the REGISTRY so scanners can log it.
-        """
         p = self.default_calib.get(wp_index)
         if not p or not p.exists():
             self.log(f"No default calibration file for WP{wp_index}.")
             return False
 
-        # Reuse your existing loader (fills self.calibration_params[wp_index])
         self._open_calibration_file(wp_index, p)
-
         try:
             from dlab.core.device_registry import REGISTRY
-            # Keep key names consistent with GridScanTab
             REGISTRY.register(f"waveplate:calib:{wp_index}",
-                            tuple(self.calibration_params[wp_index]))
+                              tuple(self.calibration_params[wp_index]))
             REGISTRY.register(f"waveplate:calib_path:{wp_index}",
-                            p.as_posix())
+                              p.as_posix())
         except Exception:
             pass
-
         return True
 
-
+    # ---------- Calibration loading ----------
 
     def _open_calibration_file(self, wp_index: int, filepath: Path) -> None:
         try:
             angles, powers = _load_xy_file(filepath)
             if angles.size == 0:
                 raise ValueError("Empty calibration file")
-            amp, phase = self._cos_fit(angles, powers)
-            self.calibration_params[wp_index] = (2 * amp, phase)
 
-            self.wp_entries[str(wp_index)]["max"].setText(f"{2 * amp:.2f}")
+            pmax = float(np.nanmax(powers))
+            if not np.isfinite(pmax) or pmax <= 0:
+                raise ValueError("Invalid max power in calibration file")
+
+            # Normalize to 0..1
+            y01 = np.clip(powers / pmax, 0.0, 1.0)
+            phase = self._fit_phase_only(angles, y01)
+
+            # Persist
+            self.calibration_params[wp_index] = (1.0, phase)   # amplitude=1.0 (fraction)
+            self.max_abs_power[wp_index] = pmax
+
+            # UI
+            self.wp_entries[str(wp_index)]["max"].setText("1.00")
             self.wp_entries[str(wp_index)]["offset"].setText(f"{phase:.2f}")
 
+            # Plot normalized data + fit
             ax = self.axes[wp_index - 1]
-            self._plot_waveplate(ax, angles, powers, COLORS[(wp_index - 1) % len(COLORS)], amp, phase)
+            ax.clear()
+            color = COLORS[(wp_index - 1) % len(COLORS)]
+            ax.plot(angles, y01, marker='o', linestyle='None', color=color, label="data (norm)")
+            xs = np.linspace(0, 360, 721)
+            ax.plot(xs, self._cos01(xs, phase), color=color, label="fit (norm)")
+            ax.set_xlabel("Angle (deg)")
+            ax.set_ylabel("Relative power (0..1)")
+            ax.legend(loc="best")
 
             rel = _rel_to_root(filepath)
-            self.log(f"WP{wp_index} loaded from ./{rel}")
+            self.log(f"WP{wp_index} loaded from ./{rel} (max={pmax:.3g} W, normalized to 0..1)")
             if self.calibration_changed_callback:
                 self.calibration_changed_callback(wp_index, self.calibration_params[wp_index])
+
+            # Publish to REGISTRY
+            try:
+                from dlab.core.device_registry import REGISTRY
+                REGISTRY.register(f"waveplate:calib:{wp_index}", (1.0, phase))
+                REGISTRY.register(f"waveplate:calib_path:{wp_index}", filepath.as_posix())
+                REGISTRY.register(f"waveplate:max:{wp_index}", pmax)  # info only
+            except Exception:
+                pass
+
+            self.canvas.draw_idle()
+
         except Exception as e:
             self.log(f"Failed to load calibration for WP{wp_index}: {e}")
 
@@ -280,32 +281,6 @@ class WaveplateCalibWidget(QWidget):
         self.default_calib[wp_index] = p
         self._save_defaults_to_yaml()
         self._open_calibration_file(wp_index, p)
-
-    # ---------- Plot / math ----------
-
-    def _plot_waveplate(self, ax, angles, powers, color, amplitude, phase):
-        ax.clear()
-        ax.plot(angles, powers, marker='o', linestyle='None', color=color)
-        xs = np.linspace(0, 360, 361)
-        ax.plot(xs, self._cos_func(xs, amplitude, phase), color=color)
-        ax.set_xlabel("Angle (deg)")
-        ax.set_ylabel("Power (W)")
-
-    def _update_global_legend(self):
-        handles = [Line2D([], [], color=COLORS[i % len(COLORS)], marker='o', linestyle='None')
-                   for i in range(NUM_WAVEPLATES)]
-        labels = [f"WP{i + 1}" for i in range(NUM_WAVEPLATES)]
-        self.fig.legend(handles, labels, loc='upper right')
-        self.fig.tight_layout(rect=[0, 0, 0.85, 1])
-
-    @staticmethod
-    def _cos_func(x, amplitude, phase):
-        return amplitude * np.cos(2 * np.pi / 90 * x - 2 * np.pi / 90 * phase) + amplitude
-
-    def _cos_fit(self, x, y):
-        guess = (np.max(y) / 2.0, 0.0)
-        popt, _ = curve_fit(self._cos_func, x, y, p0=guess)
-        return popt  # (amplitude, phase)
 
     # ---------- Logging ----------
 

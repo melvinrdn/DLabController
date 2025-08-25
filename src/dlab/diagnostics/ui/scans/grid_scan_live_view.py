@@ -231,7 +231,7 @@ class AndorGridScanLiveView(QWidget):
             pm = bool(REGISTRY.get(_reg_key_powermode(wp)) or False)
             if pm:
                 # Already power because the UI scanned power when PowerMode is ON
-                return raw, "W", f"{src} (power)"
+                return raw, "frac", f"{src} (power)"
             else:
                 # Angle when PowerMode is OFF
                 return raw, "°", f"{src} (angle)"
