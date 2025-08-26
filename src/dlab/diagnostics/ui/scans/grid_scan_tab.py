@@ -26,12 +26,13 @@ from dlab.hardware.wrappers.waveplate_calib import NUM_WAVEPLATES
 
 # ---------- helpers ----------
 def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) -> float:
-    """
-    Modèle: y = 0.5 * (1 + cos(2π/90 * (x - phase))), y∈[0,1]
-    Inversion: x = phase + (45/π) * arccos(2y - 1) (mod 360)
-    """
     y = float(np.clip(power_fraction, 0.0, 1.0))
     return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
+
+
+def angle_to_power(angle_deg: float, phase_deg: float) -> float:
+    y = 0.5 * (1.0 + float(np.cos(2.0 * np.pi / 90.0 * (float(angle_deg) - float(phase_deg)))))
+    return float(np.clip(y, 0.0, 1.0))
 
 
 def _wp_index_from_stage_key(stage_key: str) -> Optional[int]:
@@ -86,7 +87,7 @@ class GridScanWorker(QObject):
 
     def __init__(
         self,
-        axes: List[Tuple[str, List[float]]],      # [(stage_key, [positions...])]; fractions si PM
+        axes: List[Tuple[str, List[float]]],      # [(stage_key, [positions...])]
         camera_params: Dict[str, Tuple[int,int]], # camera_key -> (exposure_us ou int_ms, averages)
         settle_s: float,
         scan_name: str,
@@ -94,6 +95,7 @@ class GridScanWorker(QObject):
         mcp_voltage: str,
         background: bool = False,
         existing_scan_log: Optional[str] = None,
+        axes_meta: Optional[Dict[str, dict]] = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -106,6 +108,7 @@ class GridScanWorker(QObject):
         self.background = bool(background)
         self.existing_scan_log = existing_scan_log
         self.abort = False
+        self.axes_meta = axes_meta or {}
 
     def _emit(self, msg: str) -> None:
         self.log.emit(msg); logger.info(msg)
@@ -126,22 +129,40 @@ class GridScanWorker(QObject):
         def _write_scan_log_header(scan_log: Path, axes: List[Tuple[str, List[float]]], comment: str) -> None:
             header_cols = []
             for i, (ax, _) in enumerate(axes, 1):
-                header_cols += [f"Stage_{i}", f"Pos_{i}"]
+                # Stage_i, pos_i (angle/position), power_i (W or fraction), dans cet ordre
+                header_cols += [f"Stage_{i}", f"pos_{i}", f"power_{i}"]
             header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage"]
             with open(scan_log, "w", encoding="utf-8") as f:
                 f.write("\t".join(header_cols) + "\n")
                 f.write(f"# {comment}\n")
+                # Détails par axe
                 for ax, _ in axes:
                     wp = _wp_index_from_stage_key(ax)
-                    if wp is None:
-                        continue
-                    pm = bool(REGISTRY.get(_reg_key_powermode(wp)) or False)
-                    if not pm:
-                        continue
-                    calib_path = REGISTRY.get(_reg_key_calib_path(wp)) or "unknown"
-                    mv = REGISTRY.get(_reg_key_maxvalue(wp))
-                    mv_txt = "none" if mv is None else f"{float(mv):.6g} W"
-                    f.write(f"# PowerMode ON for {ax} (WP{wp}) using calibration: {calib_path}; # max_value={mv_txt}\n")
+                    meta = self.axes_meta.get(ax, {})
+                    pm_on = bool(meta.get("pm", False))
+                    if wp is not None and pm_on:
+                        calib_path = meta.get("calib_path", REGISTRY.get(_reg_key_calib_path(wp)) or "unknown")
+                        mv = meta.get("max_value_W", REGISTRY.get(_reg_key_maxvalue(wp)))
+                        mv_txt = "none" if mv is None else f"{float(mv):.6g} W"
+                        f.write(
+                            "# PowerMode ON for {ax} (WP{wp}) | calib={calib} | max_value={mv}\n"
+                            .format(ax=ax, wp=wp, calib=calib_path, mv=mv_txt)
+                        )
+                        f.write(
+                            "#   Start fraction={sf:.6f} | Start angle={sa:.3f} deg | Rotation={de:.3f} deg | Step={st:.3f} deg\n"
+                            .format(sf=float(meta.get("start_fraction", float("nan"))),
+                                    sa=float(meta.get("start_angle_deg", float("nan"))),
+                                    de=float(meta.get("delta_deg", float("nan"))),
+                                    st=float(meta.get("step_deg", float("nan"))))
+                        )
+                    else:
+                        f.write(
+                            "# PowerMode OFF for {ax} | Start={st:.6g} | End={en:.6g} | Step={sp:.6g}\n"
+                            .format(ax=ax,
+                                    st=float(meta.get("start", float("nan"))),
+                                    en=float(meta.get("end", float("nan"))),
+                                    sp=float(meta.get("step", float("nan"))))
+                        )
 
         # --- resolve stages ---
         stages = {}
@@ -260,47 +281,39 @@ class GridScanWorker(QObject):
                 ui_combo = [(self.axes[k][0], self.axes[k][1][idxs[k]]) for k in range(len(self.axes))]
 
                 move_targets: List[Tuple[str, float]] = []
-                log_combo:    List[Tuple[str, float]] = []
-
-                violation_found = False
-                violation_msg = ""
+                # log_combo: (stage_key, pos_val, power_val or "")
+                log_combo:    List[Tuple[str, float, str | float]] = []
 
                 for ax, pos in ui_combo:
                     wp = _wp_index_from_stage_key(ax)
-                    if wp is not None:
-                        pm = bool(REGISTRY.get(_reg_key_powermode(wp)) or False)
-                        if pm:
-                            amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
-                            if amp_off[0] is None:
-                                self._emit(f"{ax}: Power Mode ON but no calibration; aborting.")
-                                self.finished.emit(""); return
+                    meta = self.axes_meta.get(ax, {})
+                    pm_on = bool(meta.get("pm", False))
 
-                            # pos est une FRACTION [0..1]
-                            frac_in = float(pos)
-                            frac = max(0.0, min(1.0, frac_in))
-                            if frac != frac_in and not violation_found:
-                                violation_found = True
-                                violation_msg = (f"{ax}: requested fraction {frac_in:.6f} out of [0,1]. "
-                                                 f"Capped to {frac:.6f}. Scan aborted — values were adjusted in the table.")
+                    if wp is not None and pm_on:
+                        # Ici 'pos' est un ANGLE absolu (deg) à atteindre.
+                        angle = float(pos)
 
-                            phase = float(amp_off[1])
-                            angle = power_to_angle(frac, 1.0, phase)
-                            move_targets.append((ax, angle))  # move by ANGLE
+                        # Phase depuis la calibration (pour convertir angle->power fraction)
+                        amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
+                        if amp_off[1] is None:
+                            self._emit(f"{ax}: Power Mode ON but no calibration phase; aborting.")
+                            self.finished.emit(""); return
+                        phase = float(amp_off[1])
 
-                            # log fraction * max_value (si présent), sinon la fraction
-                            mv = REGISTRY.get(_reg_key_maxvalue(wp))
-                            if mv is None:
-                                log_combo.append((ax, frac))
-                            else:
-                                log_combo.append((ax, frac * float(mv)))
-                            continue
+                        frac = angle_to_power(angle, phase)
+                        mv = REGISTRY.get(_reg_key_maxvalue(wp))
+                        if mv is None:
+                            power_val: str | float = frac
+                        else:
+                            power_val = frac * float(mv)
 
-                    # par défaut (non-WP ou PM off): consigne directe
+                        move_targets.append((ax, angle))
+                        log_combo.append((ax, angle, power_val))
+                        continue
+
+                    # PM OFF: consigne directe, power_i vide
                     move_targets.append((ax, float(pos)))
-                    log_combo.append((ax, float(pos)))
-
-                if violation_found:
-                    self._emit(violation_msg); self.finished.emit(""); return
+                    log_combo.append((ax, float(pos), ""))
 
                 # move all
                 move_ok = True
@@ -373,8 +386,9 @@ class GridScanWorker(QObject):
 
                         # log line
                         row = []
-                        for ax, logged_pos in log_combo:
-                            row += [ax, f"{logged_pos:.9f}"]
+                        for ax, pos_val, power_val in log_combo:
+                            # Stage_i, pos_i, power_i
+                            row += [ax, f"{float(pos_val):.9f}", ("" if power_val == "" else f"{float(power_val):.9f}")]
                         row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage)]
                         with open(scan_log, "a", encoding="utf-8") as f:
                             f.write("\t".join(row) + "\n")
@@ -382,7 +396,10 @@ class GridScanWorker(QObject):
                         self._emit(
                             "Saved {fn} @ {axes} on {det} ({label}, avg {avg})".format(
                                 fn=data_fn,
-                                axes=", ".join([f"{ax}={val:.6f}" for ax, val in log_combo]),
+                                axes=", ".join([
+                                    f"{ax}: pos={float(pv):.6f}" + ("" if (powv == "") else f", power={float(powv):.6f}")
+                                    for ax, pv, powv in log_combo
+                                ]),
                                 det=det_key,
                                 label=saved_label,
                                 avg=int(averages),
@@ -392,7 +409,7 @@ class GridScanWorker(QObject):
                     except Exception as e:
                         self._emit(
                             f"Capture failed @ " +
-                            ", ".join([f"{ax}={val:.6f}" for ax, val in log_combo]) +
+                            ", ".join([f"{ax}: pos={float(pv):.6f}" + ("" if (powv == "") else f", power={float(powv):.6f}") for ax, pv, powv in log_combo]) +
                             f" on {det_key}: {e}"
                         )
 
@@ -530,6 +547,16 @@ class GridScanTab(QWidget):
                 continue
             val = REGISTRY.get(_reg_key_powermode(wp_idx))
             if isinstance(val, bool) and val != w.isChecked():
+                # si ça passe à ON, appliquer les défauts si anciennes valeurs "par défaut" ou vides
+                if val is True:
+                    end_item = self.axes_tbl.item(r, 2) or QTableWidgetItem("")
+                    step_item = self.axes_tbl.item(r, 3) or QTableWidgetItem("")
+                    end_txt = end_item.text().strip()
+                    step_txt = step_item.text().strip()
+                    if end_txt in ("", "1.0", "1") and step_txt in ("", "0.1", "0,1"):
+                        self.axes_tbl.setItem(r, 1, QTableWidgetItem("0.5"))
+                        self.axes_tbl.setItem(r, 2, QTableWidgetItem("45"))
+                        self.axes_tbl.setItem(r, 3, QTableWidgetItem("2"))
                 w.blockSignals(True); w.setChecked(val); w.blockSignals(False)
 
     def _move_axis_row(self, delta: int) -> None:
@@ -560,10 +587,10 @@ class GridScanTab(QWidget):
         r = self.axes_tbl.rowCount()
         self.axes_tbl.insertRow(r)
         self.axes_tbl.setItem(r, 0, QTableWidgetItem(stage_key))
-        # Défauts pensés pour fractions (PM)
-        self.axes_tbl.setItem(r, 1, QTableWidgetItem("0.0"))
-        self.axes_tbl.setItem(r, 2, QTableWidgetItem("1.0"))
-        self.axes_tbl.setItem(r, 3, QTableWidgetItem("0.1"))
+        # Défauts génériques (seront adaptés si PM ON)
+        self.axes_tbl.setItem(r, 1, QTableWidgetItem("0.0"))  # Start
+        self.axes_tbl.setItem(r, 2, QTableWidgetItem("1.0"))  # End (sera 45 si PM ON)
+        self.axes_tbl.setItem(r, 3, QTableWidgetItem("0.1"))  # Step (sera 2 si PM ON)
 
         # Power mode checkbox
         pm_cb = QCheckBox(); pm_cb.setTristate(False)
@@ -573,15 +600,29 @@ class GridScanTab(QWidget):
         else:
             existing = REGISTRY.get(_reg_key_powermode(wp_idx))
             pm_cb.setChecked(bool(existing) if isinstance(existing, bool) else False)
-            def _on_local_pm_changed(state: int, wp_index=wp_idx):
-                REGISTRY.register(_reg_key_powermode(wp_index), bool(state in (1, 2)))
+
+            def _on_local_pm_changed(state: int, wp_index=wp_idx, row=r):
+                val = bool(state in (1, 2))
+                REGISTRY.register(_reg_key_powermode(wp_index), val)
+                if val:
+                    end_item = self.axes_tbl.item(row, 2) or QTableWidgetItem("")
+                    step_item = self.axes_tbl.item(row, 3) or QTableWidgetItem("")
+                    end_txt = end_item.text().strip()
+                    step_txt = step_item.text().strip()
+                    if end_txt in ("", "1.0", "1") and step_txt in ("", "0.1", "0,1"):
+                        self.axes_tbl.setItem(row, 2, QTableWidgetItem("0.0"))
+                        self.axes_tbl.setItem(row, 2, QTableWidgetItem("90"))
+                        self.axes_tbl.setItem(row, 3, QTableWidgetItem("2"))
             pm_cb.stateChanged.connect(_on_local_pm_changed)
+
+            if pm_cb.isChecked():
+                self.axes_tbl.setItem(r, 2, QTableWidgetItem("45"))
+                self.axes_tbl.setItem(r, 3, QTableWidgetItem("2"))
+
         self.axes_tbl.setCellWidget(r, 4, pm_cb)
 
-        # Max value (W) — **toujours vide par défaut**
         max_item = QTableWidgetItem("")
         if wp_idx is None:
-            # non-editable pour non-WP
             max_item.setFlags(max_item.flags() & ~Qt.ItemIsEditable)
             max_item.setToolTip("Not a waveplate")
         self.axes_tbl.setItem(r, 5, max_item)
@@ -644,40 +685,63 @@ class GridScanTab(QWidget):
             if wp_idx is not None:
                 external = REGISTRY.get(_reg_key_powermode(wp_idx))
                 if isinstance(external, bool) and external != w.isChecked():
+                    # si ça passe à ON, appliquer défauts si anciennes valeurs
+                    if external is True:
+                        end_item = self.axes_tbl.item(row, 2) or QTableWidgetItem("")
+                        step_item = self.axes_tbl.item(row, 3) or QTableWidgetItem("")
+                        end_txt = end_item.text().strip()
+                        step_txt = step_item.text().strip()
+                        if end_txt in ("", "1.0", "1") and step_txt in ("", "0.1", "0,1"):
+                            self.axes_tbl.setItem(row, 2, QTableWidgetItem("45"))
+                            self.axes_tbl.setItem(row, 3, QTableWidgetItem("2"))
                     w.blockSignals(True); w.setChecked(external); w.blockSignals(False)
         return bool(w.isChecked()) if w else False
 
     def _collect_params(self):
         axes: List[Tuple[str, List[float]]] = []
-        corrected_rows: List[int] = []
-        row_caps_info: List[str] = []
+        axes_meta: Dict[str, dict] = {}
+
+        if self.axes_tbl.rowCount() == 0:
+            raise ValueError("Add at least one axis.")
 
         for r in range(self.axes_tbl.rowCount()):
             stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
+            if not stage_key:
+                raise ValueError(f"Empty stage key in row {r+1}.")
+
             try:
                 start = float((self.axes_tbl.item(r, 1) or QTableWidgetItem("0")).text())
                 end   = float((self.axes_tbl.item(r, 2) or QTableWidgetItem("0")).text())
                 step  = float((self.axes_tbl.item(r, 3) or QTableWidgetItem("1")).text())
             except ValueError:
                 raise ValueError(f"Invalid number in axis row {r+1}.")
-            if not stage_key:
-                raise ValueError(f"Empty stage key in row {r+1}.")
+            if step <= 0:
+                raise ValueError(f"Step must be > 0 in row {r+1}.")
 
             pm = self._pm_checked_for_row(r, stage_key)
             wp_idx = _wp_index_from_stage_key(stage_key)
-            if pm and wp_idx is not None:
-                # fractions [0..1]
-                lo, hi = 0.0, 1.0
-                new_start = max(lo, min(hi, start))
-                new_end   = max(lo, min(hi, end))
-                if (new_start != start) or (new_end != end):
-                    (self.axes_tbl.item(r, 1) or QTableWidgetItem()).setText(f"{new_start:.6f}")
-                    (self.axes_tbl.item(r, 2) or QTableWidgetItem()).setText(f"{new_end:.6f}")
-                    corrected_rows.append(r + 1)
-                    row_caps_info.append(f"Row {r+1} ({stage_key}) capped to [0.000, 1.000]")
-                start, end = new_start, new_end
 
-                # exige Max value (W) > 0
+            if pm and wp_idx is not None:
+                # Start = fraction [0..1], End = delta rotation (deg), Step = deg
+                sf = max(0.0, min(1.0, start))
+                if sf != start:
+                    (self.axes_tbl.item(r, 1) or QTableWidgetItem()).setText(f"{sf:.6f}")
+                    raise ValueError(f"Row {r+1} ({stage_key}): start fraction was capped to [0,1]. Please review and press Start again.")
+
+                amp_off = REGISTRY.get(_reg_key_calib(wp_idx)) or (None, None)
+                if amp_off[1] is None:
+                    raise ValueError(f"{stage_key}: Power mode ON but no calibration loaded.")
+                phase = float(amp_off[1])
+
+                start_angle = power_to_angle(sf, 1.0, phase)
+                end_angle_abs = start_angle + end  # delta rotation
+
+                pos = self._positions_from_row(start_angle, end_angle_abs, step)
+                axes.append((stage_key, pos))
+
+                calib_path = REGISTRY.get(_reg_key_calib_path(wp_idx)) or "unknown"
+
+                # Max value (W) requis pour log en W (sinon on loguera la fraction)
                 max_item = self.axes_tbl.item(r, 5)
                 try:
                     max_val = float((max_item.text() if max_item else "").strip())
@@ -685,17 +749,28 @@ class GridScanTab(QWidget):
                     max_val = float("nan")
                 if not (np.isfinite(max_val) and max_val > 0):
                     raise ValueError(f"{stage_key}: please set a valid 'Max value (W)' > 0 in column 6.")
-                # Publie pour le worker (et pour le header)
+
                 REGISTRY.register(_reg_key_maxvalue(wp_idx), float(max_val))
 
-            # positions (fractions si PM, sinon angles/positions)
-            pos = self._positions_from_row(start, end, step)
-            axes.append((stage_key, pos))
-
-        if corrected_rows:
-            raise ValueError("Power value(s) out of range were capped.\n"
-                             + "\n".join(row_caps_info)
-                             + "\nReview the updated values and press Start again.")
+                axes_meta[stage_key] = dict(
+                    pm=True,
+                    start_fraction=float(sf),
+                    start_angle_deg=float(start_angle),
+                    delta_deg=float(end),
+                    step_deg=float(step),
+                    calib_path=str(calib_path),
+                    max_value_W=float(max_val),
+                )
+            else:
+                # PM OFF
+                pos = self._positions_from_row(start, end, step)
+                axes.append((stage_key, pos))
+                axes_meta[stage_key] = dict(
+                    pm=False,
+                    start=float(start),
+                    end=float(end),
+                    step=float(step),
+                )
 
         # cameras + exposure + averages
         cam_params: Dict[str, Tuple[int,int]] = {}
@@ -725,6 +800,7 @@ class GridScanTab(QWidget):
 
         return dict(
             axes=axes,
+            axes_meta=axes_meta,
             camera_params=cam_params,
             settle=settle,
             scan_name=scan_name,
@@ -747,17 +823,30 @@ class GridScanTab(QWidget):
             except Exception:
                 continue
 
-            vals: List[float] = []
-            if end >= start:
-                n = int(np.floor((end - start) / step))
-                vals = [start + i * step for i in range(n + 1)]
-                if vals[-1] < end - 1e-12:
-                    vals.append(end)
+            pm = self._pm_checked_for_row(r, stage_key)
+            wp_idx = _wp_index_from_stage_key(stage_key)
+
+            if pm and wp_idx is not None:
+                amp_off = REGISTRY.get(_reg_key_calib(wp_idx)) or (None, None)
+                if amp_off[1] is None:
+                    continue
+                phase = float(amp_off[1])
+                sf = max(0.0, min(1.0, start))
+                start_angle = power_to_angle(sf, 1.0, phase)
+                end_angle_abs = start_angle + end
+                vals = self._positions_from_row(start_angle, end_angle_abs, step)
             else:
-                n = int(np.floor((start - end) / step))
-                vals = [start - i * step for i in range(n + 1)]
-                if vals[-1] > end + 1e-12:
-                    vals.append(end)
+                if end >= start:
+                    n = int(np.floor((end - start) / step))
+                    vals = [start + i * step for i in range(n + 1)]
+                    if vals[-1] < end - 1e-12:
+                        vals.append(end)
+                else:
+                    n = int(np.floor((start - end) / step))
+                    vals = [start - i * step for i in range(n + 1)]
+                    if vals[-1] > end + 1e-12:
+                        vals.append(end)
+
             axes.append((stage_key, vals))
         return axes
 
@@ -808,6 +897,7 @@ class GridScanTab(QWidget):
             mcp_voltage=p["mcp_voltage"],
             background=background,
             existing_scan_log=existing_scan_log,
+            axes_meta=p.get("axes_meta", {}),
         )
 
         if self._live_view is not None and self._live_view.isVisible():
@@ -863,7 +953,6 @@ class GridScanTab(QWidget):
             self._log("Scan finished with errors or aborted.")
             self._last_scan_log_path = None
 
-        # S'il y a un background à faire, on le lance puis on revient ici.
         if self._cached_params and self.bg_cb.isChecked() and not self._doing_background:
             self._doing_background = True
             reply = QMessageBox.information(
