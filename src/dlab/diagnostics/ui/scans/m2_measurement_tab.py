@@ -1,4 +1,3 @@
-# src/dlab/diagnostics/ui/scans/m2_measurement_tab.py
 from __future__ import annotations
 import os, datetime, time
 from pathlib import Path
@@ -14,7 +13,6 @@ from PyQt5.QtWidgets import (
     QGroupBox, QMessageBox, QCheckBox, QProgressBar
 )
 
-# --- matplotlib live view ---
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -81,10 +79,6 @@ class M2Worker(QObject):
 
     @staticmethod
     def _som_xy(frame_u16: np.ndarray) -> Tuple[float, float]:
-        """
-        Second-order moment widths along x and y (pixels), i.e. sqrt( Σ I (x-μ)^2 / Σ I ).
-        Returns (som_x, som_y). Robust to all-zero images (returns 0,0).
-        """
         f = np.asarray(frame_u16, dtype=np.float64)
         total = f.sum()
         if total <= 0:
@@ -141,6 +135,8 @@ class M2Worker(QObject):
                 with open(scan_log, "w", encoding="utf-8") as lf:
                     lf.write("ImageFile\tStageKey\tPosition\tExposure_us\n")
                     lf.write(f"# {self.comment}\n")
+                    lf.write(f"# Start={self.positions[0]:.6f}; End={self.positions[-1]:.6f}; Step={((self.positions[1]-self.positions[0]) if len(self.positions)>1 else 0.0):.6f}\n")
+
         else:
             date_str = f"{now:%Y-%m-%d}"
             idx = 1
@@ -153,6 +149,8 @@ class M2Worker(QObject):
             with open(scan_log, "w", encoding="utf-8") as lf:
                 lf.write("ImageFile\tStageKey\tPosition\tExposure_us\n")
                 lf.write(f"# {self.comment}\n")
+                lf.write(f"# Start={self.positions[0]:.6f}; End={self.positions[-1]:.6f}; Step={((self.positions[1]-self.positions[0]) if len(self.positions)>1 else 0.0):.6f}\n")
+
 
         n = len(self.positions)
         for i, pos in enumerate(self.positions, 1):
@@ -178,6 +176,7 @@ class M2Worker(QObject):
                     adaptive=self.adaptive,
                     dead_pixel_cleanup=True,
                     background=self.background,
+                    force_roi=True,
                 )
             except Exception as e:
                 self._emit(f"Capture failed at {pos:.3f}: {e}")
@@ -206,14 +205,12 @@ class M2Worker(QObject):
                 self.progress.emit(i, n)
                 continue
 
-            # ---- Append to the per-scan log (no Comment column) ----
             try:
                 with open(scan_log, "a", encoding="utf-8") as lf:
                     lf.write(f"{cam_fn}\t{self.stage_key}\t{pos:.6f}\t{exposure}\n")
             except Exception as e:
                 self._emit(f"Scan log write failed: {e}")
 
-            # ---- Live SOM (skip background in plot) ----
             if not self.background:
                 try:
                     som_x, som_y = self._som_xy(frame_u16)
@@ -229,10 +226,6 @@ class M2Worker(QObject):
 
 # ---------- live viewer ----------
 class M2LiveView(QWidget):
-    """
-    Free-floating live window: plots SOM_x and SOM_y (px) vs stage position (mm).
-    Scatter only (points), no lines.
-    """
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("M² — live SOM (px) vs position (mm)")

@@ -4,18 +4,19 @@ import os
 import time
 import datetime
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple
 from PIL import Image, PngImagePlugin
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
+    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QGroupBox, QSpinBox
 )
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
+from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 )
+from matplotlib.widgets import RectangleSelector
 import matplotlib.pyplot as plt
 import logging
 import threading
@@ -56,8 +57,8 @@ class LiveCaptureThread(QThread):
         self.gain = gain
         self.interval_s = interval_us / 1e6
         self._running = True
-        self._lock = threading.Lock()      
-        self._cap_lock = cap_lock          
+        self._lock = threading.Lock()
+        self._cap_lock = cap_lock  # shared with scan path if needed
 
     def update_parameters(self, exposure_us: int, gain: int, interval_us: int):
         with self._lock:
@@ -73,7 +74,7 @@ class LiveCaptureThread(QThread):
                     g = self.gain
                     wait_s = self.interval_s
 
-                # ---- only one capture at a time (live OR scan) ----
+                # only one capture at a time (live OR scan)
                 lock = self._cap_lock or threading.Lock()
                 with lock:
                     frame = self.cam.capture_single(exp, g)
@@ -91,11 +92,10 @@ class LiveCaptureThread(QThread):
         self._running = False
 
 
-
 # ----------------------------- GUI ----------------------------------
 
 class DahengLiveWindow(QWidget):
-    """Live viewer for Daheng camera."""
+    """Live viewer for Daheng camera. Provides software ROI selection and crop."""
     closed = pyqtSignal()
 
     def __init__(self, camera_name: str = "Daheng", fixed_index: int = 1):
@@ -116,6 +116,25 @@ class DahengLiveWindow(QWidget):
         self.fixed_vmax: Optional[float] = None
 
         self.cmap = white_turbo(512)
+
+        # ROI state
+        self.roi_px: Optional[Tuple[int, int, int, int]] = None  # (x0,y0,x1,y1) in pixels
+        self.roi_artist = None
+        self.rect_selector: Optional[RectangleSelector] = None
+
+        # ROI controls
+        self.use_roi_cb = QCheckBox("Use ROI")
+        self.use_roi_cb.setChecked(False)
+        self.preview_roi_cb = QCheckBox("Preview crop")
+        self.preview_roi_cb.setChecked(False)
+
+        # "Center on max" helpers
+        self.center_w_spin = QSpinBox()
+        self.center_h_spin = QSpinBox()
+        for sp, dv in ((self.center_w_spin, 200), (self.center_h_spin, 200)):
+            sp.setRange(4, 4096)
+            sp.setSingleStep(10)
+            sp.setValue(dv)
 
         self.initUI()
 
@@ -192,6 +211,25 @@ class DahengLiveWindow(QWidget):
         self.fix_cb.toggled.connect(self.fix_value_edit.setEnabled)
         param_layout.addWidget(self.fix_value_edit)
 
+        # --- ROI controls group ---
+        roi_group = QGroupBox("ROI")
+        roi_layout = QHBoxLayout(roi_group)
+        set_btn = QPushButton("Set ROI")
+        clear_btn = QPushButton("Clear ROI")
+        center_btn = QPushButton("Center on max")
+        set_btn.clicked.connect(self.start_roi_selection)
+        clear_btn.clicked.connect(self.clear_roi)
+        center_btn.clicked.connect(self.center_on_max)
+
+        roi_layout.addWidget(self.use_roi_cb)
+        roi_layout.addWidget(self.preview_roi_cb)
+        roi_layout.addWidget(QLabel("W(px):")); roi_layout.addWidget(self.center_w_spin)
+        roi_layout.addWidget(QLabel("H(px):")); roi_layout.addWidget(self.center_h_spin)
+        roi_layout.addWidget(center_btn)
+        roi_layout.addWidget(set_btn)
+        roi_layout.addWidget(clear_btn)
+        param_layout.addWidget(roi_group)
+
         # Buttons
         btn_layout = QVBoxLayout()
         def make_btn(text, slot, enabled=True):
@@ -208,7 +246,7 @@ class DahengLiveWindow(QWidget):
         self.save_btn = make_btn("Save Frame(s)", self.save_frames)
         param_layout.addLayout(btn_layout)
 
-        # Log box (no GUI logging handler; avoid duplicates)
+        # Log box
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         param_layout.addWidget(self.log_text)
@@ -244,6 +282,125 @@ class DahengLiveWindow(QWidget):
         interval_us = exp_us if exp_us >= MIN_INTERVAL_US else MIN_INTERVAL_US
         self.interval_edit.setText(str(interval_us))
         return interval_us
+
+    def _px_per_mm(self) -> float:
+        # mm per pixel = PIXEL_SIZE_M * 1e3; so px per mm:
+        return 1.0 / (PIXEL_SIZE_M * 1e3)
+
+    # -------- ROI selection / overlay --------
+
+    def start_roi_selection(self):
+        """Enable interactive rectangle selection on the axes."""
+        if self.last_frame is None:
+            self.log("No image yet — start live or capture one to set ROI.")
+            return
+
+        # reset existing selector
+        if self.rect_selector is not None:
+            try: self.rect_selector.disconnect_events()
+            except Exception: pass
+            self.rect_selector = None
+
+        def _on_select(eclick, erelease):
+            if eclick.xdata is None or eclick.ydata is None or erelease.xdata is None or erelease.ydata is None:
+                return
+            # Coordinates come in millimeters → convert to pixels
+            px_per_mm = self._px_per_mm()
+            x0_mm, y0_mm = eclick.xdata, eclick.ydata
+            x1_mm, y1_mm = erelease.xdata, erelease.ydata
+            x0 = int(np.floor(min(x0_mm, x1_mm) * px_per_mm))
+            x1 = int(np.ceil (max(x0_mm, x1_mm) * px_per_mm))
+            y0 = int(np.floor(min(y0_mm, y1_mm) * px_per_mm))
+            y1 = int(np.ceil (max(y0_mm, y1_mm) * px_per_mm))
+
+            # clamp to frame size
+            h, w = self.last_frame.shape
+            x0 = max(0, min(w-1, x0)); x1 = max(1, min(w, x1))
+            y0 = max(0, min(h-1, y0)); y1 = max(1, min(h, y1))
+            if x1 <= x0 or y1 <= y0:
+                self.log("Invalid ROI")
+                return
+            self.roi_px = (x0, y0, x1, y1)
+            self._draw_roi_overlay()
+            self.log(f"ROI set: x={x0}:{x1}, y={y0}:{y1} (px)")
+            
+            if self.rect_selector:
+                self.rect_selector.set_visible(False)
+                self.canvas.draw_idle()
+
+        self.rect_selector = RectangleSelector(
+            self.ax, _on_select, useblit=True,
+            button=[1],  # left mouse button
+            minspanx=2, minspany=2, spancoords='pixels',
+            interactive=True
+        )
+
+    def _draw_roi_overlay(self):
+        """Draw or refresh the dashed rectangle overlay (in mm coordinates)."""
+        try:
+            if self.roi_artist is not None:
+                self.roi_artist.remove()
+                self.roi_artist = None
+        except Exception:
+            pass
+        if self.roi_px is None:
+            self.canvas.draw_idle()
+            return
+        x0, y0, x1, y1 = self.roi_px
+        mm_per_px = PIXEL_SIZE_M * 1e3
+        x0_mm, x1_mm = x0 * mm_per_px, x1 * mm_per_px
+        y0_mm, y1_mm = y0 * mm_per_px, y1 * mm_per_px
+        from matplotlib.patches import Rectangle
+        self.roi_artist = self.ax.add_patch(
+            Rectangle((x0_mm, y0_mm), (x1_mm - x0_mm), (y1_mm - y0_mm),
+                      fill=False, linewidth=1.5, linestyle="--")
+        )
+        self.canvas.draw_idle()
+
+    def clear_roi(self):
+        """Clear ROI (no crop)."""
+        self.roi_px = None
+        self._draw_roi_overlay()
+        self.log("ROI cleared")
+
+    def center_on_max(self):
+        """
+        Center the ROI of chosen width/height on the brightest pixel of the current frame.
+        If no frame is available, do nothing.
+        """
+        if self.last_frame is None or self.last_frame.size == 0:
+            self.log("No image to center on.")
+            return
+        h, w = self.last_frame.shape
+        # Find max location
+        idx = int(np.argmax(self.last_frame))
+        y_max, x_max = divmod(idx, w)
+
+        rw = int(self.center_w_spin.value())
+        rh = int(self.center_h_spin.value())
+        rw = max(4, min(w, rw))
+        rh = max(4, min(h, rh))
+        half_w = rw // 2
+        half_h = rh // 2
+
+        x0 = max(0, x_max - half_w)
+        y0 = max(0, y_max - half_h)
+        x1 = min(w, x0 + rw)
+        y1 = min(h, y0 + rh)
+
+        # Adjust start if we hit the boundary
+        x0 = max(0, x1 - rw)
+        y0 = max(0, y1 - rh)
+
+        if x1 <= x0 or y1 <= y0:
+            self.log("Center ROI failed due to size.")
+            return
+
+        self.roi_px = (int(x0), int(y0), int(x1), int(y1))
+        self._draw_roi_overlay()
+        self.use_roi_cb.setChecked(True)
+        self.preview_roi_cb.setChecked(True)
+        self.log(f"ROI centered on max at ({x_max},{y_max}), size=({rw}x{rh})")
 
     # -------- params / lifecycle --------
 
@@ -340,36 +497,57 @@ class DahengLiveWindow(QWidget):
     # -------- drawing --------
 
     def update_image(self, image: np.ndarray):
-        """Update the displayed image; axes in millimeters."""
+        """Update the displayed image; axes in millimeters. Optional preview ROI crop."""
         if not isinstance(image, np.ndarray):
             self.log("Invalid image received")
             return
 
         self.last_frame = image
-        vmin, vmax = float(image.min()), float(image.max())
-        h, w = image.shape
-        x_mm = w * (PIXEL_SIZE_M * 1e3)
-        y_mm = h * (PIXEL_SIZE_M * 1e3)
+        # Preview crop for display (does not affect M² unless force_roi=True in grab_frame_for_scan)
+        disp = image
+        extent_mm = None
+        if self.preview_roi_cb.isChecked() and self.roi_px is not None and self.use_roi_cb.isChecked():
+            x0, y0, x1, y1 = self.roi_px
+            h0, w0 = disp.shape
+            x0 = max(0, min(w0-1, x0)); x1 = max(1, min(w0, x1))
+            y0 = max(0, min(h0-1, y0)); y1 = max(1, min(h0, y1))
+            disp = disp[y0:y1, x0:x1]
+            mm_per_px = PIXEL_SIZE_M * 1e3
+            extent_mm = [x0*mm_per_px, x1*mm_per_px, y0*mm_per_px, y1*mm_per_px]
+
+        vmin, vmax = float(disp.min()), float(disp.max())
+        h, w = disp.shape
+        if extent_mm is None:
+            x_mm = w * (PIXEL_SIZE_M * 1e3)
+            y_mm = h * (PIXEL_SIZE_M * 1e3)
+            extent = [0, x_mm, 0, y_mm]
+        else:
+            extent = extent_mm
 
         if self.image_artist is None:
             self.ax.clear()
             self.image_artist = self.ax.imshow(
-                image,
+                disp,
                 cmap=self.cmap,
                 vmin=vmin, vmax=vmax,
-                extent=[0, x_mm, 0, y_mm],
+                extent=extent,
                 origin="lower",
                 aspect="equal",
             )
             self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax, fraction=0.046, pad=0.04)
         else:
-            self.image_artist.set_data(image)
+            self.image_artist.set_data(disp)
             if self.fix_cbar and self.fixed_vmax is not None:
                 self.image_artist.set_clim(vmin, self.fixed_vmax)
             else:
                 self.image_artist.set_clim(vmin, vmax)
+            self.image_artist.set_extent(extent)
             if self.cbar:
                 self.cbar.update_normal(self.image_artist)
+
+        # Draw overlay if not preview-cropping
+        if not (self.preview_roi_cb.isChecked() and self.use_roi_cb.isChecked()):
+            self._draw_roi_overlay()
 
         self.canvas.draw_idle()
 
@@ -439,6 +617,14 @@ class DahengLiveWindow(QWidget):
                 frame = self._capture_one(exp_us, gain) if self.cam else self.last_frame
                 if frame is None:
                     raise RuntimeError("No frame captured.")
+                # Optional software ROI crop for saved frames if enabled
+                if self.use_roi_cb.isChecked() and self.roi_px is not None:
+                    x0, y0, x1, y1 = self.roi_px
+                    h0, w0 = frame.shape
+                    x0 = max(0, min(w0-1, x0)); x1 = max(1, min(w0, x1))
+                    y0 = max(0, min(h0-1, y0)); y1 = max(1, min(h0, y1))
+                    frame = frame[y0:y1, x0:x1]
+
                 # Save as 16-bit PNG (I;16)
                 frame_u16 = np.clip(frame, 0, 65535).astype(np.uint16, copy=False)
                 img = Image.fromarray(frame_u16, mode="I;16")
@@ -477,20 +663,26 @@ class DahengLiveWindow(QWidget):
         except Exception as e:
             self.log(f"Error writing log: {e}")
             QMessageBox.critical(self, "Error", f"Error writing log: {e}")
-            
+
+    # -------- scan API (used by M² and grid scans) --------
+
     def grab_frame_for_scan(
         self,
         averages: int = 1,
         adaptive: dict | None = None,
         dead_pixel_cleanup: bool = True,
         background: bool = False,
+        *,
+        force_roi: bool = False,
     ):
         """
         Synchronous capture for scans.
         - If live is running, stop it, capture, and update the view with the averaged frame.
         - Adaptive exposure finds a good exposure first; that exposure is then LOCKED
-        for the averaging frames (no _1/_2 files; we return one averaged frame).
+          for the averaging frames.
         - Dead pixels/hot pixels are zeroed.
+        - ROI: software crop is applied when (force_roi=True) or (use_roi_cb and ROI set).
+               This guarantees M² receives ROI-cropped frames.
         Returns (frame_u16, meta_dict) with Gain intentionally blank.
         """
         if not self.cam:
@@ -546,11 +738,18 @@ class DahengLiveWindow(QWidget):
                 cur = int(max(min_us, min(max_us, cur * scale)))
             exp_us = cur  # lock exposure for averaging
 
-        # --- Averaging at LOCKED exposure ---
+        # --- Averaging at LOCKED exposure + software ROI crop if requested ---
         n = max(1, int(averages))
         acc = None
         for _ in range(n):
             f = np.asarray(_cap_once(exp_us), dtype=np.float64, copy=False)
+            # Apply software ROI crop if forced (M²) or if user enabled ROI
+            if (force_roi or (self.use_roi_cb.isChecked())) and self.roi_px is not None:
+                x0, y0, x1, y1 = self.roi_px
+                h0, w0 = f.shape
+                x0 = max(0, min(w0-1, x0)); x1 = max(1, min(w0, x1))
+                y0 = max(0, min(h0-1, y0)); y1 = max(1, min(h0, y1))
+                f = f[y0:y1, x0:x1]
             acc = f if acc is None else (acc + f)
         avg = acc / n
 
@@ -571,6 +770,8 @@ class DahengLiveWindow(QWidget):
             "Exposure_us": exp_us,
             "Gain": "",                                    # blank in scans
             "Background": "1" if background else "0",
+            "ROI_px": "" if self.roi_px is None else f"{self.roi_px[0]},{self.roi_px[1]},{self.roi_px[2]},{self.roi_px[3]}",
+            "ROI_Used": "1" if (force_roi or (self.use_roi_cb.isChecked() and self.roi_px is not None)) else "0",
         }
         return frame_u16, meta
 
@@ -587,7 +788,6 @@ class DahengLiveWindow(QWidget):
             REGISTRY.unregister(k)
         self.closed.emit()
         super().closeEvent(event)
-
 
 
 if __name__ == "__main__":
