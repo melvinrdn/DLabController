@@ -46,6 +46,9 @@ slm:
   red_default:   "ressources/saved_settings/SLM_red/red_default_settings.txt"
   green_default: "ressources/saved_settings/SLM_green/green_default_settings.txt"
 
+avaspec:
+  calibration_file: "ressources/calibration/avaspec/avaspec_calibration_1030nm.dat"
+
 ports:
   pfeiffer: "COM9"           # Serial port for Pfeiffer vacuum controller
 
