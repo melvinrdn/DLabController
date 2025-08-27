@@ -67,19 +67,24 @@ class M2Worker(QObject):
         self.log.emit(msg)
         logger.info(msg)
 
-    def _save_png_with_meta(self, folder: Path, filename: str, frame_u16: np.ndarray, meta: dict) -> Path:
+    def _save_png_with_meta(self, folder: Path, filename: str, frame_u8: np.ndarray, meta: dict) -> Path:
+        """Save as raw 8-bit PNG"""
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / filename
-        img = Image.fromarray(frame_u16, mode="I;16")
+
+        f8 = np.asarray(frame_u8, dtype=np.uint8, copy=False)
+        img = Image.fromarray(f8, mode="L")
+
         pnginfo = PngImagePlugin.PngInfo()
         for k, v in meta.items():
             pnginfo.add_text(str(k), str(v))
         img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
         return path
 
+
     @staticmethod
-    def _som_xy(frame_u16: np.ndarray) -> Tuple[float, float]:
-        f = np.asarray(frame_u16, dtype=np.float64)
+    def _som_xy(frame_u8: np.ndarray) -> Tuple[float, float]:
+        f = np.asarray(frame_u8, dtype=np.float64)
         total = f.sum()
         if total <= 0:
             return 0.0, 0.0
@@ -171,10 +176,10 @@ class M2Worker(QObject):
 
             # capture (averaging + adaptive handled by camera window)
             try:
-                frame_u16, meta = camwin.grab_frame_for_scan(
+                frame_u8, meta = camwin.grab_frame_for_scan(
                     averages=self.averages,
                     adaptive=self.adaptive,
-                    dead_pixel_cleanup=True,
+                    dead_pixel_cleanup=False,
                     background=self.background,
                     force_roi=True,
                 )
@@ -197,7 +202,7 @@ class M2Worker(QObject):
 
             try:
                 self._save_png_with_meta(
-                    cam_day, cam_fn, frame_u16,
+                    cam_day, cam_fn, frame_u8,
                     {"Exposure_us": exposure, "Gain": "", "Comment": self.comment}
                 )
             except Exception as e:
@@ -213,7 +218,7 @@ class M2Worker(QObject):
 
             if not self.background:
                 try:
-                    som_x, som_y = self._som_xy(frame_u16)
+                    som_x, som_y = self._som_xy(frame_u8)
                     self.live_som.emit(float(pos), float(som_x), float(som_y))
                 except Exception:
                     pass
@@ -298,9 +303,9 @@ class M2Tab(QWidget):
         # Scan parameters
         params = QGroupBox("Scan parameters")
         p = QHBoxLayout(params)
-        self.start_sb = QDoubleSpinBox(); self.start_sb.setDecimals(3); self.start_sb.setRange(-1e6, 1e6); self.start_sb.setValue(0.0)
-        self.end_sb   = QDoubleSpinBox(); self.end_sb.setDecimals(3);   self.end_sb.setRange(-1e6, 1e6);   self.end_sb.setValue(10.0)
-        self.step_sb  = QDoubleSpinBox(); self.step_sb.setDecimals(3);  self.step_sb.setRange(1e-6, 1e6);  self.step_sb.setValue(1.0)
+        self.start_sb = QDoubleSpinBox(); self.start_sb.setDecimals(3); self.start_sb.setRange(-1e6, 1e6); self.start_sb.setValue(10.0)
+        self.end_sb   = QDoubleSpinBox(); self.end_sb.setDecimals(3);   self.end_sb.setRange(-1e6, 1e6);   self.end_sb.setValue(16.0)
+        self.step_sb  = QDoubleSpinBox(); self.step_sb.setDecimals(3);  self.step_sb.setRange(1e-6, 1e6);  self.step_sb.setValue(0.2)
         self.settle_sb= QDoubleSpinBox(); self.settle_sb.setDecimals(2);self.settle_sb.setRange(0.0, 60.0);self.settle_sb.setValue(0.50)
         self.avg_sb   = QDoubleSpinBox(); self.avg_sb.setDecimals(0);   self.avg_sb.setRange(1, 1000);     self.avg_sb.setValue(1)
 

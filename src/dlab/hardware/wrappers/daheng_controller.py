@@ -162,9 +162,10 @@ class DahengController:
                 self._cam.TriggerSoftware.send_command()
                 img = self._cam.data_stream[0].get_image()
                 arr = img.get_numpy_array()
+                #print(np.max(arr))
                 if arr is None:
                     raise DahengControllerError("capture_single: image array is None")
-                return arr.astype(np.float64, copy=False)
+                return arr.astype(np.uint8, copy=False)
             finally:
                 self._cam.stream_off()
 

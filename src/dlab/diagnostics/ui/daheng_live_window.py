@@ -97,6 +97,8 @@ class LiveCaptureThread(QThread):
 class DahengLiveWindow(QWidget):
     """Live viewer for Daheng camera. Provides software ROI selection and crop."""
     closed = pyqtSignal()
+    gui_update_image = pyqtSignal(object)   # thread-safe image updates
+    gui_log = pyqtSignal(str)    
 
     def __init__(self, camera_name: str = "Daheng", fixed_index: int = 1):
         super().__init__()
@@ -137,6 +139,8 @@ class DahengLiveWindow(QWidget):
             sp.setValue(dv)
 
         self.initUI()
+        self.gui_update_image.connect(self.update_image, Qt.QueuedConnection)
+        self.gui_log.connect(self.log, Qt.QueuedConnection)
 
     # -------- UI --------
 
@@ -588,8 +592,8 @@ class DahengLiveWindow(QWidget):
 
     def save_frames(self):
         """
-        Save N consecutive frames as 16-bit PNGs with metadata (Exposure_us, Gain, Comment).
-        Filenames end with _1, _2, ..., and a .log TSV is appended.
+        Save N consecutive frames as 8-bit PNG (0..255) with metadata.
+        Linear mapping from sensor values: uint16 >> 8.
         """
         # Parameters
         try:
@@ -617,7 +621,7 @@ class DahengLiveWindow(QWidget):
                 frame = self._capture_one(exp_us, gain) if self.cam else self.last_frame
                 if frame is None:
                     raise RuntimeError("No frame captured.")
-                # Optional software ROI crop for saved frames if enabled
+
                 if self.use_roi_cb.isChecked() and self.roi_px is not None:
                     x0, y0, x1, y1 = self.roi_px
                     h0, w0 = frame.shape
@@ -625,9 +629,8 @@ class DahengLiveWindow(QWidget):
                     y0 = max(0, min(h0-1, y0)); y1 = max(1, min(h0, y1))
                     frame = frame[y0:y1, x0:x1]
 
-                # Save as 16-bit PNG (I;16)
-                frame_u16 = np.clip(frame, 0, 65535).astype(np.uint16, copy=False)
-                img = Image.fromarray(frame_u16, mode="I;16")
+                f8 = np.ascontiguousarray(np.clip(frame, 0, 255).astype(np.uint8))
+                #self.log(f"f8 stats: max={int(f8.max())}, mean={float(f8.mean()):.2f}")
 
                 fn = f"{stem}_{ts_prefix}_{i}.png"
                 path = os.path.join(folder, fn)
@@ -637,7 +640,7 @@ class DahengLiveWindow(QWidget):
                 meta.add_text("Gain", str(gain))
                 meta.add_text("Comment", comment)
 
-                img.save(path, format="PNG", pnginfo=meta)
+                Image.fromarray(f8, mode="L").save(path, format="PNG", pnginfo=meta)
                 saved.append(fn)
                 self.log(f"Saved {path}")
             except Exception as e:
@@ -670,21 +673,11 @@ class DahengLiveWindow(QWidget):
         self,
         averages: int = 1,
         adaptive: dict | None = None,
-        dead_pixel_cleanup: bool = True,
+        dead_pixel_cleanup: bool = False,
         background: bool = False,
         *,
         force_roi: bool = False,
     ):
-        """
-        Synchronous capture for scans.
-        - If live is running, stop it, capture, and update the view with the averaged frame.
-        - Adaptive exposure finds a good exposure first; that exposure is then LOCKED
-          for the averaging frames.
-        - Dead pixels/hot pixels are zeroed.
-        - ROI: software crop is applied when (force_roi=True) or (use_roi_cb and ROI set).
-               This guarantees M² receives ROI-cropped frames.
-        Returns (frame_u16, meta_dict) with Gain intentionally blank.
-        """
         if not self.cam:
             raise DahengControllerError("Camera not activated.")
 
@@ -723,32 +716,64 @@ class DahengLiveWindow(QWidget):
             self.cam.set_gain(device_gain)
             return self.cam.capture_single(cur_exp_us, device_gain)
 
-        # --- Adaptive step (prepass) ---
+        # --- Adaptive exposure ---
         if use_adapt:
-            cur = exp_us
+            cur = int(exp_us)
             for _ in range(max_iters):
-                f0 = np.asarray(_cap_once(cur), dtype=np.float64, copy=False)
-                robust_max = float(np.percentile(f0, 99.9))
-                if robust_max < floor_cnt:
-                    robust_max = floor_cnt
-                frac = robust_max / 65535.0
+                # probe one frame at current exposure (camera gives 0..255 -> float array ici)
+                f0 = np.asarray(_cap_once(cur), dtype=np.float64)
+
+                # use ROI
+                if (force_roi or self.use_roi_cb.isChecked()) and self.roi_px is not None:
+                    x0, y0, x1, y1 = self.roi_px
+                    h0, w0 = f0.shape
+                    x0 = max(0, min(w0 - 1, x0)); x1 = max(1, min(w0, x1))
+                    y0 = max(0, min(h0 - 1, y0)); y1 = max(1, min(h0, y1))
+                    f0 = f0[y0:y1, x0:x1]
+
+                # map to uint8 explicitly (no scaling, cam is 8-bit)
+                f8 = np.clip(f0, 0, 255).astype(np.uint8)
+
+                # ignore zeros (background) for the robust max
+                nz = f8[f8 > 0]
+                if nz.size == 0:
+                    # fully dark: ramp up faster
+                    cur = int(min(max_us, max(cur * 2, min_us)))
+                    exp_us = cur
+                    continue
+
+                robust_max_8 = float(np.percentile(nz, 99.9))  # bright but robust
+                frac = robust_max_8 / 255.0                    # target ~0.75 default
+
                 if lo_frac <= frac <= hi_frac:
                     break
-                scale = (target_frac / frac) if frac > 1e-9 else 2.0
-                cur = int(max(min_us, min(max_us, cur * scale)))
-            exp_us = cur  # lock exposure for averaging
+
+                # bounded multiplicative step (avoid oscillations)
+                scale = target_frac / max(frac, 1e-6)
+                scale = float(np.clip(scale, 0.5, 2.0))        # at most /2 or ×2 per iter
+                next_exp = int(np.clip(cur * scale, min_us, max_us))
+
+                # nudge if clamped/rounded to same value
+                if next_exp == cur:
+                    next_exp = min(max_us, cur + 1)
+
+                cur = next_exp
+                self.log(f"Adapt: robust_max={robust_max_8:.1f}/255 (frac={frac:.3f}) -> exp={cur} us")
+
+            exp_us = int(cur)  # lock exposure for averaging
+
 
         # --- Averaging at LOCKED exposure + software ROI crop if requested ---
         n = max(1, int(averages))
         acc = None
         for _ in range(n):
-            f = np.asarray(_cap_once(exp_us), dtype=np.float64, copy=False)
-            # Apply software ROI crop if forced (M²) or if user enabled ROI
-            if (force_roi or (self.use_roi_cb.isChecked())) and self.roi_px is not None:
+            # capture returns uint8 when MONO8 is set; cast to float32 for accumulation
+            f = np.asarray(_cap_once(exp_us), dtype=np.float32)
+            if (force_roi or self.use_roi_cb.isChecked()) and self.roi_px is not None:
                 x0, y0, x1, y1 = self.roi_px
                 h0, w0 = f.shape
-                x0 = max(0, min(w0-1, x0)); x1 = max(1, min(w0, x1))
-                y0 = max(0, min(h0-1, y0)); y1 = max(1, min(h0, y1))
+                x0 = max(0, min(w0 - 1, x0)); x1 = max(1, min(w0, x1))
+                y0 = max(0, min(h0 - 1, y0)); y1 = max(1, min(h0, y1))
                 f = f[y0:y1, x0:x1]
             acc = f if acc is None else (acc + f)
         avg = acc / n
@@ -761,8 +786,10 @@ class DahengLiveWindow(QWidget):
             if p9999 > 65535.0:
                 avg[avg > p9999] = 0.0
 
-        frame_u16 = np.clip(avg, 0, 65535).astype(np.uint16, copy=False)
-        self.update_image(frame_u16)
+        frame_u8 = np.clip(avg, 0, 255).astype(np.uint8)
+
+        #self.update_image(frame_u8)
+        self.gui_update_image.emit(frame_u8)
 
         meta = {
             "CameraName": f"DahengCam_{self.fixed_index}",  # enforce naming
@@ -773,7 +800,7 @@ class DahengLiveWindow(QWidget):
             "ROI_px": "" if self.roi_px is None else f"{self.roi_px[0]},{self.roi_px[1]},{self.roi_px[2]},{self.roi_px[3]}",
             "ROI_Used": "1" if (force_roi or (self.use_roi_cb.isChecked() and self.roi_px is not None)) else "0",
         }
-        return frame_u16, meta
+        return frame_u8, meta
 
     # -------- close --------
 
