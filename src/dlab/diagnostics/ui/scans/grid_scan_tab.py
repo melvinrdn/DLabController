@@ -24,7 +24,6 @@ logger = logging.getLogger("dlab.scans.grid_scan_tab")
 from dlab.hardware.wrappers.waveplate_calib import NUM_WAVEPLATES
 
 
-# ---------- helpers ----------
 def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) -> float:
     y = float(np.clip(power_fraction, 0.0, 1.0))
     return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
@@ -77,18 +76,17 @@ def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta
     return path
 
 
-# ---------- worker ----------
 class GridScanWorker(QObject):
     progress = pyqtSignal(int, int)
     log = pyqtSignal(str)
     finished = pyqtSignal(str)
-    andor_frame = pyqtSignal(object, object, str)  # (axis_indices, frame_u16, camera_key)
-    spec_updated = pyqtSignal(object, object)      # (wavelength, counts)
+    andor_frame = pyqtSignal(object, object, str)
+    spec_updated = pyqtSignal(object, object)
 
     def __init__(
         self,
-        axes: List[Tuple[str, List[float]]],      # [(stage_key, [positions...])]
-        camera_params: Dict[str, Tuple[int,int]], # camera_key -> (exposure_us ou int_ms, averages)
+        axes: List[Tuple[str, List[float]]],
+        camera_params: Dict[str, Tuple[int,int]],
         settle_s: float,
         scan_name: str,
         comment: str,
@@ -125,17 +123,14 @@ class GridScanWorker(QObject):
         yield from rec(0, [])
 
     def run(self) -> None:
-        # --- header creator ---
         def _write_scan_log_header(scan_log: Path, axes: List[Tuple[str, List[float]]], comment: str) -> None:
             header_cols = []
             for i, (ax, _) in enumerate(axes, 1):
-                # Stage_i, pos_i (angle/position), power_i (W or fraction), dans cet ordre
                 header_cols += [f"Stage_{i}", f"pos_{i}", f"power_{i}"]
             header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage"]
             with open(scan_log, "w", encoding="utf-8") as f:
                 f.write("\t".join(header_cols) + "\n")
                 f.write(f"# {comment}\n")
-                # Détails par axe
                 for ax, _ in axes:
                     wp = _wp_index_from_stage_key(ax)
                     meta = self.axes_meta.get(ax, {})
@@ -144,27 +139,11 @@ class GridScanWorker(QObject):
                         calib_path = meta.get("calib_path", REGISTRY.get(_reg_key_calib_path(wp)) or "unknown")
                         mv = meta.get("max_value_W", REGISTRY.get(_reg_key_maxvalue(wp)))
                         mv_txt = "none" if mv is None else f"{float(mv):.6g} W"
-                        f.write(
-                            "# PowerMode ON for {ax} (WP{wp}) | calib={calib} | max_value={mv}\n"
-                            .format(ax=ax, wp=wp, calib=calib_path, mv=mv_txt)
-                        )
-                        f.write(
-                            "#   Start fraction={sf:.6f} | Start angle={sa:.3f} deg | Rotation={de:.3f} deg | Step={st:.3f} deg\n"
-                            .format(sf=float(meta.get("start_fraction", float("nan"))),
-                                    sa=float(meta.get("start_angle_deg", float("nan"))),
-                                    de=float(meta.get("delta_deg", float("nan"))),
-                                    st=float(meta.get("step_deg", float("nan"))))
-                        )
+                        f.write("# PowerMode ON for {ax} (WP{wp}) | calib={calib} | max_value={mv}\n".format(ax=ax, wp=wp, calib=calib_path, mv=mv_txt))
+                        f.write("#   Start fraction={sf:.6f} | Start angle={sa:.3f} deg | Rotation={de:.3f} deg | Step={st:.3f} deg\n".format(sf=float(meta.get("start_fraction", float("nan"))), sa=float(meta.get("start_angle_deg", float("nan"))), de=float(meta.get("delta_deg", float("nan"))), st=float(meta.get("step_deg", float("nan")))))
                     else:
-                        f.write(
-                            "# PowerMode OFF for {ax} | Start={st:.6g} | End={en:.6g} | Step={sp:.6g}\n"
-                            .format(ax=ax,
-                                    st=float(meta.get("start", float("nan"))),
-                                    en=float(meta.get("end", float("nan"))),
-                                    sp=float(meta.get("step", float("nan"))))
-                        )
+                        f.write("# PowerMode OFF for {ax} | Start={st:.6g} | End={en:.6g} | Step={sp:.6g}\n".format(ax=ax, st=float(meta.get("start", float("nan"))), en=float(meta.get("end", float("nan"))), sp=float(meta.get("step", float("nan")))))
 
-        # --- resolve stages ---
         stages = {}
         for stage_key, _ in self.axes:
             stg = REGISTRY.get(stage_key)
@@ -172,7 +151,6 @@ class GridScanWorker(QObject):
                 self._emit(f"Stage '{stage_key}' not found."); self.finished.emit(""); return
             stages[stage_key] = stg
 
-        # --- resolve detectors ---
         detectors = {}
         for det_key, (expo_us_or_int_ms, _avg) in self.camera_params.items():
             dev = REGISTRY.get(det_key)
@@ -197,7 +175,6 @@ class GridScanWorker(QObject):
         now = datetime.datetime.now()
         root = _data_root()
 
-        # --- log file path ---
         scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
         scan_dir.mkdir(parents=True, exist_ok=True)
 
@@ -216,7 +193,6 @@ class GridScanWorker(QObject):
             scan_log = candidate
             _write_scan_log_header(scan_log, self.axes, self.comment)
 
-        # --- file save helpers (reuse now/root) ---
         def _detector_display_name(det_key: str, dev, meta: dict | None) -> str:
             if meta and str(meta.get("DeviceName", "")).strip():
                 return str(meta["DeviceName"]).strip()
@@ -253,7 +229,6 @@ class GridScanWorker(QObject):
                 "Averages": averages,
                 "Comment": self.comment,
             }
-            # write
             det_day.mkdir(parents=True, exist_ok=True)
             path = det_day / fn
             lines = [f"# {k}: {v}" for k, v in header.items()]
@@ -264,7 +239,6 @@ class GridScanWorker(QObject):
                     f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
             return fn
 
-        # --- progress ---
         lengths = [len(pos) for _, pos in self.axes]
         total_points = 1
         for L in lengths:
@@ -272,7 +246,6 @@ class GridScanWorker(QObject):
         total_images = total_points * max(1, len(self.camera_params))
         done = 0
 
-        # --- main loop ---
         try:
             for idxs in self._cartesian_indices():
                 if self.abort:
@@ -281,7 +254,6 @@ class GridScanWorker(QObject):
                 ui_combo = [(self.axes[k][0], self.axes[k][1][idxs[k]]) for k in range(len(self.axes))]
 
                 move_targets: List[Tuple[str, float]] = []
-                # log_combo: (stage_key, pos_val, power_val or "")
                 log_combo:    List[Tuple[str, float, str | float]] = []
 
                 for ax, pos in ui_combo:
@@ -290,32 +262,25 @@ class GridScanWorker(QObject):
                     pm_on = bool(meta.get("pm", False))
 
                     if wp is not None and pm_on:
-                        # Ici 'pos' est un ANGLE absolu (deg) à atteindre.
                         angle = float(pos)
-
-                        # Phase depuis la calibration (pour convertir angle->power fraction)
                         amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
                         if amp_off[1] is None:
                             self._emit(f"{ax}: Power Mode ON but no calibration phase; aborting.")
                             self.finished.emit(""); return
                         phase = float(amp_off[1])
-
                         frac = angle_to_power(angle, phase)
                         mv = REGISTRY.get(_reg_key_maxvalue(wp))
                         if mv is None:
                             power_val: str | float = frac
                         else:
                             power_val = frac * float(mv)
-
                         move_targets.append((ax, angle))
                         log_combo.append((ax, angle, power_val))
                         continue
 
-                    # PM OFF: consigne directe, power_i vide
                     move_targets.append((ax, float(pos)))
                     log_combo.append((ax, float(pos), ""))
 
-                # move all
                 move_ok = True
                 for ax, move_val in move_targets:
                     try:
@@ -329,7 +294,6 @@ class GridScanWorker(QObject):
 
                 time.sleep(float(self.settle_s))
 
-                # capture
                 for det_key, dev in detectors.items():
                     if self.abort:
                         self._emit("Scan aborted."); self.finished.emit(""); return
@@ -337,7 +301,6 @@ class GridScanWorker(QObject):
                     exposure_or_int, averages = self.camera_params.get(det_key, (0, 1))
                     try:
                         if hasattr(dev, "grab_frame_for_scan"):
-                            # Camera
                             try:
                                 frame_u16, meta = dev.grab_frame_for_scan(
                                     averages=int(averages),
@@ -358,7 +321,6 @@ class GridScanWorker(QObject):
                                 self.andor_frame.emit(list(idxs), frame_u16, det_key)
                             saved_label = f"exp {exp_meta} µs"
                         else:
-                            # Spectrometer
                             wl = getattr(dev, "wavelength", None)
                             if wl is None:
                                 wl = np.asarray(dev.get_wavelengths(), dtype=float)
@@ -384,10 +346,8 @@ class GridScanWorker(QObject):
                             except Exception:
                                 pass
 
-                        # log line
                         row = []
                         for ax, pos_val, power_val in log_combo:
-                            # Stage_i, pos_i, power_i
                             row += [ax, f"{float(pos_val):.9f}", ("" if power_val == "" else f"{float(power_val):.9f}")]
                         row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage)]
                         with open(scan_log, "a", encoding="utf-8") as f:
@@ -422,7 +382,6 @@ class GridScanWorker(QObject):
         self.finished.emit(scan_log.as_posix())
 
 
-# ---------- UI ----------
 class GridScanTab(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -442,7 +401,6 @@ class GridScanTab(QWidget):
     def _build_ui(self) -> None:
         main = QVBoxLayout(self)
 
-        # Axes
         axes_box = QGroupBox("Axes (stages)")
         axes_l = QVBoxLayout(axes_box)
 
@@ -453,9 +411,10 @@ class GridScanTab(QWidget):
         picker.addWidget(QLabel("Stage:")); picker.addWidget(self.stage_picker, 1); picker.addWidget(self.add_axis_btn)
         axes_l.addLayout(picker)
 
-        # 6 colonnes: dont Max value (W)
-        self.axes_tbl = QTableWidget(0, 6)
-        self.axes_tbl.setHorizontalHeaderLabels(["Stage", "Start", "End", "Step size", "Power mode", "Max value (W)"])
+        self.axes_tbl = QTableWidget(0, 7)
+        self.axes_tbl.setHorizontalHeaderLabels([
+            "Stage", "Start", "End", "Step size", "Power mode", "Max value (W)", "Go max after scan"
+        ])
         self.axes_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.axes_tbl.setEditTriggers(QAbstractItemView.AllEditTriggers)
         axes_l.addWidget(self.axes_tbl)
@@ -475,7 +434,6 @@ class GridScanTab(QWidget):
         axes_l.addLayout(rm_row)
         main.addWidget(axes_box)
 
-        # Detectors
         cams_box = QGroupBox("Detectors")
         cams_l = QVBoxLayout(cams_box)
 
@@ -497,7 +455,6 @@ class GridScanTab(QWidget):
         cams_l.addLayout(rm_cam_row)
         main.addWidget(cams_box)
 
-        # Scan parameters
         params = QGroupBox("Scan parameters")
         p = QHBoxLayout(params)
         self.settle_sb = QDoubleSpinBox(); self.settle_sb.setDecimals(2); self.settle_sb.setRange(0.0, 60.0); self.settle_sb.setValue(0.50)
@@ -510,14 +467,12 @@ class GridScanTab(QWidget):
         p.addWidget(QLabel("MCP voltage"));p.addWidget(self.mcp_voltage, 1)
         main.addWidget(params)
 
-        # Background toggle
         bg_box = QGroupBox("Background")
         b = QHBoxLayout(bg_box)
         self.bg_cb = QPushButton("Do background after scan"); self.bg_cb.setCheckable(True); self.bg_cb.setChecked(True)
         b.addWidget(self.bg_cb); b.addStretch(1)
         main.addWidget(bg_box)
 
-        # Controls
         ctl = QHBoxLayout()
         self.start_btn = QPushButton("Start"); self.start_btn.clicked.connect(self._start)
         self.abort_btn = QPushButton("Abort"); self.abort_btn.setEnabled(False); self.abort_btn.clicked.connect(self._abort)
@@ -527,7 +482,6 @@ class GridScanTab(QWidget):
         ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
 
-        # Log + refresh
         self.log = QTextEdit(); self.log.setReadOnly(True)
         main.addWidget(self.log, 1)
         ref_row = QHBoxLayout()
@@ -535,7 +489,6 @@ class GridScanTab(QWidget):
         ref_row.addStretch(1); ref_row.addWidget(self.refresh_btn)
         main.addLayout(ref_row)
 
-    # ----- UI helpers -----
     def _sync_power_mode_from_registry(self) -> None:
         for r in range(self.axes_tbl.rowCount()):
             stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
@@ -547,7 +500,6 @@ class GridScanTab(QWidget):
                 continue
             val = REGISTRY.get(_reg_key_powermode(wp_idx))
             if isinstance(val, bool) and val != w.isChecked():
-                # si ça passe à ON, appliquer les défauts si anciennes valeurs "par défaut" ou vides
                 if val is True:
                     end_item = self.axes_tbl.item(r, 2) or QTableWidgetItem("")
                     step_item = self.axes_tbl.item(r, 3) or QTableWidgetItem("")
@@ -587,12 +539,10 @@ class GridScanTab(QWidget):
         r = self.axes_tbl.rowCount()
         self.axes_tbl.insertRow(r)
         self.axes_tbl.setItem(r, 0, QTableWidgetItem(stage_key))
-        # Défauts génériques (seront adaptés si PM ON)
-        self.axes_tbl.setItem(r, 1, QTableWidgetItem("0.0"))  # Start
-        self.axes_tbl.setItem(r, 2, QTableWidgetItem("1.0"))  # End (sera 45 si PM ON)
-        self.axes_tbl.setItem(r, 3, QTableWidgetItem("0.1"))  # Step (sera 2 si PM ON)
+        self.axes_tbl.setItem(r, 1, QTableWidgetItem("0.0"))
+        self.axes_tbl.setItem(r, 2, QTableWidgetItem("1.0"))
+        self.axes_tbl.setItem(r, 3, QTableWidgetItem("0.1"))
 
-        # Power mode checkbox
         pm_cb = QCheckBox(); pm_cb.setTristate(False)
         wp_idx = _wp_index_from_stage_key(stage_key)
         if wp_idx is None:
@@ -627,6 +577,15 @@ class GridScanTab(QWidget):
             max_item.setToolTip("Not a waveplate")
         self.axes_tbl.setItem(r, 5, max_item)
 
+        go_max_cb = QCheckBox()
+        if wp_idx is None:
+            go_max_cb.setChecked(False)
+            go_max_cb.setEnabled(False)
+            go_max_cb.setToolTip("Not a waveplate")
+        else:
+            go_max_cb.setChecked(True)
+        self.axes_tbl.setCellWidget(r, 6, go_max_cb)
+
     def _remove_axis_row(self) -> None:
         rows = sorted({idx.row() for idx in self.axes_tbl.selectedIndexes()}, reverse=True)
         for r in rows:
@@ -640,7 +599,7 @@ class GridScanTab(QWidget):
         r = self.cam_tbl.rowCount()
         self.cam_tbl.insertRow(r)
         self.cam_tbl.setItem(r, 0, QTableWidgetItem(cam_key))
-        self.cam_tbl.setItem(r, 1, QTableWidgetItem("5000"))  # 5 ms
+        self.cam_tbl.setItem(r, 1, QTableWidgetItem("5000"))
         self.cam_tbl.setItem(r, 2, QTableWidgetItem("1"))
 
     def _remove_cam_row(self) -> None:
@@ -649,13 +608,11 @@ class GridScanTab(QWidget):
             self.cam_tbl.removeRow(r)
 
     def _refresh_devices(self) -> None:
-        # stages
         self.stage_picker.clear()
         for k in REGISTRY.keys("stage:"):
             if k.startswith("stage:serial:"):
                 continue
             self.stage_picker.addItem(k)
-        # cameras
         self.cam_picker.clear()
         for prefix in ("camera:daheng:", "camera:andor:", "spectrometer:avaspec:"):
             for k in REGISTRY.keys(prefix):
@@ -685,7 +642,6 @@ class GridScanTab(QWidget):
             if wp_idx is not None:
                 external = REGISTRY.get(_reg_key_powermode(wp_idx))
                 if isinstance(external, bool) and external != w.isChecked():
-                    # si ça passe à ON, appliquer défauts si anciennes valeurs
                     if external is True:
                         end_item = self.axes_tbl.item(row, 2) or QTableWidgetItem("")
                         step_item = self.axes_tbl.item(row, 3) or QTableWidgetItem("")
@@ -696,6 +652,10 @@ class GridScanTab(QWidget):
                             self.axes_tbl.setItem(row, 3, QTableWidgetItem("2"))
                     w.blockSignals(True); w.setChecked(external); w.blockSignals(False)
         return bool(w.isChecked()) if w else False
+
+    def _go_max_checked_for_row(self, row: int) -> bool:
+        w = self.axes_tbl.cellWidget(row, 6)
+        return bool(getattr(w, "isChecked", lambda: False)())
 
     def _collect_params(self):
         axes: List[Tuple[str, List[float]]] = []
@@ -722,7 +682,6 @@ class GridScanTab(QWidget):
             wp_idx = _wp_index_from_stage_key(stage_key)
 
             if pm and wp_idx is not None:
-                # Start = fraction [0..1], End = delta rotation (deg), Step = deg
                 sf = max(0.0, min(1.0, start))
                 if sf != start:
                     (self.axes_tbl.item(r, 1) or QTableWidgetItem()).setText(f"{sf:.6f}")
@@ -734,14 +693,13 @@ class GridScanTab(QWidget):
                 phase = float(amp_off[1])
 
                 start_angle = power_to_angle(sf, 1.0, phase)
-                end_angle_abs = start_angle + end  # delta rotation
+                end_angle_abs = start_angle + end
 
                 pos = self._positions_from_row(start_angle, end_angle_abs, step)
                 axes.append((stage_key, pos))
 
                 calib_path = REGISTRY.get(_reg_key_calib_path(wp_idx)) or "unknown"
 
-                # Max value (W) requis pour log en W (sinon on loguera la fraction)
                 max_item = self.axes_tbl.item(r, 5)
                 try:
                     max_val = float((max_item.text() if max_item else "").strip())
@@ -762,7 +720,6 @@ class GridScanTab(QWidget):
                     max_value_W=float(max_val),
                 )
             else:
-                # PM OFF
                 pos = self._positions_from_row(start, end, step)
                 axes.append((stage_key, pos))
                 axes_meta[stage_key] = dict(
@@ -772,7 +729,6 @@ class GridScanTab(QWidget):
                     step=float(step),
                 )
 
-        # cameras + exposure + averages
         cam_params: Dict[str, Tuple[int,int]] = {}
         if self.cam_tbl.rowCount() == 0:
             raise ValueError("Add at least one detector.")
@@ -870,7 +826,6 @@ class GridScanTab(QWidget):
             self._live_view.set_context(axes, andor_keys, preserve=True)
         self._live_view.show(); self._live_view.raise_(); self._live_view.activateWindow()
 
-    # ----- control flow -----
     def _start(self) -> None:
         try:
             p = self._collect_params()
@@ -923,7 +878,6 @@ class GridScanTab(QWidget):
         self._worker.finished.connect(self._finished)
         self._thread.finished.connect(self._thread.deleteLater)
 
-        # progress bar
         total_points = 1
         for _, pos in p["axes"]:
             total_points *= max(1, len(pos))
@@ -968,6 +922,34 @@ class GridScanTab(QWidget):
                 self._launch(background=True, existing_scan_log=self._last_scan_log_path)
                 return
 
+        try:
+            for r in range(self.axes_tbl.rowCount()):
+                stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
+                if not stage_key:
+                    continue
+                wp_idx = _wp_index_from_stage_key(stage_key)
+                if wp_idx is None:
+                    continue
+                if not self._go_max_checked_for_row(r):
+                    continue
+                amp_phase = REGISTRY.get(_reg_key_calib(wp_idx)) or (None, None)
+                phase = amp_phase[1]
+                if phase is None:
+                    self._log(f"{stage_key}: cannot go to max power (no calibration).")
+                    continue
+                angle_max = power_to_angle(1.0, 1.0, float(phase))
+                stg = REGISTRY.get(stage_key)
+                if stg is None:
+                    self._log(f"{stage_key}: not found in REGISTRY.")
+                    continue
+                try:
+                    stg.move_to(float(angle_max), blocking=True)
+                    self._log(f"{stage_key}: moved to max power angle {angle_max:.3f}°")
+                except Exception as e:
+                    self._log(f"{stage_key}: failed to move to max power: {e}")
+        except Exception as e:
+            self._log(f"Go-max-after-scan: unexpected error: {e}")
+
         for r in range(self.axes_tbl.rowCount()):
             stage_key = (self.axes_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
             if not stage_key:
@@ -977,13 +959,11 @@ class GridScanTab(QWidget):
                 continue
             pm = self._pm_checked_for_row(r, stage_key)
             if pm:
-                # clear UI cell
                 it = self.axes_tbl.item(r, 5)
                 if it is None:
                     self.axes_tbl.setItem(r, 5, QTableWidgetItem(""))
                 else:
                     it.setText("")
-                # clear REGISTRY
                 REGISTRY.register(_reg_key_maxvalue(wp_idx), None)
 
         self.abort_btn.setEnabled(False)

@@ -4,6 +4,7 @@ import time
 import numpy as np
 from pathlib import Path
 import dlab.hardware.drivers.avaspec_driver._avs_py as avs
+import dlab.hardware.drivers.avaspec_driver._avs_win as avs_win
 
 from dlab.boot import ROOT, get_config
 
@@ -44,6 +45,7 @@ class AvaspecController:
         try:
             avs.AVS_Init()
             self._h = avs.AVS_Activate(self._orig_handle)
+            avs_win.AVS_UseHighResAdc(self._h, True)
             self.wavelength = np.asarray(avs.AVS_GetLambda(self._h), dtype=float)
             self.num_pixels = int(self.wavelength.size)
             if self.num_pixels <= 0:
@@ -72,6 +74,7 @@ class AvaspecController:
             return []
 
     # -------- device params --------
+
     def set_measurement_parameters(self, int_time_ms: float, no_avg: int) -> None:
         if self._h is None:
             raise AvaspecError("Not activated")

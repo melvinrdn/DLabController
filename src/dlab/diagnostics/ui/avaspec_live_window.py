@@ -3,13 +3,14 @@ from __future__ import annotations
 import os, datetime, time
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit  # (still imported; safe to keep)
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QApplication
 )
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtGui import QDoubleValidator
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 
 from dlab.boot import ROOT, get_config
@@ -70,8 +71,7 @@ class AvaspecLiveWindow(QWidget):
         self.thread: LiveMeasurementThread | None = None
         self.handles = []
         self.line = None
-        self.fit_line = None
-        self.last_data = None              # last displayed (bg-sub or bg-sub/cal)
+        self.last_data = None             # un-thresholded processed data (bg-sub or bg-sub/cal)
         self._last_raw: np.ndarray | None = None  # last raw spectrum
         self.registry_key = None
 
@@ -113,8 +113,7 @@ class AvaspecLiveWindow(QWidget):
 
         # Options
         self.cb_autoscale = QCheckBox("Autoscale"); self.cb_autoscale.setChecked(True)
-        self.cb_fit = QCheckBox("Gaussian fit")
-        left_l.addWidget(self.cb_autoscale); left_l.addWidget(self.cb_fit)
+        left_l.addWidget(self.cb_autoscale)
 
         # Background controls
         bg_row = QHBoxLayout()
@@ -127,10 +126,21 @@ class AvaspecLiveWindow(QWidget):
         self.lbl_bg = QLabel("Background: none")
         left_l.addWidget(self.lbl_bg)
 
-        # Calibration control (affects display and save extra column)
+        # Calibration control
         self.cb_calibration = QCheckBox("Calibration ((counts-bg)/cal)")
         self.cb_calibration.setChecked(False)
         left_l.addWidget(self.cb_calibration)
+
+        # Threshold control (0..1)
+        thr_row = QHBoxLayout()
+        thr_row.addWidget(QLabel("Threshold (0..1):"))
+        self.threshold_edit = QLineEdit("0.02")
+        thr_row.addWidget(self.threshold_edit)
+        left_l.addLayout(thr_row)
+
+        # FTL display
+        self.lbl_ftl = QLabel("FTL: — fs")
+        left_l.addWidget(self.lbl_ftl)
 
         # Live control
         btn_start = QPushButton("Start Live"); btn_start.clicked.connect(self.start_live)
@@ -164,6 +174,110 @@ class AvaspecLiveWindow(QWidget):
     def _ui_log(self, msg: str):
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log.append(f"[{t}] {msg}")
+
+    # ---------------- FTL helpers ----------------
+    @staticmethod
+    def _fwxm(time: np.ndarray, intens: np.ndarray, x: float = 0.5) -> float:
+        """Return FWXM (e.g., FWHM for x=0.5) by linear interpolation at level x."""
+        t = np.asarray(time, float)
+        y = np.asarray(intens, float)
+        if t.ndim != 1 or y.ndim != 1 or t.size != y.size or t.size < 3:
+            return float("nan")
+        m = np.nanmax(y)
+        if not np.isfinite(m) or m <= 0:
+            return float("nan")
+        P = y / m
+        ihw = np.where(P >= x)[0]
+        if ihw.size == 0:
+            return float("nan")
+        i0, i1 = int(ihw[0]), int(ihw[-1])
+
+        # left crossing
+        if i0 == 0:
+            t1 = t[0]
+        else:
+            m1 = (P[i0] - P[i0-1]) / (t[i0] - t[i0-1] if t[i0] != t[i0-1] else 1e-300)
+            n1 = P[i0] - m1 * t[i0]
+            t1 = (x - n1) / m1
+
+        # right crossing
+        if i1 >= t.size - 1:
+            t2 = t[-1]
+        else:
+            m2 = (P[i1+1] - P[i1]) / (t[i1+1] - t[i1] if t[i1+1] != t[i1] else 1e-300)
+            n2 = P[i1] - m2 * t[i1]
+            t2 = (x - n2) / m2
+
+        return float(t2 - t1)
+
+    @staticmethod
+    def _compute_ftl_from_spectrum(wl_nm: np.ndarray, spec: np.ndarray, level: float = 0.5) -> tuple[float, np.ndarray, np.ndarray]:
+        """
+        Compute transform-limited FWXM (default FWHM):
+        - λ -> f
+        - interpolate onto a uniform frequency grid (using flips, like your snippet)
+        - IFFT of sqrt(spectrum) then |E(t)|^2
+        """
+        c = 299_792_458.0  # m/s
+
+        wl = np.asarray(wl_nm, float).ravel()
+        S  = np.asarray(spec,  float).ravel()
+        if wl.size != S.size or wl.size < 3:
+            return float("nan"), np.array([]), np.array([])
+
+        # Frequency axis (Hz), same ordering as input λ.
+        freqs = c / (wl * 1e-9)
+
+        # Build uniform frequency grid from last to first (ascending if λ is ascending).
+        N = freqs.size
+        freqs_interp = np.linspace(freqs[-1], freqs[0], N)
+
+        # Interpolate spectrum on that uniform f-grid using flipped arrays (as in your code).
+        specs_f = np.abs(np.interp(freqs_interp, np.flip(freqs), np.flip(S)))
+
+        # IFFT of field amplitude (sqrt spectrum) -> intensity in time
+        if N < 2:
+            return float("nan"), np.array([]), np.array([])
+        dnu = freqs_interp[1] - freqs_interp[0]
+        if not np.isfinite(dnu) or dnu == 0:
+            return float("nan"), np.array([]), np.array([])
+
+        amp_f = np.sqrt(np.clip(specs_f, 0, None))
+        E_t   = np.fft.fftshift(np.fft.ifft(amp_f))
+        I_t   = np.abs(E_t) ** 2
+
+        # Time vector consistent with frequency spacing
+        time = np.fft.fftshift(np.fft.fftfreq(N, d=dnu))
+
+        ftl_s = AvaspecLiveWindow._fwxm(time, I_t, x=level)
+        I_t_n = I_t / (np.max(I_t) if np.max(I_t) > 0 else 1.0)
+        return ftl_s, time, I_t_n
+
+    # -------- threshold helpers --------
+    def _get_threshold_fraction(self) -> float:
+        """Read and clamp threshold in [0,1]. Default to 0.05 on parse error."""
+        try:
+            v = float(self.threshold_edit.text())
+        except Exception:
+            v = 0.05
+        if not np.isfinite(v):
+            v = 0.05
+        return float(min(max(v, 0.0), 1.0))
+
+    def _apply_threshold_for_display(self, y: np.ndarray) -> np.ndarray:
+        """
+        Apply display threshold: values below max(y_pos) * thr -> 0.
+        Negative values are clipped to 0 before thresholding.
+        """
+        y = np.asarray(y, float)
+        y_pos = np.clip(y, 0, None)
+        thr = self._get_threshold_fraction()
+        ymax = float(np.nanmax(y_pos)) if y_pos.size else 0.0
+        if not np.isfinite(ymax) or ymax <= 0:
+            return np.zeros_like(y_pos)
+        cutoff = thr * ymax
+        y_disp = np.where(y_pos >= cutoff, y_pos, 0.0)
+        return y_disp
 
     # ------------- background -------------
     def update_background(self):
@@ -286,44 +400,28 @@ class AvaspecLiveWindow(QWidget):
             except Exception as e:
                 self._ui_log(f"Calibration load failed: {e}")
 
+        # processed data (no threshold here)
         proc = self.ctrl.apply_processing(wl, raw, use_calibration=use_cal)
         self.last_data = proc
 
+        # display data with threshold
+        disp = self._apply_threshold_for_display(proc)
+
         if self.line is None:
-            (self.line,) = self.ax.plot(wl, proc, color="C0", label="Data")
+            (self.line,) = self.ax.plot(wl, disp, color="C0", label="Data")
         else:
             self.line.set_xdata(wl)
-            self.line.set_ydata(proc)
+            self.line.set_ydata(disp)
 
-        # Optional Gaussian fit
-        if self.cb_fit.isChecked():
-            def g(x, A, mu, sigma, d): return A * np.exp(-0.5 * ((x - mu) / sigma) ** 2) + d
-            try:
-                A0 = float(proc.max())
-                mu0 = float(wl[proc.argmax()])
-                sigma0, d0 = 2.0, float(proc.min())
-                popt, _ = curve_fit(g, wl, proc, p0=[A0, mu0, sigma0, d0], maxfev=10000)
-                A_fit, mu_fit, sigma_fit, d_fit = popt
-                fwhm = 2.355 * abs(sigma_fit)
-                c = 299792458.0
-                mu_m = mu_fit * 1e-9
-                fwhm_m = fwhm * 1e-9
-                tau_fs = 0.441 * (mu_m**2) / (c * fwhm_m) * 1e15
-                yfit = g(wl, *popt)
-                if self.fit_line is None:
-                    (self.fit_line,) = self.ax.plot(wl, yfit, "r--", label="Gaussian Fit")
-                else:
-                    self.fit_line.set_xdata(wl)
-                    self.fit_line.set_ydata(yfit)
-                self.ax.legend()
-                self.ax.set_title(f"Peak≈{A_fit:.0f}, FWHM={fwhm:.2f} nm, TL pulse≈{tau_fs:.0f} fs")
-            except Exception:
-                self.ax.set_title("Gaussian fit failed")
+        # FTL on displayed (thresholded) spectrum
+        ftl_s, t_vec, I_t = self._compute_ftl_from_spectrum(wl, disp, level=0.5)
+        ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
+        if np.isfinite(ftl_fs):
+            self.lbl_ftl.setText(f"FTL: {ftl_fs:.0f} fs")
+            self.ax.set_title(f"FTL ≈ {ftl_fs:.0f} fs")
         else:
-            if self.fit_line is not None:
-                self.fit_line.remove()
-                self.fit_line = None
-                self.ax.set_title("")
+            self.lbl_ftl.setText("FTL: — fs")
+            self.ax.set_title("")
 
         self.ax.set_yscale("linear")
         if self.cb_autoscale.isChecked():
@@ -360,8 +458,10 @@ class AvaspecLiveWindow(QWidget):
             proc = self.ctrl.apply_processing(wl, raw, use_calibration=use_cal)
             self.last_data = proc
 
+            disp = self._apply_threshold_for_display(proc)
+
             if self.line is None:
-                (self.line,) = self.ax.plot(wl, proc, label="Data")
+                (self.line,) = self.ax.plot(wl, disp, label="Data")
             else:
                 self.ax.cla()
                 self.ax.set_xlabel("Wavelength (nm)")
@@ -371,11 +471,17 @@ class AvaspecLiveWindow(QWidget):
                     has_bg = (self.ctrl._bg_counts is not None)
                     self.ax.set_ylabel("Counts (bg-subtracted)" if has_bg else "Counts")
                 self.ax.grid(True)
-                (self.line,) = self.ax.plot(wl, proc, label="Data")
-                if self.fit_line is not None:
-                    self.fit_line.remove()
-                    self.fit_line = None
-                    self.ax.set_title("")
+                (self.line,) = self.ax.plot(wl, disp, label="Data")
+
+            # FTL on displayed (thresholded) spectrum
+            ftl_s, _, _ = self._compute_ftl_from_spectrum(wl, disp, level=0.5)
+            ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
+            if np.isfinite(ftl_fs):
+                self.lbl_ftl.setText(f"FTL: {ftl_fs:.0f} fs")
+                self.ax.set_title(f"FTL ≈ {ftl_fs:.0f} fs")
+            else:
+                self.lbl_ftl.setText("FTL: — fs")
+                self.ax.set_title("")
 
             self.ax.set_yscale("linear")
             if self.cb_autoscale.isChecked():
@@ -403,11 +509,10 @@ class AvaspecLiveWindow(QWidget):
         try:
             wl = np.asarray(self.ctrl.wavelength, dtype=float)
 
-            # RAW: prefer the live RAW buffer when shape matches
-            if self._last_raw is not None and self._last_raw.shape == self.last_data.shape:
+            # reconstruct or take raw
+            if self._last_raw is not None and self._last_raw.shape == np.asarray(self.last_data).shape:
                 raw = self._last_raw
             else:
-                # reconstruct: bgsub + bg (if available)
                 raw = np.asarray(self.last_data, dtype=float)
                 if self.ctrl._bg_counts is not None and self.ctrl._bg_wavelength is not None:
                     bg = np.interp(wl, self.ctrl._bg_wavelength, self.ctrl._bg_counts, left=np.nan, right=np.nan)
@@ -419,10 +524,7 @@ class AvaspecLiveWindow(QWidget):
                         if i1.size: bg[i1[-1]:] = bg[i1[-1]]
                     raw = raw + bg
 
-            # BG-SUB (always)
             bgsub = self.ctrl._apply_background(wl, raw)
-
-            # DIVCAL (optional by checkbox + availability)
             use_cal = self.cb_calibration.isChecked()
             divcal = None
             cal_applied = False
@@ -440,6 +542,11 @@ class AvaspecLiveWindow(QWidget):
                 divcal = self.ctrl._apply_calibration(wl, bgsub)
                 cal_applied = self.ctrl.has_calibration()
 
+            # FTL computed on the same display-thresholded curve as on screen
+            disp_for_ftl = self._apply_threshold_for_display(self.last_data)
+            ftl_s, _, _ = self._compute_ftl_from_spectrum(wl, disp_for_ftl, level=0.5)
+            ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
+
             with open(fn, "w", encoding="utf-8") as f:
                 if comment:
                     f.write(f"# Comment: {comment}\n")
@@ -450,6 +557,10 @@ class AvaspecLiveWindow(QWidget):
                 f.write(f"# CalibrationApplied: {bool(cal_applied)}\n")
                 if cal_applied and cal_path_str:
                     f.write(f"# CalibrationFile: {cal_path_str}\n")
+                # Save the threshold used for FTL/display
+                f.write(f"# DisplayThreshold: {self._get_threshold_fraction():.4f}\n")
+                if np.isfinite(ftl_fs):
+                    f.write(f"# FTL_fs: {ftl_fs:.3f}\n")
 
                 if cal_applied and divcal is not None:
                     f.write("Wavelength_nm;Counts_raw;Counts_bgsub;Counts_bgsub_divcal\n")

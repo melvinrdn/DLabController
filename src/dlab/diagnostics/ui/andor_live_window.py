@@ -6,14 +6,14 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, PngImagePlugin
+import yaml
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QSpinBox, QGroupBox,
-    QDoubleSpinBox,
+    QDoubleSpinBox, QShortcut
 )
-
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtGui import QIntValidator, QKeySequence
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -29,7 +29,6 @@ from dlab.boot import get_config
 from dlab.core.device_registry import REGISTRY
 from dlab.hardware.wrappers.andor_registry_adapter import AndorRegistryCamera
 
-# Quiet down noisy matplotlib logs
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 LOG_FORMAT = "[%(asctime)s] %(message)s"
@@ -47,29 +46,24 @@ except Exception:
     _HAS_SCIPY = False
 
 def _data_root() -> str:
-    """Base folder for saved frames, from YAML or default."""
     cfg = get_config() or {}
     return str((cfg.get("paths", {}) or {}).get("data_dir", r"C:/data"))
 
+def _config_path() -> str:
+    return os.path.join("config", "config.yaml")
 
 class QTextEditHandler(logging.Handler):
-    """Pipe log records into the GUI text box."""
     def __init__(self, widget: QTextEdit):
         super().__init__()
         self.widget = widget
         self.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
-
     def emit(self, record: logging.LogRecord) -> None:
         msg = self.format(record)
         self.widget.append(msg)
         self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
 
-
-# ------------------------ Live capture thread (no averaging) ------------------------
-
 class LiveCaptureThread(QThread):
     image_signal = pyqtSignal(np.ndarray)
-
     def __init__(self, camera_controller: AndorController, exposure: int, update_interval_ms: int):
         super().__init__()
         self.camera_controller = camera_controller
@@ -78,19 +72,15 @@ class LiveCaptureThread(QThread):
         self.interval_sec = update_interval_ms / 1000.0
         self._running = True
         self._param_lock = threading.Lock()
-
     def update_parameters(self, exposure: int, update_interval_ms: int):
         with self._param_lock:
             self.exposure = exposure
             self.update_interval_ms = update_interval_ms
             self.interval_sec = update_interval_ms / 1000.0
-
     def _capture_one(self, exp_us: int) -> np.ndarray:
-        # Prefer controller.capture_single if available; fallback to take_image(exposure, 1)
         if hasattr(self.camera_controller, "capture_single"):
             return self.camera_controller.capture_single(exp_us)
-        return self.camera_controller.take_image(exp_us, 1)  # legacy fallback
-
+        return self.camera_controller.take_image(exp_us, 1)
     def run(self):
         while self._running:
             try:
@@ -100,29 +90,20 @@ class LiveCaptureThread(QThread):
                 image = self._capture_one(exp)
                 self.image_signal.emit(image)
                 time.sleep(sleep_interval)
-            except AndorControllerError as ace:
-                print(f"AndorControllerError in capture thread: {ace}")
+            except AndorControllerError:
                 break
-            except Exception as e:
-                print("Error capturing image:", e)
+            except Exception:
                 break
-
     def stop(self):
         self._running = False
 
-
-# ----------------------------- GUI ----------------------------------
-
 class AndorLiveWindow(QWidget):
-    """PyQt5 GUI for live Andor capture without averaging."""
     closed = pyqtSignal()
     external_image_signal = pyqtSignal(np.ndarray)
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Live Andor Camera Feed")
         self.setAttribute(Qt.WA_DeleteOnClose)
-
         self.cam: AndorController | None = None
         self.capture_thread: LiveCaptureThread | None = None
         self.image_artist = None
@@ -131,20 +112,20 @@ class AndorLiveWindow(QWidget):
         self.fixed_cbar_max: float | None = None
         self.last_frame: np.ndarray | None = None
         self.external_image_signal.connect(self.update_image)
-
         self._logger = logging.getLogger("dlab.ui.AndorLiveWindow")
-
+        self.crosshair_visible = False
+        self.crosshair_locked = False
+        self.crosshair_pos = None
+        self.ch_h = None
+        self.ch_v = None
         self.initUI()
-
     def initUI(self):
         main_layout = QHBoxLayout(self)
         splitter = QSplitter()
 
-        # ---- Left panel (params) ----
         param_panel = QWidget()
         param_layout = QVBoxLayout(param_panel)
 
-        # Exposure
         exp_layout = QHBoxLayout()
         exp_layout.addWidget(QLabel("Exposure (µs):"))
         self.exposure_edit = QLineEdit(f"{DEFAULT_EXPOSURE_US}")
@@ -153,7 +134,6 @@ class AndorLiveWindow(QWidget):
         exp_layout.addWidget(self.exposure_edit)
         param_layout.addLayout(exp_layout)
 
-        # Update interval
         int_layout = QHBoxLayout()
         int_layout.addWidget(QLabel("Update Interval (ms):"))
         self.interval_edit = QLineEdit("1000")
@@ -162,21 +142,18 @@ class AndorLiveWindow(QWidget):
         int_layout.addWidget(self.interval_edit)
         param_layout.addLayout(int_layout)
 
-        # MCP voltage
         mcp_layout = QHBoxLayout()
         mcp_layout.addWidget(QLabel("MCP Voltage:"))
         self.mcp_voltage_edit = QLineEdit("Not specified")
         mcp_layout.addWidget(self.mcp_voltage_edit)
         param_layout.addLayout(mcp_layout)
 
-        # Comment
         comment_layout = QHBoxLayout()
         comment_layout.addWidget(QLabel("Comment:"))
         self.comment_edit = QLineEdit()
         comment_layout.addWidget(self.comment_edit)
         param_layout.addLayout(comment_layout)
 
-        # Frames-to-save (replaces "Averages" column for saving)
         nsave_layout = QHBoxLayout()
         nsave_layout.addWidget(QLabel("Frames to Save:"))
         self.frames_to_save_edit = QLineEdit("1")
@@ -184,7 +161,6 @@ class AndorLiveWindow(QWidget):
         nsave_layout.addWidget(self.frames_to_save_edit)
         param_layout.addLayout(nsave_layout)
 
-        # Colorbar controls
         self.fix_cbar_checkbox = QCheckBox("Fix Colorbar Max")
         param_layout.addWidget(self.fix_cbar_checkbox)
         self.fix_value_edit = QLineEdit("10000")
@@ -195,80 +171,80 @@ class AndorLiveWindow(QWidget):
         self.fix_cbar_checkbox.toggled.connect(self.on_fix_cbar)
         self.fix_value_edit.textChanged.connect(self.on_fix_value_changed)
 
-        # Background flag
         self.background_checkbox = QCheckBox("Background")
         self.background_checkbox.setChecked(False)
         param_layout.addWidget(self.background_checkbox)
 
-        # Buttons
-        btn_layout = QVBoxLayout()
+        ch_grp = QGroupBox("Crosshair")
+        ch_l = QHBoxLayout(ch_grp)
+        self.btn_ch_toggle = QPushButton("Toggle (Shift+C)")
+        self.btn_ch_toggle.clicked.connect(self.toggle_crosshair)
+        self.btn_ch_lock = QPushButton("Lock/Unlock (Right-click)")
+        self.btn_ch_lock.clicked.connect(self.toggle_lock_manual)
+        self.btn_ch_save = QPushButton("Save Crosshair Position")
+        self.btn_ch_save.clicked.connect(self.save_crosshair_to_config)
+        self.btn_ch_goto = QPushButton("Go to Saved Position")
+        self.btn_ch_goto.clicked.connect(self.goto_saved_crosshair)
+        ch_l.addWidget(self.btn_ch_toggle)
+        ch_l.addWidget(self.btn_ch_lock)
+        ch_l.addWidget(self.btn_ch_save)
+        ch_l.addWidget(self.btn_ch_goto)
+        param_layout.addWidget(ch_grp)
 
+        btn_layout = QVBoxLayout()
         self.activate_button = QPushButton("Activate Camera")
         self.activate_button.clicked.connect(self.activate_camera)
         btn_layout.addWidget(self.activate_button)
-
         self.activate_dummy_button = QPushButton("Activate Dummy Camera")
         self.activate_dummy_button.clicked.connect(self.activate_dummy_camera)
         btn_layout.addWidget(self.activate_dummy_button)
-
         self.deactivate_button = QPushButton("Deactivate Camera")
         self.deactivate_button.clicked.connect(self.deactivate_camera)
         self.deactivate_button.setEnabled(False)
         btn_layout.addWidget(self.deactivate_button)
-
         self.start_button = QPushButton("Start Live Capture")
         self.start_button.clicked.connect(self.start_capture)
         self.start_button.setEnabled(False)
         btn_layout.addWidget(self.start_button)
-
         self.stop_button = QPushButton("Stop Live Capture")
         self.stop_button.clicked.connect(self.stop_capture)
         self.stop_button.setEnabled(False)
         btn_layout.addWidget(self.stop_button)
-
         self.save_button = QPushButton("Save Frame(s)")
         self.save_button.clicked.connect(self.save_frames)
         btn_layout.addWidget(self.save_button)
-
         param_layout.addLayout(btn_layout)
-        
-        # --- Display-only preprocess (rotate + crop), same defaults as grid live view
+
         pre_grp = QGroupBox("Display Preprocess (rotate + crop)")
         pre_lay = QVBoxLayout(pre_grp)
-
         self.pre_enable_cb = QCheckBox("Enable")
         self.pre_enable_cb.setChecked(False)
         pre_lay.addWidget(self.pre_enable_cb)
-
         row_angle = QHBoxLayout()
         row_angle.addWidget(QLabel("Angle (°):"))
         self.pre_angle_sb = QDoubleSpinBox()
         self.pre_angle_sb.setRange(-360.0, 360.0)
         self.pre_angle_sb.setDecimals(2)
         self.pre_angle_sb.setSingleStep(1.0)
-        self.pre_angle_sb.setValue(-95.0)  # default like grid live view
+        self.pre_angle_sb.setValue(-95.0)
         row_angle.addWidget(self.pre_angle_sb)
         pre_lay.addLayout(row_angle)
-
         row_x = QHBoxLayout()
         self.pre_x0_sb = QSpinBox(); self.pre_x1_sb = QSpinBox()
         self.pre_x0_sb.setRange(0, 99999); self.pre_x1_sb.setRange(1, 99999)
-        self.pre_x0_sb.setValue(165); self.pre_x1_sb.setValue(490)  # defaults
+        self.pre_x0_sb.setValue(165); self.pre_x1_sb.setValue(490)
         row_x.addWidget(QLabel("Crop x0:")); row_x.addWidget(self.pre_x0_sb)
         row_x.addWidget(QLabel("x1:")); row_x.addWidget(self.pre_x1_sb)
         pre_lay.addLayout(row_x)
-
         row_y = QHBoxLayout()
         self.pre_y0_sb = QSpinBox(); self.pre_y1_sb = QSpinBox()
         self.pre_y0_sb.setRange(0, 99999); self.pre_y1_sb.setRange(1, 99999)
-        self.pre_y0_sb.setValue(210); self.pre_y1_sb.setValue(340)  # defaults
+        self.pre_y0_sb.setValue(210); self.pre_y1_sb.setValue(340)
         row_y.addWidget(QLabel("Crop y0:")); row_y.addWidget(self.pre_y0_sb)
         row_y.addWidget(QLabel("y1:")); row_y.addWidget(self.pre_y1_sb)
         pre_lay.addLayout(row_y)
-
         param_layout.addWidget(pre_grp)
 
-        # Log box + handler
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         param_layout.addWidget(self.log_text)
@@ -276,11 +252,10 @@ class AndorLiveWindow(QWidget):
         ui_logger = logging.getLogger("dlab.ui.AndorLiveWindow")
         ui_logger.handlers = []
         ui_logger.setLevel(logging.INFO)
-        ui_logger.propagate = True 
+        ui_logger.propagate = True
 
         splitter.addWidget(param_panel)
 
-        # ---- Right panel (plots) ----
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
         self.figure, (self.ax_img, self.ax_profile) = plt.subplots(
@@ -293,39 +268,30 @@ class AndorLiveWindow(QWidget):
         plot_layout.addWidget(self.canvas)
         splitter.addWidget(plot_panel)
 
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 4)
+
         main_layout.addWidget(splitter)
         self.resize(1080, 720)
-
-    # ----------------------- Logging helper -----------------------
-
+        self.canvas.mpl_connect("motion_notify_event", self._on_mouse_move)
+        self.canvas.mpl_connect("button_press_event", self._on_mouse_press)
+        self._shortcut_cross = QShortcut(QKeySequence("Shift+C"), self)
+        self._shortcut_cross.activated.connect(self.toggle_crosshair)
     def log(self, message: str):
         current_time = datetime.datetime.now().strftime(DATE_FORMAT)
         self.log_text.append(f"[{current_time}] {message}")
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
         logging.getLogger("dlab.ui.AndorLiveWindow").info(message)
-        
     def _profile_axis_for_display(self) -> int:
-        """
-        Choose which axis to sum over for the profile *after* display preprocessing.
-        Returns 1 (sum over columns → vertical profile vs rows) by default.
-        If rotation is enabled and closer to 90° than to 0°/180°, swap to axis 0.
-        """
         if not self.pre_enable_cb.isChecked():
             return 1
         ang = float(self.pre_angle_sb.value()) % 180.0
-        ang = min(ang, 180.0 - ang)  # distance to nearest 0/180
-        # nearer to 90° -> use axis=0 (sum over rows → profile vs columns)
+        ang = min(ang, 180.0 - ang)
         return 0 if ang > 45.0 else 1
-
-        
-        
     def _display_preprocess(self, image: np.ndarray) -> np.ndarray:
-        """Rotate then crop the image for display only."""
         out = image
-
         if self.pre_enable_cb.isChecked():
             angle = float(self.pre_angle_sb.value())
-            # rotate (resize to keep full content)
             if abs(angle) > 1e-9:
                 try:
                     if _HAS_SKIMAGE:
@@ -333,27 +299,16 @@ class AndorLiveWindow(QWidget):
                     elif _HAS_SCIPY:
                         out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
                 except Exception:
-                    # if rotation fails, just skip it
                     pass
-
-            # crop y, x
             y0, y1 = int(self.pre_y0_sb.value()), int(self.pre_y1_sb.value())
             x0, x1 = int(self.pre_x0_sb.value()), int(self.pre_x1_sb.value())
-
             h, w = out.shape[:2]
-            # clamp + ensure y1>y0 and x1>x0
             y0 = max(0, min(y0, max(0, h - 1)))
             y1 = max(y0 + 1, min(y1, h))
             x0 = max(0, min(x0, max(0, w - 1)))
             x1 = max(x0 + 1, min(x1, w))
-
             out = out[y0:y1, x0:x1]
-
         return out
-
-
-    # ----------------------- Param updates -----------------------
-
     def update_capture_parameters(self):
         try:
             exposure = int(self.exposure_edit.text())
@@ -361,25 +316,18 @@ class AndorLiveWindow(QWidget):
             if self.capture_thread:
                 self.capture_thread.update_parameters(exposure, update_interval)
             elif self.cam:
-                # Apply immediately if not running live
                 if hasattr(self.cam, "set_exposure"):
                     self.cam.set_exposure(exposure)
         except ValueError:
             pass
-
-    # ----------------------- Camera lifecycle -----------------------
-
     def activate_camera(self):
         try:
             self.cam = AndorController(device_index=0)
             self.cam.activate()
             self.log("Camera 0 activated.")
-
-            # >>> REGISTRY: enregistrement Andor <<<
             self.adapter = AndorRegistryCamera(self.cam, name="AndorCam_1", live_window=self)
             REGISTRY.register("camera:andor:andorcam_1", self.adapter)
             self.log("Registered camera:andor:andorcam_1 in DeviceRegistry.")
-
             self.activate_button.setEnabled(False)
             self.activate_dummy_button.setEnabled(False)
             self.deactivate_button.setEnabled(True)
@@ -387,8 +335,6 @@ class AndorLiveWindow(QWidget):
         except AndorControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to activate camera: {ce}")
             self.log(f"Error activating camera: {ce}")
-            
-    # Simple dummy controller for UI testing
     class _DummyAndorController:
         def __init__(self, device_index=0):
             self.device_index = device_index
@@ -406,7 +352,6 @@ class AndorLiveWindow(QWidget):
             noise = np.random.normal(0, amp * 0.05, self.image_shape)
             return np.clip(gauss + noise, 0, 65535).astype(np.float64)
         def deactivate(self): pass
-
     def activate_dummy_camera(self):
         try:
             self.cam = AndorLiveWindow._DummyAndorController(device_index=666)
@@ -422,7 +367,6 @@ class AndorLiveWindow(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate dummy camera: {e}")
             self.log(f"Error activating dummy camera: {e}")
-
     def deactivate_camera(self):
         try:
             try:
@@ -432,7 +376,6 @@ class AndorLiveWindow(QWidget):
                     self.adapter = None
             except Exception:
                 pass
-
             if self.cam:
                 self.cam.deactivate()
                 self.log("Camera 0 deactivated.")
@@ -445,9 +388,6 @@ class AndorLiveWindow(QWidget):
         except AndorControllerError as ce:
             QMessageBox.critical(self, "Error", f"Failed to deactivate camera: {ce}")
             self.log(f"Error deactivating camera: {ce}")
-
-    # ----------------------- Live capture -----------------------
-
     def start_capture(self):
         if self.cam is None:
             QMessageBox.critical(self, "Error", "Camera not activated.")
@@ -458,14 +398,12 @@ class AndorLiveWindow(QWidget):
         except ValueError:
             QMessageBox.critical(self, "Error", "Invalid parameter values.")
             return
-
         self.capture_thread = LiveCaptureThread(self.cam, exposure, update_interval)
         self.capture_thread.image_signal.connect(self.update_image)
         self.capture_thread.start()
         self.log("Live capture started.")
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
-
     def stop_capture(self):
         if self.capture_thread:
             self.capture_thread.stop()
@@ -474,9 +412,6 @@ class AndorLiveWindow(QWidget):
             self.capture_thread = None
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
-
-    # ----------------------- Plot updates -----------------------
-
     def on_fix_cbar(self, checked: bool):
         if checked:
             try:
@@ -488,7 +423,6 @@ class AndorLiveWindow(QWidget):
         else:
             self.fixed_cbar_max = None
             self.log("Colorbar auto scale")
-
     def on_fix_value_changed(self, text: str):
         if not self.fix_cbar_checkbox.isChecked() or not self.image_artist:
             return
@@ -502,19 +436,97 @@ class AndorLiveWindow(QWidget):
             self.log(f"Colorbar max updated to {self.fixed_cbar_max:.1f}")
         except ValueError:
             pass
-
+    def _refresh_crosshair(self):
+        if self.ch_h is not None:
+            try: self.ch_h.remove()
+            except Exception: pass
+            self.ch_h = None
+        if self.ch_v is not None:
+            try: self.ch_v.remove()
+            except Exception: pass
+            self.ch_v = None
+        if not self.crosshair_visible:
+            return
+        if self.crosshair_pos is None:
+            y0, y1 = self.ax_img.get_ylim()
+            x0, x1 = self.ax_img.get_xlim()
+            cx = 0.5 * (x0 + x1)
+            cy = 0.5 * (y0 + y1)
+            self.crosshair_pos = (cx, cy)
+        x, y = self.crosshair_pos
+        self.ch_h = self.ax_img.axhline(y, linestyle="-.", linewidth=1.2)
+        self.ch_v = self.ax_img.axvline(x, linestyle="-.", linewidth=1.2)
+    def _on_mouse_move(self, event):
+        if not self.crosshair_visible or self.crosshair_locked:
+            return
+        if event.xdata is None or event.ydata is None:
+            return
+        self.crosshair_pos = (float(event.xdata), float(event.ydata))
+        self._refresh_crosshair()
+        self.canvas.draw_idle()
+    def _on_mouse_press(self, event):
+        if event.button == 3 and self.crosshair_visible:
+            self.crosshair_locked = not self.crosshair_locked
+            if self.crosshair_locked and (event.xdata is not None and event.ydata is not None):
+                self.crosshair_pos = (float(event.xdata), float(event.ydata))
+            self._refresh_crosshair()
+            self.canvas.draw_idle()
+    def toggle_crosshair(self):
+        self.crosshair_visible = not self.crosshair_visible
+        if not self.crosshair_visible:
+            self.crosshair_locked = False
+        self._refresh_crosshair()
+        self.canvas.draw_idle()
+    def toggle_lock_manual(self):
+        if not self.crosshair_visible:
+            return
+        self.crosshair_locked = not self.crosshair_locked
+        self._refresh_crosshair()
+        self.canvas.draw_idle()
+    def save_crosshair_to_config(self):
+        if not self.crosshair_visible or self.crosshair_pos is None:
+            QMessageBox.warning(self, "Crosshair", "Crosshair must be visible to save.")
+            return
+        path = _config_path()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            data = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            if not isinstance(data, dict):
+                data = {}
+            andor = data.get("andor", {}) if isinstance(data.get("andor"), dict) else {}
+            andor["crosshair"] = {"x": float(self.crosshair_pos[0]), "y": float(self.crosshair_pos[1])}
+            data["andor"] = andor
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(data, f, sort_keys=False)
+            self.log(f"Crosshair saved to {path}: {andor['crosshair']}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save crosshair: {e}")
+    def goto_saved_crosshair(self):
+        path = _config_path()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except Exception:
+            data = {}
+        ch = (((data.get("andor") or {}).get("crosshair")) or {})
+        if not ch or "x" not in ch or "y" not in ch:
+            QMessageBox.information(self, "Crosshair", "No saved crosshair position in config.")
+            return
+        self.crosshair_visible = True
+        self.crosshair_locked = True
+        self.crosshair_pos = (float(ch["x"]), float(ch["y"]))
+        self._refresh_crosshair()
+        self.canvas.draw_idle()
+        self.log(f"Went to saved crosshair: {self.crosshair_pos}")
     def update_image(self, image: np.ndarray):
-        """Update the displayed image and an integrated profile (preserve zoom)."""
-        # Keep raw for saving
         self.last_frame = image
-
-        # Use a processed copy for display only
         disp = self._display_preprocess(image)
-
         max_val = float(np.max(disp))
         min_val = float(np.min(disp))
         title_text = f"Live Andor Camera Image - Max: {max_val:.0f}"
-
         if self.image_artist is None:
             self.ax_img.clear()
             self.image_artist = self.ax_img.imshow(disp, cmap=white_turbo(512))
@@ -533,50 +545,33 @@ class AndorLiveWindow(QWidget):
                 self.fixed_cbar_max = None
                 self.image_artist.set_clim(min_val, max_val)
             self.cbar.update_normal(self.image_artist)
-
-        # Profile from the *displayed* frame
         axis = self._profile_axis_for_display()
         profile = np.sum(disp, axis=axis)
-
         self.ax_profile.clear()
         if axis == 1:
-            # summed over columns → profile vs row index
             x = np.arange(disp.shape[0])
             self.ax_profile.plot(x, profile)
             self.ax_profile.set_xlabel("Row (px)")
             self.ax_profile.set_ylabel("Integrated Intensity (Σ cols)")
             self.ax_profile.set_xlim(0, disp.shape[0])
         else:
-            # summed over rows → profile vs column index
             x = np.arange(disp.shape[1])
             self.ax_profile.plot(x, profile)
             self.ax_profile.set_xlabel("Column (px)")
             self.ax_profile.set_ylabel("Integrated Intensity (Σ rows)")
             self.ax_profile.set_xlim(0, disp.shape[1])
-
+        self._refresh_crosshair()
         self.canvas.draw_idle()
-
-        
-
-    # ----------------------- Save frames (N sequential captures) -----------------------
-
     def _capture_one(self, exp_us: int) -> np.ndarray:
         if self.cam is None:
             raise AndorControllerError("Camera not activated.")
         if hasattr(self.cam, "capture_single"):
             return self.cam.capture_single(exp_us)
         return self.cam.take_image(exp_us, 1)
-
     def save_frames(self):
-        """
-        Save N consecutive frames as 16-bit PNGs with metadata (Exposure, MCP Voltage, Comment).
-        If 'Background' is checked, filenames include 'Background'.
-        Log file is TSV without an 'Averages' column.
-        """
         if self.cam is None and self.last_frame is None:
             QMessageBox.warning(self, "Warning", "No frame available to save.")
             return
-
         try:
             exposure_us = int(self.exposure_edit.text())
             n_frames = int(self.frames_to_save_edit.text())
@@ -585,58 +580,41 @@ class AndorLiveWindow(QWidget):
         except ValueError:
             QMessageBox.critical(self, "Error", "Invalid 'Frames to Save' or 'Exposure' value.")
             return
-
         now = datetime.datetime.now()
         base_dir = _data_root()
         dir_path = os.path.join(base_dir, now.strftime("%Y-%m-%d"), "AndorCamera")
         os.makedirs(dir_path, exist_ok=True)
-
         mcp_voltage_val = self.mcp_voltage_edit.text()
         comment_text = self.comment_edit.text()
         is_bg = self.background_checkbox.isChecked()
-
         ts_prefix = now.strftime("%Y%m%d_%H%M%S")
         stem = "AndorCamera_MCP_Background" if is_bg else "AndorCamera_MCP_Image"
-
         saved_files: list[str] = []
-
-        # Capture N frames sequentially
         for i in range(1, n_frames + 1):
             try:
                 frame = self._capture_one(exposure_us) if self.cam else self.last_frame
                 if frame is None:
                     raise RuntimeError("No frame captured.")
-                # ensure 16-bit
                 frame_uint16 = np.clip(frame, 0, 65535).astype(np.uint16, copy=False)
                 img = Image.fromarray(frame_uint16, mode="I;16")
-
-                # filename with index suffix
                 file_name = f"{stem}_{ts_prefix}_{i}.png"
                 file_path = os.path.join(dir_path, file_name)
-
-                # metadata (no Averages)
                 metadata = PngImagePlugin.PngInfo()
                 metadata.add_text("Exposure", str(exposure_us))
                 metadata.add_text("MCP Voltage", mcp_voltage_val)
                 metadata.add_text("Comment", comment_text)
-
                 img.save(file_path, format="PNG", pnginfo=metadata)
                 saved_files.append(file_name)
                 self.log(f"Saved {file_path}")
             except Exception as e:
                 self.log(f"Error saving frame {i}: {e}")
                 QMessageBox.critical(self, "Error", f"Error saving frame {i}: {e}")
-                # continue to next or break? safer to break
                 break
-
         if not saved_files:
             return
-
-        # Append to TSV log (no Averages column)
         log_file_name = f"AndorCam_1_log_{now.strftime('%Y-%m-%d')}.log"
         log_file_path = os.path.join(dir_path, log_file_name)
         header = "File Name\tExposure (µs)\tMCP Voltage\tComment\n"
-
         try:
             if not os.path.exists(log_file_path):
                 with open(log_file_path, "w", encoding="utf-8") as log_file:
@@ -648,9 +626,6 @@ class AndorLiveWindow(QWidget):
         except Exception as e:
             self.log(f"Error writing log file: {e}")
             QMessageBox.critical(self, "Error", f"Error writing log file: {e}")
-
-    # ----------------------- Close -----------------------
-
     def closeEvent(self, event):
         if self.capture_thread:
             self.stop_capture()
@@ -658,7 +633,6 @@ class AndorLiveWindow(QWidget):
             self.deactivate_camera()
         self.closed.emit()
         super().closeEvent(event)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
