@@ -13,7 +13,8 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.image as mpimg
 
 from dlab.hardware.wrappers.slm_controller import DEFAULT_BEAM_RADIUS_ON_SLM, DEFAULT_SLM_SIZE, DEFAULT_CHIP_W, DEFAULT_CHIP_H, DEFAULT_PIXEL_SIZE, DEFAULT_BIT_DEPTH
-from prysm import coordinates, polynomials
+import subprocess
+import math
 
 from dlab.boot import get_config
 
@@ -274,6 +275,57 @@ class TypeLens(BaseTypeWidget):
         self.toggle_mode()
 
 
+def _make_xy_grid(n: int, diameter: float):
+    x = np.linspace(-diameter/2, diameter/2, n)
+    X, Y = np.meshgrid(x, x, indexing='xy')
+    return X, Y
+
+def _cart_to_polar(X: np.ndarray, Y: np.ndarray, diameter: float):
+    r = np.sqrt(X*X + Y*Y) / (diameter/2)
+    t = np.arctan2(Y, X)
+    return r, t
+
+def _noll_to_nm(j: int):
+    if j < 1:
+        raise ValueError("Noll indices start at 1.")
+    n = 0
+    # j_start(n) = n(n+1)/2 + 1
+    while (n*(n+1))//2 + 1 <= j:
+        n += 1
+    n -= 1
+    j_start = (n*(n+1))//2 + 1
+    k = j - j_start  # 0..n
+    m = -n + 2*k
+    return n, m
+
+def _zernike_radial(n: int, m_abs: int, r: np.ndarray):
+    if (n - m_abs) % 2 != 0:
+        return np.zeros_like(r)
+    R = np.zeros_like(r, dtype=float)
+    s_max = (n - m_abs) // 2
+    for s in range(s_max + 1):
+        num = (-1)**s * math.factorial(n - s)
+        den = (math.factorial(s) *
+               math.factorial((n + m_abs)//2 - s) *
+               math.factorial((n - m_abs)//2 - s))
+        R += (num / den) * r**(n - 2*s)
+    return R
+
+def _zernike_nm(n: int, m: int, r: np.ndarray, t: np.ndarray):
+    m_abs = abs(m)
+    R = _zernike_radial(n, m_abs, r)
+    Z = np.where(r <= 1.0,
+                 (R * (np.cos(m_abs*t) if m >= 0 else np.sin(m_abs*t))),
+                 0.0)
+    return Z
+
+def _sum_of_2d_modes(modes: list[np.ndarray], coefs: np.ndarray):
+    out = np.zeros_like(modes[0], dtype=float)
+    for Z, c in zip(modes, coefs):
+        out += c * Z
+    return out
+
+# --- replacement TypeZernike (no prysm) ---
 class TypeZernike(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -302,7 +354,6 @@ class TypeZernike(BaseTypeWidget):
         self.lbl_file.setWordWrap(True)
         vlayout.addWidget(self.lbl_file)
 
-        # Matplotlib figure and canvas
         self.fig = Figure(figsize=(3, 1.5))
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title("Zernike Coefficients", fontsize=10)
@@ -345,7 +396,7 @@ class TypeZernike(BaseTypeWidget):
 
     def update_plot(self, js, coefs):
         self.ax.clear()
-        self.ax.bar(js, coefs, color='blue', alpha=0.8)
+        self.ax.bar(js, coefs, alpha=0.8)
         self.ax.set_title("Zernike Coefficients", fontsize=10)
         self.ax.set_xlabel("Mode (j)", fontsize=8)
         self.ax.set_ylabel("Coef (nm RMS)", fontsize=8)
@@ -360,15 +411,20 @@ class TypeZernike(BaseTypeWidget):
         try:
             data = np.loadtxt(self.filepath, skiprows=1)
             js = data[:, 0].astype(int)
-            zernike_coefs = data[:, 1]
-            size = 1.92  # horizontal size in wL
-            x, y = coordinates.make_xy_grid(slm_size[1], diameter=size)
-            r, t = coordinates.cart_to_polar(x, y)
-            nms = [polynomials.noll_to_nm(j) for j in js]
-            zernike_basis = list(polynomials.zernike_nm_sequence(nms, r, t))
-            phase = polynomials.sum_of_2d_modes(zernike_basis, zernike_coefs)
+            zernike_coefs = data[:, 1]  
+
+            size = 1.92  
+            N = slm_size[1]
+            X, Y = _make_xy_grid(N, diameter=size)
+            r, t = _cart_to_polar(X, Y, diameter=size)
+
+            nms = [_noll_to_nm(int(j)) for j in js]
+            zernike_basis = [_zernike_nm(n, m, r, t) for (n, m) in nms]
+            phase = _sum_of_2d_modes(zernike_basis, zernike_coefs)
+
             start_row = (slm_size[1] - 1200) // 2
             phase = phase[start_row:start_row + 1200, :]
+
             return phase
         except Exception as e:
             print("Error computing Zernike phase:", e)
@@ -384,6 +440,7 @@ class TypeZernike(BaseTypeWidget):
         if self.filepath:
             self.btn_modify.setEnabled(True)
             self.btn_update.setEnabled(True)
+
 
 class TypeTilt(BaseTypeWidget):
     def __init__(self, parent=None):
