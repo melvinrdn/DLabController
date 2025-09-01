@@ -15,18 +15,15 @@ CFG = bootstrap(ROOT / "config" / "config.yaml")
 
 
 class DlabControllerWindow(QMainWindow):
-    """Main window for the Dlab Controller application."""
     def __init__(self):
         super().__init__()
-
-        # Child windows
         self.andor_window = None
         self.avaspec_window = None
+        self.powermeter_window = None
         self.daheng_windows: dict[str, object] = {}
         self.stage_control_window = None
         self.slm_window = None
         self.scan_window = None
-
         self.setup_ui()
 
     def setup_ui(self):
@@ -41,32 +38,30 @@ class DlabControllerWindow(QMainWindow):
         windows_group = QGroupBox("Windows")
         view_layout = QVBoxLayout()
 
-        # SLM
         self.slm_button = QPushButton("Open SLM Window")
         self.slm_button.clicked.connect(self.open_slm_window)
         view_layout.addWidget(self.slm_button)
 
-        # Andor
         self.andor_button = QPushButton("Open Andor Window")
         self.andor_button.clicked.connect(self.open_andor_window)
         view_layout.addWidget(self.andor_button)
 
-        # Avaspec
         self.avaspec_button = QPushButton("Open Avaspec Window")
         self.avaspec_button.clicked.connect(self.open_avaspec_window)
         view_layout.addWidget(self.avaspec_button)
         
-        # Thorlabs
+        self.powermeter_button = QPushButton("Open Powermeter Window")
+        self.powermeter_button.clicked.connect(self.open_powermeter_window)
+        view_layout.addWidget(self.powermeter_button)
+        
         self.thorlabs_button = QPushButton("Open Stage Control Window")
         self.thorlabs_button.clicked.connect(self.open_stage_control_window)
         view_layout.addWidget(self.thorlabs_button)
         
-        # Scan
         self.scan_button = QPushButton("Open Scan Window")
         self.scan_button.clicked.connect(self.open_scan_window)
         view_layout.addWidget(self.scan_button)
 
-        # Daheng x3
         self.camera_controls = {}
         default_indices = {"DahengCam_1": 1, "DahengCam_2": 2, "DahengCam_3": 3}
         for label in ["DahengCam_1", "DahengCam_2", "DahengCam_3"]:
@@ -90,7 +85,6 @@ class DlabControllerWindow(QMainWindow):
         windows_group.setLayout(view_layout)
         left_panel.addWidget(windows_group)
 
-        # Dashboard Grafana
         grafana_url = (get_config() or {}).get("metrics", {}).get(
             "grafana_url", "http://localhost:3000"
         )
@@ -115,8 +109,6 @@ class DlabControllerWindow(QMainWindow):
         self.pressure_monitor = PressureMonitorWidget(self)
         self.pressure_monitor.log_signal.connect(self.append_log)
 
-    # ---------- Child windows ----------
-    # Andor
     def open_andor_window(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
         if self.andor_window is None:
@@ -133,7 +125,6 @@ class DlabControllerWindow(QMainWindow):
         self.andor_window = None
         self.append_log("Andor window closed.")
 
-    # Avaspec
     def open_avaspec_window(self):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
         if self.avaspec_window is None:
@@ -150,7 +141,6 @@ class DlabControllerWindow(QMainWindow):
         self.avaspec_window = None
         self.append_log("Avaspec window closed.")
 
-    # SLM
     def open_slm_window(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
         if self.slm_window is None:
@@ -167,7 +157,6 @@ class DlabControllerWindow(QMainWindow):
         self.slm_window = None
         self.append_log("SLM window closed.")
 
-    # Thorlabs
     def open_stage_control_window(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
         if self.stage_control_window is None:
@@ -177,7 +166,6 @@ class DlabControllerWindow(QMainWindow):
         self.stage_control_window.activateWindow()
         self.append_log("Stage Control window opened.")
 
-    # Daheng
     def open_daheng_window(self, camera_name: str, fixed_index: int):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
         if camera_name not in self.daheng_windows:
@@ -195,7 +183,7 @@ class DlabControllerWindow(QMainWindow):
         if camera_name in self.daheng_windows:
             del self.daheng_windows[camera_name]
         self.append_log(f"Daheng window closed for '{camera_name}'.")
-        
+
     def open_scan_window(self):
         from dlab.diagnostics.ui.scans.scan_window import ScanWindow
         if self.scan_window is None:
@@ -209,6 +197,20 @@ class DlabControllerWindow(QMainWindow):
     def on_scan_window_closed(self):
         self.scan_window = None
         self.append_log("Scan window closed.")
+
+    def open_powermeter_window(self):
+        from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
+        if self.powermeter_window is None:
+            self.powermeter_window = PowermeterLiveWindow()
+            self.powermeter_window.closed.connect(self.on_powermeter_window_closed)
+        self.powermeter_window.show()
+        self.powermeter_window.raise_()
+        self.powermeter_window.activateWindow()
+        self.append_log("Powermeter window opened.")
+
+    def on_powermeter_window_closed(self):
+        self.powermeter_window = None
+        self.append_log("Powermeter window closed.")
 
 
 def main():

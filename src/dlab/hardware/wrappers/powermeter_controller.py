@@ -10,15 +10,6 @@ class PowermeterControllerError(Exception):
 
 
 class PowermeterController:
-    """
-    Thin wrapper around Thorlabs PM100 using pyvisa + ThorlabsPM100.
-
-    Public methods kept compatible with your existing code:
-      - activate(), deactivate()
-      - read_power(), fetch_power()
-      - set_auto_range(auto_range), set_avg(no_avg), set_wavelength(wavelength), set_bandwidth(bandwidth)
-      - get_config()
-    """
 
     def __init__(self, powermeter_id: str) -> None:
         """
@@ -66,7 +57,6 @@ class PowermeterController:
 
         pm = self.power_meter
 
-        # Some attributes are properties, some are callables in older libs.
         def _val(x):
             try:
                 return x() if callable(x) else x
@@ -79,7 +69,6 @@ class PowermeterController:
             "auto_range": _val(pm.sense.power.dc.range.auto),
             "lpass_state": _val(pm.input.pdiode.filter.lpass.state),
         }
-        # Optional: include the device's internal configure blob if available
         if hasattr(pm, "getconfigure"):
             try:
                 cfg["raw_configure"] = pm.getconfigure()
