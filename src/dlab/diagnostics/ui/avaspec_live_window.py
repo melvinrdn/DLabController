@@ -3,16 +3,12 @@ from __future__ import annotations
 import os, datetime, time
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit  # (still imported; safe to keep)
-
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QApplication
 )
 from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5.QtGui import QDoubleValidator
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
-
 from dlab.boot import ROOT, get_config
 from dlab.hardware.wrappers.avaspec_controller import AvaspecController, AvaspecError
 from dlab.core.device_registry import REGISTRY
@@ -31,39 +27,32 @@ def _append_avaspec_log(folder: str, spec_name: str, fn: str, int_ms: float, ave
             f.write("File Name\tIntegration_ms\tAverages\tComment\n")
         f.write(f"{fn}\t{int_ms}\t{averages}\t{comment}\n")
 
-
 class LiveMeasurementThread(QThread):
     spectrum_signal = pyqtSignal(float, object)
     error_signal = pyqtSignal(str)
-
     def __init__(self, ctrl, int_time_ms: float, no_avg: int):
         super().__init__()
         self.ctrl = ctrl
         self.int_time = float(int_time_ms)
         self.no_avg = int(no_avg)
         self._running = True
-
     def update_params(self, int_time_ms: float, no_avg: int) -> None:
         self.int_time = float(int_time_ms)
         self.no_avg = int(no_avg)
-
     def run(self) -> None:
         while self._running:
             try:
-                ts, data = self.ctrl.measure_spectrum(self.int_time, self.no_avg)  # RAW
+                ts, data = self.ctrl.measure_spectrum(self.int_time, self.no_avg)
                 self.spectrum_signal.emit(ts, data)
                 time.sleep(max(0.02, self.int_time / 1000.0))
             except Exception as e:
                 self.error_signal.emit(str(e))
                 break
-
     def stop(self) -> None:
         self._running = False
 
-
 class AvaspecLiveWindow(QWidget):
     closed = pyqtSignal()
-
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Avaspec Live")
@@ -71,51 +60,36 @@ class AvaspecLiveWindow(QWidget):
         self.thread: LiveMeasurementThread | None = None
         self.handles = []
         self.line = None
-        self.last_data = None             # un-thresholded processed data (bg-sub or bg-sub/cal)
-        self._last_raw: np.ndarray | None = None  # last raw spectrum
+        self.last_data = None
+        self._last_raw: np.ndarray | None = None
         self.registry_key = None
-
         self._build_ui()
         try:
             REGISTRY.register("ui:avaspec_live", self)
         except Exception:
             pass
-
-    # --------------- UI ---------------
     def _build_ui(self):
         main = QHBoxLayout(self)
         splitter = QSplitter()
-
-        # Left panel
         left = QWidget(); left_l = QVBoxLayout(left)
-
-        # Spectrometer select
         self.spec_combo = QComboBox()
         btn_search = QPushButton("Search Spectrometers")
         btn_search.clicked.connect(self.search_spectrometers)
         left_l.addWidget(QLabel("Select Spectrometer:"))
         left_l.addWidget(self.spec_combo)
         left_l.addWidget(btn_search)
-
-        # Activate/deactivate
         btn_act = QPushButton("Activate")
         btn_deact = QPushButton("Deactivate"); btn_deact.setEnabled(False)
         btn_act.clicked.connect(self.activate_hardware)
         btn_deact.clicked.connect(self.deactivate_hardware)
         self.btn_act, self.btn_deact = btn_act, btn_deact
         left_l.addWidget(btn_act); left_l.addWidget(btn_deact)
-
-        # Measurement params
         self.int_edit = QLineEdit("100")
         self.avg_edit = QLineEdit("1")
         left_l.addWidget(QLabel("Integration Time (ms):")); left_l.addWidget(self.int_edit)
         left_l.addWidget(QLabel("Number of Averages:"));     left_l.addWidget(self.avg_edit)
-
-        # Options
         self.cb_autoscale = QCheckBox("Autoscale"); self.cb_autoscale.setChecked(True)
         left_l.addWidget(self.cb_autoscale)
-
-        # Background controls
         bg_row = QHBoxLayout()
         self.btn_bg = QPushButton("Update Background")
         self.btn_bg_reset = QPushButton("Reset Background")
@@ -125,41 +99,26 @@ class AvaspecLiveWindow(QWidget):
         left_l.addLayout(bg_row)
         self.lbl_bg = QLabel("Background: none")
         left_l.addWidget(self.lbl_bg)
-
-        # Calibration control
         self.cb_calibration = QCheckBox("Calibration ((counts-bg)/cal)")
         self.cb_calibration.setChecked(False)
         left_l.addWidget(self.cb_calibration)
-
-        # Threshold control (0..1)
         thr_row = QHBoxLayout()
         thr_row.addWidget(QLabel("Threshold (0..1):"))
         self.threshold_edit = QLineEdit("0.02")
         thr_row.addWidget(self.threshold_edit)
         left_l.addLayout(thr_row)
-
-        # FTL display
         self.lbl_ftl = QLabel("FTL: — fs")
         left_l.addWidget(self.lbl_ftl)
-
-        # Live control
         btn_start = QPushButton("Start Live"); btn_start.clicked.connect(self.start_live)
         btn_stop  = QPushButton("Stop Live");  btn_stop.setEnabled(False); btn_stop.clicked.connect(self.stop_live)
         self.btn_start, self.btn_stop = btn_start, btn_stop
         left_l.addWidget(btn_start); left_l.addWidget(btn_stop)
-
-        # Save
         self.comment_edit = QLineEdit("")
         self.btn_save = QPushButton("Save Spectrum"); self.btn_save.clicked.connect(self.save_spectrum)
         left_l.addWidget(QLabel("Comment:")); left_l.addWidget(self.comment_edit); left_l.addWidget(self.btn_save)
-
-        # Log
         self.log = QTextEdit(); self.log.setReadOnly(True)
         left_l.addWidget(self.log)
-
         splitter.addWidget(left)
-
-        # Right panel (plot)
         right = QWidget(); right_l = QVBoxLayout(right)
         self.fig, self.ax = plt.subplots()
         self.ax.set_xlabel("Wavelength (nm)"); self.ax.set_ylabel("Counts"); self.ax.grid(True)
@@ -167,19 +126,14 @@ class AvaspecLiveWindow(QWidget):
         right_l.addWidget(NavigationToolbar(self.canvas, self))
         right_l.addWidget(self.canvas)
         splitter.addWidget(right)
-
         main.addWidget(splitter)
         self.resize(1080, 720)
-
     def _ui_log(self, msg: str):
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log.append(f"[{t}] {msg}")
-
-    # ---------------- FTL helpers ----------------
     @staticmethod
-    def _fwxm(time: np.ndarray, intens: np.ndarray, x: float = 0.5) -> float:
-        """Return FWXM (e.g., FWHM for x=0.5) by linear interpolation at level x."""
-        t = np.asarray(time, float)
+    def _fwxm(time_v: np.ndarray, intens: np.ndarray, x: float = 0.5) -> float:
+        t = np.asarray(time_v, float)
         y = np.asarray(intens, float)
         if t.ndim != 1 or y.ndim != 1 or t.size != y.size or t.size < 3:
             return float("nan")
@@ -191,71 +145,43 @@ class AvaspecLiveWindow(QWidget):
         if ihw.size == 0:
             return float("nan")
         i0, i1 = int(ihw[0]), int(ihw[-1])
-
-        # left crossing
         if i0 == 0:
             t1 = t[0]
         else:
             m1 = (P[i0] - P[i0-1]) / (t[i0] - t[i0-1] if t[i0] != t[i0-1] else 1e-300)
             n1 = P[i0] - m1 * t[i0]
             t1 = (x - n1) / m1
-
-        # right crossing
         if i1 >= t.size - 1:
             t2 = t[-1]
         else:
             m2 = (P[i1+1] - P[i1]) / (t[i1+1] - t[i1] if t[i1+1] != t[i1] else 1e-300)
             n2 = P[i1] - m2 * t[i1]
             t2 = (x - n2) / m2
-
         return float(t2 - t1)
-
     @staticmethod
     def _compute_ftl_from_spectrum(wl_nm: np.ndarray, spec: np.ndarray, level: float = 0.5) -> tuple[float, np.ndarray, np.ndarray]:
-        """
-        Compute transform-limited FWXM (default FWHM):
-        - λ -> f
-        - interpolate onto a uniform frequency grid (using flips, like your snippet)
-        - IFFT of sqrt(spectrum) then |E(t)|^2
-        """
-        c = 299_792_458.0  # m/s
-
+        c = 299_792_458.0
         wl = np.asarray(wl_nm, float).ravel()
         S  = np.asarray(spec,  float).ravel()
         if wl.size != S.size or wl.size < 3:
             return float("nan"), np.array([]), np.array([])
-
-        # Frequency axis (Hz), same ordering as input λ.
         freqs = c / (wl * 1e-9)
-
-        # Build uniform frequency grid from last to first (ascending if λ is ascending).
         N = freqs.size
         freqs_interp = np.linspace(freqs[-1], freqs[0], N)
-
-        # Interpolate spectrum on that uniform f-grid using flipped arrays (as in your code).
         specs_f = np.abs(np.interp(freqs_interp, np.flip(freqs), np.flip(S)))
-
-        # IFFT of field amplitude (sqrt spectrum) -> intensity in time
         if N < 2:
             return float("nan"), np.array([]), np.array([])
         dnu = freqs_interp[1] - freqs_interp[0]
         if not np.isfinite(dnu) or dnu == 0:
             return float("nan"), np.array([]), np.array([])
-
         amp_f = np.sqrt(np.clip(specs_f, 0, None))
         E_t   = np.fft.fftshift(np.fft.ifft(amp_f))
         I_t   = np.abs(E_t) ** 2
-
-        # Time vector consistent with frequency spacing
-        time = np.fft.fftshift(np.fft.fftfreq(N, d=dnu))
-
-        ftl_s = AvaspecLiveWindow._fwxm(time, I_t, x=level)
+        time_v = np.fft.fftshift(np.fft.fftfreq(N, d=dnu))
+        ftl_s = AvaspecLiveWindow._fwxm(time_v, I_t, x=level)
         I_t_n = I_t / (np.max(I_t) if np.max(I_t) > 0 else 1.0)
-        return ftl_s, time, I_t_n
-
-    # -------- threshold helpers --------
+        return ftl_s, time_v, I_t_n
     def _get_threshold_fraction(self) -> float:
-        """Read and clamp threshold in [0,1]. Default to 0.05 on parse error."""
         try:
             v = float(self.threshold_edit.text())
         except Exception:
@@ -263,12 +189,7 @@ class AvaspecLiveWindow(QWidget):
         if not np.isfinite(v):
             v = 0.05
         return float(min(max(v, 0.0), 1.0))
-
     def _apply_threshold_for_display(self, y: np.ndarray) -> np.ndarray:
-        """
-        Apply display threshold: values below max(y_pos) * thr -> 0.
-        Negative values are clipped to 0 before thresholding.
-        """
         y = np.asarray(y, float)
         y_pos = np.clip(y, 0, None)
         thr = self._get_threshold_fraction()
@@ -278,10 +199,7 @@ class AvaspecLiveWindow(QWidget):
         cutoff = thr * ymax
         y_disp = np.where(y_pos >= cutoff, y_pos, 0.0)
         return y_disp
-
-    # ------------- background -------------
     def update_background(self):
-        """Use last RAW spectrum as background (no new measurement)."""
         if not self.ctrl:
             QMessageBox.critical(self, "Error", "Spectrometer not activated.")
             return
@@ -293,14 +211,11 @@ class AvaspecLiveWindow(QWidget):
         self.ctrl.set_background(wl, bg)
         self.lbl_bg.setText(f"Background: set ({bg.size} px)")
         self._ui_log("Background updated from last displayed spectrum.")
-
     def reset_background(self):
         if self.ctrl:
             self.ctrl.reset_background()
         self.lbl_bg.setText("Background: none")
         self._ui_log("Background reset.")
-
-    # ------------- hardware -------------
     def search_spectrometers(self):
         self.spec_combo.clear()
         lst = AvaspecController.list_spectrometers()
@@ -311,7 +226,6 @@ class AvaspecLiveWindow(QWidget):
         self.handles = lst
         self.spec_combo.addItems([f"Spectrometer {i+1}" for i in range(len(lst))])
         self._ui_log(f"Found {len(lst)} spectrometer(s).")
-
     def activate_hardware(self):
         idx = self.spec_combo.currentIndex()
         if idx < 0 or idx >= len(self.handles):
@@ -321,7 +235,6 @@ class AvaspecLiveWindow(QWidget):
             self.ctrl = AvaspecController(self.handles[idx])
             self.ctrl.activate()
             self._ui_log("Spectrometer activated.")
-
             key = f"spectrometer:avaspec:spec_{idx+1}"
             try:
                 for k, v in REGISTRY.items(prefix="spectrometer:avaspec:"):
@@ -332,13 +245,11 @@ class AvaspecLiveWindow(QWidget):
             REGISTRY.register(key, self.ctrl)
             self.registry_key = key
             self._ui_log(f"Registered '{key}' in device registry.")
-
             self.btn_act.setEnabled(False)
             self.btn_deact.setEnabled(True)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate: {e}")
             self._ui_log(f"Activate failed: {e}")
-
     def deactivate_hardware(self):
         try:
             if self.ctrl:
@@ -355,8 +266,6 @@ class AvaspecLiveWindow(QWidget):
             self.ctrl = None
             self.btn_act.setEnabled(True)
             self.btn_deact.setEnabled(False)
-
-    # ------------- live -------------
     def start_live(self):
         if not self.ctrl:
             QMessageBox.critical(self, "Error", "Spectrometer not activated.")
@@ -373,22 +282,18 @@ class AvaspecLiveWindow(QWidget):
         self.thread.start()
         self._ui_log("Live started.")
         self.btn_start.setEnabled(False); self.btn_stop.setEnabled(True)
-
     def stop_live(self):
         if self.thread:
             self.thread.stop(); self.thread.wait()
             self.thread = None
             self._ui_log("Live stopped.")
         self.btn_start.setEnabled(True); self.btn_stop.setEnabled(False)
-
-    # ------------- plotting -------------
     def update_spectrum(self, ts: float, data: np.ndarray):
         if self.ctrl is None:
             return
         raw = np.asarray(data, dtype=float)
         self._last_raw = raw.copy()
         wl = np.asarray(self.ctrl.wavelength, dtype=float)
-
         use_cal = self.cb_calibration.isChecked()
         if use_cal and not self.ctrl.has_calibration():
             try:
@@ -399,81 +304,61 @@ class AvaspecLiveWindow(QWidget):
                     self._ui_log(f"Calibration loaded: {p}")
             except Exception as e:
                 self._ui_log(f"Calibration load failed: {e}")
-
-        # processed data (no threshold here)
         proc = self.ctrl.apply_processing(wl, raw, use_calibration=use_cal)
         self.last_data = proc
-
-        # display data with threshold
         disp = self._apply_threshold_for_display(proc)
-
         if self.line is None:
-            (self.line,) = self.ax.plot(wl, disp, color="C0", label="Data")
+            (self.line,) = self.ax.plot(wl, disp, label="Data")
         else:
             self.line.set_xdata(wl)
             self.line.set_ydata(disp)
-
-        # FTL on displayed (thresholded) spectrum
-        ftl_s, t_vec, I_t = self._compute_ftl_from_spectrum(wl, disp, level=0.5)
+        ftl_s, _, _ = self._compute_ftl_from_spectrum(wl, disp, level=0.5)
         ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
         if np.isfinite(ftl_fs):
             self.lbl_ftl.setText(f"FTL: {ftl_fs:.0f} fs")
             self.ax.set_title(f"FTL ≈ {ftl_fs:.0f} fs")
         else:
             self.lbl_ftl.setText("FTL: — fs")
-            self.ax.set_title("")
-
+            self.ax.setTitle("")
         self.ax.set_yscale("linear")
         if self.cb_autoscale.isChecked():
             self.ax.relim(); self.ax.autoscale_view()
-
         has_bg = (self.ctrl._bg_counts is not None)
         if use_cal and self.ctrl.has_calibration():
             self.ax.set_ylabel("Counts ((bg-sub)/cal)")
         else:
             self.ax.set_ylabel("Counts (bg-subtracted)" if has_bg else "Counts")
-
         self.canvas.draw_idle()
-
-    # ------------- external injection -------------
     def set_spectrum_from_scan(self, wl, counts):
         try:
-            if self.thread is not None or self.ctrl is None:
-                return
             wl = np.asarray(wl, dtype=float)
             raw = np.asarray(counts, dtype=float)
             self._last_raw = raw.copy()
-
-            use_cal = self.cb_calibration.isChecked()
-            if use_cal and not self.ctrl.has_calibration():
-                try:
-                    p = self.ctrl.load_calibration_from_config(silent=True)
-                    if p is None:
-                        self._ui_log("Calibration file not found; proceeding without calibration.")
-                    else:
-                        self._ui_log(f"Calibration loaded: {p}")
-                except Exception as e:
-                    self._ui_log(f"Calibration load failed: {e}")
-
-            proc = self.ctrl.apply_processing(wl, raw, use_calibration=use_cal)
-            self.last_data = proc
-
-            disp = self._apply_threshold_for_display(proc)
-
-            if self.line is None:
-                (self.line,) = self.ax.plot(wl, disp, label="Data")
+            use_cal = self.ctrl is not None and self.cb_calibration.isChecked()
+            if self.ctrl is not None and use_cal:
+                if not self.ctrl.has_calibration():
+                    try:
+                        p = self.ctrl.load_calibration_from_config(silent=True)
+                        if p is None:
+                            self._ui_log("Calibration file not found; proceeding without calibration.")
+                        else:
+                            self._ui_log(f"Calibration loaded: {p}")
+                    except Exception as e:
+                        self._ui_log(f"Calibration load failed: {e}")
+                proc = self.ctrl.apply_processing(wl, raw, use_calibration=True)
             else:
+                proc = np.asarray(raw, dtype=float)
+            self.last_data = proc
+            disp = self._apply_threshold_for_display(proc)
+            if self.line is None:
                 self.ax.cla()
                 self.ax.set_xlabel("Wavelength (nm)")
-                if use_cal and self.ctrl.has_calibration():
-                    self.ax.set_ylabel("Counts ((bg-sub)/cal)")
-                else:
-                    has_bg = (self.ctrl._bg_counts is not None)
-                    self.ax.set_ylabel("Counts (bg-subtracted)" if has_bg else "Counts")
+                self.ax.set_ylabel("Counts")
                 self.ax.grid(True)
                 (self.line,) = self.ax.plot(wl, disp, label="Data")
-
-            # FTL on displayed (thresholded) spectrum
+            else:
+                self.line.set_xdata(wl)
+                self.line.set_ydata(disp)
             ftl_s, _, _ = self._compute_ftl_from_spectrum(wl, disp, level=0.5)
             ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
             if np.isfinite(ftl_fs):
@@ -482,34 +367,25 @@ class AvaspecLiveWindow(QWidget):
             else:
                 self.lbl_ftl.setText("FTL: — fs")
                 self.ax.set_title("")
-
             self.ax.set_yscale("linear")
             if self.cb_autoscale.isChecked():
                 self.ax.relim(); self.ax.autoscale_view()
-
             self.canvas.draw_idle()
         except Exception as e:
             self._ui_log(f"Scan-plot update failed: {e}")
-
-    # ------------- save (raw + bgsub [+ divcal]) -------------
     def save_spectrum(self):
         if self.last_data is None or self.ctrl is None:
             QMessageBox.warning(self, "Warning", "No spectrum to save.")
             return
-
         now = datetime.datetime.now()
         folder = os.path.join(_data_root(), f"{now:%Y-%m-%d}", "avaspec")
         _ensure_dir(folder)
-
         safe_ts = now.strftime("%Y-%m-%d_%H-%M-%S")
         base = "Avaspec"
         fn = os.path.join(folder, f"{base}_Spectrum_{safe_ts}.txt")
-
         comment = self.comment_edit.text() or ""
         try:
             wl = np.asarray(self.ctrl.wavelength, dtype=float)
-
-            # reconstruct or take raw
             if self._last_raw is not None and self._last_raw.shape == np.asarray(self.last_data).shape:
                 raw = self._last_raw
             else:
@@ -523,7 +399,6 @@ class AvaspecLiveWindow(QWidget):
                         i1 = np.flatnonzero(~np.isnan(bg))
                         if i1.size: bg[i1[-1]:] = bg[i1[-1]]
                     raw = raw + bg
-
             bgsub = self.ctrl._apply_background(wl, raw)
             use_cal = self.cb_calibration.isChecked()
             divcal = None
@@ -541,12 +416,9 @@ class AvaspecLiveWindow(QWidget):
                     cal_path_str = str(self.ctrl._cal_path) if self.ctrl._cal_path else ""
                 divcal = self.ctrl._apply_calibration(wl, bgsub)
                 cal_applied = self.ctrl.has_calibration()
-
-            # FTL computed on the same display-thresholded curve as on screen
             disp_for_ftl = self._apply_threshold_for_display(self.last_data)
             ftl_s, _, _ = self._compute_ftl_from_spectrum(wl, disp_for_ftl, level=0.5)
             ftl_fs = ftl_s * 1e15 if np.isfinite(ftl_s) else float("nan")
-
             with open(fn, "w", encoding="utf-8") as f:
                 if comment:
                     f.write(f"# Comment: {comment}\n")
@@ -557,11 +429,9 @@ class AvaspecLiveWindow(QWidget):
                 f.write(f"# CalibrationApplied: {bool(cal_applied)}\n")
                 if cal_applied and cal_path_str:
                     f.write(f"# CalibrationFile: {cal_path_str}\n")
-                # Save the threshold used for FTL/display
                 f.write(f"# DisplayThreshold: {self._get_threshold_fraction():.4f}\n")
                 if np.isfinite(ftl_fs):
                     f.write(f"# FTL_fs: {ftl_fs:.3f}\n")
-
                 if cal_applied and divcal is not None:
                     f.write("Wavelength_nm;Counts_raw;Counts_bgsub;Counts_bgsub_divcal\n")
                     for x, y_raw, y_bg, y_cal in zip(wl, raw, bgsub, divcal):
@@ -570,7 +440,6 @@ class AvaspecLiveWindow(QWidget):
                     f.write("Wavelength_nm;Counts_raw;Counts_bgsub\n")
                     for x, y_raw, y_bg in zip(wl, raw, bgsub):
                         f.write(f"{float(x):.6f};{float(y_raw):.6f};{float(y_bg):.6f}\n")
-
             try:
                 int_ms = float(self.int_edit.text())
             except Exception:
@@ -580,13 +449,10 @@ class AvaspecLiveWindow(QWidget):
             except Exception:
                 averages = 1
             _append_avaspec_log(folder, base, os.path.basename(fn), int_ms, averages, comment)
-
             self._ui_log(f"Spectrum saved to {fn}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save: {e}")
             self._ui_log(f"Save failed: {e}")
-
-    # ------------- lifecycle -------------
     def closeEvent(self, event):
         try:
             self.stop_live()
@@ -608,7 +474,6 @@ class AvaspecLiveWindow(QWidget):
                 self.ctrl = None
         self.closed.emit()
         super().closeEvent(event)
-
 
 if __name__ == "__main__":
     import sys

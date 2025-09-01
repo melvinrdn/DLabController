@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
-from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView
+from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView, AvaspecGridScanLiveView
 import logging
 logger = logging.getLogger("dlab.scans.grid_scan_tab")
 
@@ -228,6 +228,7 @@ class GridScanWorker(QObject):
                 "IntegrationTime_ms": int_ms,
                 "Averages": averages,
                 "Comment": self.comment,
+                "CalibrationApplied": bool(getattr(dev, "has_calibration", lambda: False)())
             }
             det_day.mkdir(parents=True, exist_ok=True)
             path = det_day / fn
@@ -321,11 +322,13 @@ class GridScanWorker(QObject):
                                 self.andor_frame.emit(list(idxs), frame_u16, det_key)
                             saved_label = f"exp {exp_meta} µs"
                         else:
-                            wl = getattr(dev, "wavelength", None)
-                            if wl is None:
+                            if hasattr(dev, "get_wavelengths"):
                                 wl = np.asarray(dev.get_wavelengths(), dtype=float)
                             else:
-                                wl = np.asarray(wl, dtype=float)
+                                wl = np.asarray(getattr(dev, "wavelength", None), dtype=float)
+                            if wl is None or wl.size == 0:
+                                self._emit(f"{det_key}: wavelength array is empty; skipping.")
+                                continue
 
                             if hasattr(dev, "grab_spectrum_for_scan"):
                                 counts, meta = dev.grab_spectrum_for_scan(int_ms=float(exposure_or_int), averages=int(averages))
@@ -336,8 +339,13 @@ class GridScanWorker(QObject):
                                 for _ in range(int(averages)):
                                     _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
                                     _buf.append(np.asarray(_data, dtype=float))
+                                    time.sleep(0.01)
                                 counts = np.mean(np.stack(_buf, axis=0), axis=0)
                                 int_ms = float(exposure_or_int)
+
+                            if counts.size != wl.size:
+                                self._emit(f"{det_key}: spectrum length mismatch (wl={wl.size}, y={counts.size}); skipping point.")
+                                continue
 
                             data_fn = _save_spectrum(det_key, dev, wl, counts, int_ms, int(averages))
                             saved_label = f"int {int_ms:.0f} ms"
@@ -388,6 +396,7 @@ class GridScanTab(QWidget):
         self._thread: QThread | None = None
         self._worker: GridScanWorker | None = None
         self._live_view: AndorGridScanLiveView | None = None
+        self._spec_live: AvaspecGridScanLiveView | None = None
         self._doing_background = False
         self._cached_params = None
         self._last_scan_log_path: Optional[str] = None
@@ -478,6 +487,8 @@ class GridScanTab(QWidget):
         self.abort_btn = QPushButton("Abort"); self.abort_btn.setEnabled(False); self.abort_btn.clicked.connect(self._abort)
         self.live_btn = QPushButton("Live Matrix View (Andor)"); self.live_btn.clicked.connect(self._open_live_view)
         ctl.addWidget(self.live_btn)
+        self.spec_live_btn = QPushButton("Live Matrix View (Avaspec)"); self.spec_live_btn.clicked.connect(self._open_avaspec_live_view); 
+        ctl.addWidget(self.spec_live_btn)
         self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)
         ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
@@ -825,6 +836,18 @@ class GridScanTab(QWidget):
         else:
             self._live_view.set_context(axes, andor_keys, preserve=True)
         self._live_view.show(); self._live_view.raise_(); self._live_view.activateWindow()
+        
+    def _open_avaspec_live_view(self) -> None:
+        axes = self._read_axes_from_table()
+        need_new = (self._spec_live is None or sip.isdeleted(self._spec_live) or not self._spec_live.isVisible())
+        if need_new:
+            self._spec_live = AvaspecGridScanLiveView(self)
+            self._spec_live.destroyed.connect(lambda: setattr(self, "_spec_live", None))
+            self._spec_live.preconfigure(axes)
+        else:
+            self._spec_live.set_context(axes, preserve=True)
+        self._spec_live.show(); self._spec_live.raise_(); self._spec_live.activateWindow()
+
 
     def _start(self) -> None:
         try:
@@ -911,7 +934,7 @@ class GridScanTab(QWidget):
             self._doing_background = True
             reply = QMessageBox.information(
                 self, "Background scan",
-                "Please block the laser now, then click OK to record the background.",
+                "Cut the gas, wait 5 minutes, then click OK to record the background.",
                 QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok
             )
             if reply == QMessageBox.Ok:

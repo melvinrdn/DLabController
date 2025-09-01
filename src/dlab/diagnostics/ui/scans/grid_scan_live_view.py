@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
-# optional rotators
 try:
     from skimage.transform import rotate as _sk_rotate
     _HAS_SKIMAGE = True
@@ -24,7 +23,6 @@ try:
 except Exception:
     _HAS_SCIPY = False
 
-# --- helpers (kept in sync with grid_scan_tab / StageControl conventions)
 from dlab.core.device_registry import REGISTRY
 
 def _wp_index_from_stage_key(stage_key: str) -> int | None:
@@ -41,51 +39,29 @@ def _reg_key_powermode(wp_index: int) -> str:
     return f"waveplate:powermode:{wp_index}"
 
 def _reg_key_calib(wp_index: int) -> str:
-    return f"waveplate:calib:{wp_index}"  # (amplitude, offset)
+    return f"waveplate:calib:{wp_index}"
 
 
 class AndorGridScanLiveView(QWidget):
-    """
-    Compact 2x2 live dashboard for ANDOR grid scans + lightweight preprocessing (rotate/crop).
-
-    Public API:
-      - preconfigure(axes, andor_camera_keys)
-      - set_context(axes, andor_camera_keys, preserve=True)
-      - prepare_for_run()
-      - on_andor_frame(indices, frame_u16, camera_key)
-    """
-
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Andor Grid Live View")
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowFlag(Qt.Window, True)
         self.resize(1100, 860)
-
-        # Scan axes spec
         self.axes: List[Tuple[str, List[float]]] = []
         self.axis_names: List[str] = []
         self.axis_lengths: List[int] = []
         self.axis_index: Dict[str, int] = {}
-        self.axis_positions: List[List[float]] = []  # raw move values (angles/mm)
-        self.axis_units: List[str] = []              # default guess ('°' for WP, 'mm' for others)
-
-        # Cameras (Andor only)
+        self.axis_positions: List[List[float]] = []
+        self.axis_units: List[str] = []
         self.cameras: List[str] = []
-
-        # Preprocess state
         self._first_frame_shape: Optional[Tuple[int, int]] = None
-
-        # Panels: fixed 2x2
         self.panels: List[_Panel] = []
-
         self._build_ui()
 
-    # ----------- UI -----------
     def _build_ui(self) -> None:
         main = QVBoxLayout(self)
-
-        # ---- Context bar
         cfg = QGroupBox("Context")
         c = QHBoxLayout(cfg)
         self.ctx_label = QLabel("Configure panels below, then start the scan.")
@@ -95,23 +71,16 @@ class AndorGridScanLiveView(QWidget):
         self.reset_btn.clicked.connect(self.reset_all)
         c.addWidget(self.reset_btn)
         main.addWidget(cfg)
-
-        # ---- Preprocess controls (rotation + crop)
         pre = QGroupBox("Preprocess (applied before metrics)")
         pl = QHBoxLayout(pre)
         self.pre_enable = QCheckBox("Enable"); self.pre_enable.setChecked(False)
-
         self.angle_sb = QDoubleSpinBox(); self.angle_sb.setRange(-360.0, 360.0); self.angle_sb.setDecimals(2); self.angle_sb.setValue(-95.0)
         self.angle_sb.setSingleStep(1.0)
-
-        # crop spinboxes; ranges will be set after first frame
         self.x0_sb = QSpinBox(); self.x1_sb = QSpinBox(); self.y0_sb = QSpinBox(); self.y1_sb = QSpinBox()
         for sb in (self.x0_sb, self.x1_sb, self.y0_sb, self.y1_sb):
             sb.setRange(0, 99999)
-        # defaults like the example
         self.x0_sb.setValue(165); self.x1_sb.setValue(490)
         self.y0_sb.setValue(210); self.y1_sb.setValue(340)
-
         pl.addWidget(self.pre_enable)
         pl.addWidget(QLabel("Angle (°)")); pl.addWidget(self.angle_sb)
         pl.addSpacing(16)
@@ -121,25 +90,19 @@ class AndorGridScanLiveView(QWidget):
         pl.addWidget(QLabel("y1")); pl.addWidget(self.y1_sb)
         pl.addStretch(1)
         main.addWidget(pre)
-
-        # ---- 2x2 grid of panels
         grid = QGridLayout()
         main.addLayout(grid, 1)
-
         for i in range(4):
             p = _Panel()
             self.panels.append(p)
             r, col = divmod(i, 2)
             grid.addWidget(p, r, col)
-
-        # small footer
         foot = QHBoxLayout()
         self.note = QLabel("Tip: set Y source to a stage to see real values; 'time' shows scan order.")
         foot.addWidget(self.note)
         foot.addStretch(1)
         main.addLayout(foot)
 
-    # ----------- Public API -----------
     def preconfigure(self, axes: List[Tuple[str, List[float]]], andor_camera_keys: List[str]) -> None:
         self.axes = axes
         self.axis_names = [ax for ax, _ in axes]
@@ -148,7 +111,6 @@ class AndorGridScanLiveView(QWidget):
         self.axis_positions = [list(pos) for _, pos in axes]
         self.axis_units = [("°" if _wp_index_from_stage_key(name) is not None else "mm") for name, _ in axes]
         self.cameras = list(andor_camera_keys)
-
         for idx, p in enumerate(self.panels):
             p.set_choices(cameras=self.cameras, axis_names=self.axis_names)
             if idx == 0:
@@ -173,7 +135,6 @@ class AndorGridScanLiveView(QWidget):
                 prev.append((p.enabled_cb.isChecked(), p.metric_combo.currentText(),
                              p.camera_combo.currentText(), p.y_source_combo.currentText(),
                              getattr(p, "x_source_combo", QComboBox()).currentText() if hasattr(p, "x_source_combo") else ""))
-
         self.axes = axes
         self.axis_names = [ax for ax, _ in axes]
         self.axis_lengths = [len(pos) for _, pos in axes]
@@ -181,7 +142,6 @@ class AndorGridScanLiveView(QWidget):
         self.axis_positions = [list(pos) for _, pos in axes]
         self.axis_units = [("°" if _wp_index_from_stage_key(name) is not None else "mm") for name, _ in axes]
         self.cameras = list(andor_camera_keys)
-
         for i, p in enumerate(self.panels):
             p.set_choices(cameras=self.cameras, axis_names=self.axis_names)
             if preserve and i < len(prev):
@@ -196,7 +156,6 @@ class AndorGridScanLiveView(QWidget):
                 if xsrc in self.axis_names:
                     p.x_source_combo.setCurrentText(xsrc)
             p.realloc(y_len=self._len_for_source(p.y_source_combo.currentText()))
-
         self._update_ctx_label()
 
     def prepare_for_run(self) -> None:
@@ -209,73 +168,45 @@ class AndorGridScanLiveView(QWidget):
             p.clear_data()
 
     def _display_value_for_source(self, src: str, idxs: List[int]) -> tuple[float, str, str]:
-        """
-        Return (value, unit, label_text) for 'src' at the current sample.
-        Uses the actual scan axis values provided by GridScan:
-        - WP + PowerMode ON  -> power (W)
-        - WP + PowerMode OFF -> angle (°)
-        - Other stages       -> position (mm)
-        - 'time'             -> linear order index
-        """
-        # synthetic "time" source
         if src == "time" or src not in self.axis_index:
             return float(self._index_for_source("time", idxs)), "", "time"
-
         j = self.axis_index[src]
         if j >= len(self.axis_positions) or j >= len(idxs):
             return float(idxs[j] if j < len(idxs) else 0.0), "", src
-
-        raw = float(self.axis_positions[j][idxs[j]])  # <-- THIS is what the UI scanned (power/angle/mm)
+        raw = float(self.axis_positions[j][idxs[j]])
         wp = _wp_index_from_stage_key(src)
         if wp is not None:
             pm = bool(REGISTRY.get(_reg_key_powermode(wp)) or False)
             if pm:
-                # Already power because the UI scanned power when PowerMode is ON
                 return raw, "frac", f"{src} (power)"
             else:
-                # Angle when PowerMode is OFF
                 return raw, "°", f"{src} (angle)"
-
-        # Translation stages (or anything else)
         return raw, "mm", src
 
-
     def on_andor_frame(self, axis_indices: List[int], frame_u16: np.ndarray, camera_key: str) -> None:
-        """Called by GridScanWorker for each Andor frame (uint16)."""
         img = frame_u16
-
-        # remember first frame shape to clamp crop ranges
         if self._first_frame_shape is None:
-            self._first_frame_shape = img.shape  # (H, W)
+            self._first_frame_shape = img.shape
             H, W = self._first_frame_shape
-            # set sensible limits
             for sb, maxv in ((self.x0_sb, W-1), (self.x1_sb, W), (self.y0_sb, H-1), (self.y1_sb, H)):
                 sb.setMaximum(max(0, int(maxv)))
-            # ensure x1>x0, y1>y0
             if self.x1_sb.value() <= self.x0_sb.value():
                 self.x1_sb.setValue(min(W, self.x0_sb.value() + 1))
             if self.y1_sb.value() <= self.y0_sb.value():
                 self.y1_sb.setValue(min(H, self.y0_sb.value() + 1))
-
-        # --- preprocess (rotate + crop) if enabled
         if self.pre_enable.isChecked():
             img = self._preprocess(img)
-
-        # Dispatch to active panels (using preprocessed image)
         for p in self.panels:
             if not p.enabled_cb.isChecked():
                 continue
             if camera_key != p.camera_combo.currentText():
                 continue
-
             metric = p.metric_combo.currentText()
-
             if metric == "Total sum vs Y":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
                 yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
                 val = float(np.sum(img, dtype=np.float64))
                 p.update_line_value(yi, yval, val, y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
-
             elif metric == "Sum by columns":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
                 yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
@@ -283,7 +214,6 @@ class AndorGridScanLiveView(QWidget):
                 p.update_heatmap_row_value(yi, yval, prof, x_len=prof.shape[0],
                                            y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
                 p.ax.set_xlabel("pixel (column)")
-
             elif metric == "Sum by rows":
                 yi = self._index_for_source(p.y_source_combo.currentText(), axis_indices)
                 yval, yunit, ylabel = self._display_value_for_source(p.y_source_combo.currentText(), axis_indices)
@@ -291,8 +221,7 @@ class AndorGridScanLiveView(QWidget):
                 p.update_heatmap_row_value(yi, yval, prof, x_len=prof.shape[0],
                                            y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
                 p.ax.set_xlabel("pixel (row)")
-
-            else:  # "Total sum map (axes)"
+            else:
                 yname = p.y_source_combo.currentText()
                 xname = p.x_source_combo.currentText()
                 if (xname not in self.axis_index) or (yname not in self.axis_index) or (xname == yname):
@@ -309,21 +238,14 @@ class AndorGridScanLiveView(QWidget):
                                          x_label=f"{xlabel} [{xunit}]" if xunit else xlabel,
                                          y_label=f"{ylabel} [{yunit}]" if yunit else ylabel)
 
-    # ----------- Preprocess helpers -----------
     def _preprocess(self, image: np.ndarray) -> np.ndarray:
-        """Rotate then crop; keeps dtype and range."""
         out = image
-        # rotate (resize=True to keep all content)
         angle = float(self.angle_sb.value())
         if abs(angle) > 1e-9:
             if _HAS_SKIMAGE:
                 out = _sk_rotate(out, angle, resize=True, order=3, mode="edge", preserve_range=True).astype(image.dtype)
             elif _HAS_SCIPY:
                 out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
-            else:
-                pass
-
-        # crop (y, x)
         y0, y1 = int(self.y0_sb.value()), int(self.y1_sb.value())
         x0, x1 = int(self.x0_sb.value()), int(self.x1_sb.value())
         h, w = out.shape
@@ -332,7 +254,6 @@ class AndorGridScanLiveView(QWidget):
         out = out[y0:y1, x0:x1]
         return out
 
-    # ----------- Internals -----------
     def _update_ctx_label(self) -> None:
         axes_txt = ", ".join(self.axis_names) if self.axis_names else "(no axes)"
         cams_txt = ", ".join(self.cameras) if self.cameras else "(no Andor cameras)"
@@ -351,7 +272,6 @@ class AndorGridScanLiveView(QWidget):
         return 0
 
     def _index_for_source(self, src: str, idxs: List[int]) -> int:
-        """Map 'time' or a stage axis name to an index for this sample."""
         if src == "time":
             s = 0
             for i, L in enumerate(self.axis_lengths):
@@ -364,27 +284,17 @@ class AndorGridScanLiveView(QWidget):
 
 
 class _Panel(QWidget):
-    """
-    One dashboard cell. Supports:
-      - Total sum vs Y (1D line)
-      - Sum by columns (2D heatmap)
-      - Sum by rows (2D heatmap)
-      - Total sum map (axes) (2D heatmap over two stage axes)
-    """
-
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WA_DeleteOnClose)
-
-        # Controls
         ctrl = QGroupBox()
         hc = QHBoxLayout(ctrl)
         self.enabled_cb = QCheckBox("Enable"); self.enabled_cb.setChecked(True)
         self.metric_combo = QComboBox(); self.metric_combo.addItems(self._metrics())
         self.camera_combo = QComboBox()
-        self.y_source_combo = QComboBox()  # "time" + axis names
+        self.y_source_combo = QComboBox()
         self.x_source_label = QLabel("X axis")
-        self.x_source_combo = QComboBox()  # axis names only (for 2D stage map)
+        self.x_source_combo = QComboBox()
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.clicked.connect(self.clear_data)
         hc.addWidget(self.enabled_cb)
@@ -396,46 +306,31 @@ class _Panel(QWidget):
         hc.addWidget(self.reset_btn)
         self.x_source_label.setVisible(False)
         self.x_source_combo.setVisible(False)
-
-        # Figure
         self.fig = plt.figure(figsize=(4.8, 3.2))
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
-
         lay = QVBoxLayout(self)
         lay.addWidget(ctrl)
         lay.addWidget(self.canvas, 1)
-
-        # Data containers
         self._y_len: int = 0
         self._is_line: bool = True
         self._im = None
         self._line = None
-        self._mat: Optional[np.ndarray] = None  # (Y, X) for heatmaps
-        self._vec: Optional[np.ndarray] = None  # (Y,) for lines
-
-        # extra storage for stage values / labels
+        self._mat: Optional[np.ndarray] = None
+        self._vec: Optional[np.ndarray] = None
         self._y_vals: Optional[np.ndarray] = None
         self._x_vals_for_map: Optional[np.ndarray] = None
         self._y_label_txt: str = "Y"
         self._x_label_txt: str = "X"
-
-        # React to metric changes
         self.metric_combo.currentTextChanged.connect(self._on_metric_changed)
 
-    # ---- public-ish API used by parent ----
     def set_choices(self, cameras: List[str], axis_names: List[str]) -> None:
-        # cameras
         self.camera_combo.blockSignals(True)
         self.camera_combo.clear(); self.camera_combo.addItems(cameras)
         self.camera_combo.blockSignals(False)
-
-        # Y source supports "time" or any axis
         self.y_source_combo.blockSignals(True)
         self.y_source_combo.clear(); self.y_source_combo.addItems(["time"] + axis_names)
         self.y_source_combo.blockSignals(False)
-
-        # X axis (for 2D stage map) = axis names only
         self.x_source_combo.blockSignals(True)
         self.x_source_combo.clear(); self.x_source_combo.addItems(axis_names)
         self.x_source_combo.blockSignals(False)
@@ -444,18 +339,16 @@ class _Panel(QWidget):
         self._y_len = int(max(0, y_len))
         metric = self.metric_combo.currentText()
         self._is_line = (metric == "Total sum vs Y")
-        # allocate blank containers
         if self._is_line:
             self._vec = np.full((self._y_len,), np.nan, dtype=float)
             self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
             self._mat = None
             self._ensure_line_artist()
         else:
-            self._mat = np.full((self._y_len, 0), np.nan, dtype=float)  # width set on first row
+            self._mat = np.full((self._y_len, 0), np.nan, dtype=float)
             self._y_vals = np.full((self._y_len,), np.nan, dtype=float)
             self._vec = None
             self._ensure_heatmap_artist()
-
         self._redraw()
 
     def clear_data(self) -> None:
@@ -532,7 +425,6 @@ class _Panel(QWidget):
         self._y_label_txt = y_label or "Y"
         self._redraw()
 
-    # ---- internals ----
     def _metrics(self) -> List[str]:
         return ["Total sum vs Y", "Sum by columns", "Sum by rows", "Total sum map (axes)"]
 
@@ -572,7 +464,7 @@ class _Panel(QWidget):
     def _ensure_heatmap_artist(self) -> None:
         self.ax.cla()
         mat = np.zeros((max(1, self._y_len), 1), dtype=float)
-        self._im = self.ax.imshow(mat, origin="lower", aspect="auto",cmap='turbo')
+        self._im = self.ax.imshow(mat, origin="lower", aspect="auto", cmap='turbo')
         self.ax.set_xlabel("pixel")
         self.ax.set_ylabel("Y value")
         self._line = None
@@ -585,7 +477,6 @@ class _Panel(QWidget):
             y = self._vec
             if self._line is None:
                 self._ensure_line_artist()
-            # X axis = actual Y values
             x = np.arange(y.shape[0]) if self._y_vals is None else self._y_vals
             self._line.set_xdata(x)
             self._line.set_ydata(y)
@@ -602,29 +493,216 @@ class _Panel(QWidget):
                 self._im.set_data(M)
             else:
                 self._im.set_data(M)
-
-            # color scale
             finite = np.isfinite(M)
             if finite.any():
                 vmin = float(np.nanmin(M)); vmax = float(np.nanmax(M))
                 if vmin == vmax:
                     vmax = vmin + 1.0
                 self._im.set_clim(vmin, vmax)
-
-            # Y ticks from real values (sparse)
             self.ax.set_ylabel(self._y_label_txt)
             if self._y_vals is not None and self._y_vals.size:
                 n = self._y_vals.size
                 idxs = np.linspace(0, n-1, num=min(8, n), dtype=int)
                 self.ax.set_yticks(idxs)
                 self.ax.set_yticklabels([f"{self._y_vals[i]:.3g}" if np.isfinite(self._y_vals[i]) else "" for i in idxs])
-
-            # X ticks for 2D stage map if present
             if self._x_vals_for_map is not None and self._x_vals_for_map.size:
                 m = self._x_vals_for_map.size
                 idxs = np.linspace(0, m-1, num=min(8, m), dtype=int)
                 self.ax.set_xticks(idxs)
                 self.ax.set_xticklabels([f"{self._x_vals_for_map[i]:.3g}" if np.isfinite(self._x_vals_for_map[i]) else "" for i in idxs])
                 self.ax.set_xlabel(self._x_label_txt)
-
         self.canvas.draw_idle()
+
+
+class AvaspecGridScanLiveView(QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Avaspec Grid Live View")
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setWindowFlag(Qt.Window, True)
+        self.resize(1100, 860)
+        self.axes: List[Tuple[str, List[float]]] = []
+        self.axis_names: List[str] = []
+        self.axis_lengths: List[int] = []
+        self.axis_index: Dict[str, int] = {}
+        self.axis_positions: List[List[float]] = []
+        self._lin_counter: int = 0
+        self._y_source: str = "time"
+        self._y_len: int = 0
+        self._x_wl: Optional[np.ndarray] = None
+        self._sum_vec: Optional[np.ndarray] = None
+        self._sum_yvals: Optional[np.ndarray] = None
+        self._spec_mat: Optional[np.ndarray] = None
+        self._spec_yvals: Optional[np.ndarray] = None
+        self._build_ui()
+        try:
+            REGISTRY.register("ui:avaspec_live", self)
+        except Exception:
+            pass
+
+    def _build_ui(self) -> None:
+        main = QVBoxLayout(self)
+        ctx = QGroupBox("Context")
+        cl = QHBoxLayout(ctx)
+        self.y_combo = QComboBox()
+        self.y_combo.currentTextChanged.connect(self._on_y_source_changed)
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.clicked.connect(self.reset_all)
+        cl.addWidget(QLabel("Y source"))
+        cl.addWidget(self.y_combo)
+        cl.addStretch(1)
+        cl.addWidget(self.reset_btn)
+        main.addWidget(ctx)
+        top = QGroupBox("Total counts vs stage")
+        tl = QVBoxLayout(top)
+        self.fig_sum = plt.figure(figsize=(5.4, 3.2))
+        self.ax_sum = self.fig_sum.add_subplot(111)
+        self.ax_sum.set_xlabel("Stage value")
+        self.ax_sum.set_ylabel("Total counts")
+        self.ax_sum.grid(True, alpha=0.3)
+        self.canvas_sum = FigureCanvas(self.fig_sum)
+        tl.addWidget(self.canvas_sum)
+        main.addWidget(top, 1)
+        bot = QGroupBox("Spectrum (λ) vs stage")
+        bl = QVBoxLayout(bot)
+        self.fig_map = plt.figure(figsize=(5.4, 3.2))
+        self.ax_map = self.fig_map.add_subplot(111)
+        self.im_map = self.ax_map.imshow(np.zeros((1, 1)), origin="lower", aspect="auto", cmap='turbo')
+        self.ax_map.set_xlabel("Wavelength (nm)")
+        self.ax_map.set_ylabel("Stage value")
+        self.canvas_map = FigureCanvas(self.fig_map)
+        bl.addWidget(self.canvas_map)
+        main.addWidget(bot, 2)
+
+    def preconfigure(self, axes: List[Tuple[str, List[float]]]) -> None:
+        self.axes = axes
+        self.axis_names = [ax for ax, _ in axes]
+        self.axis_lengths = [len(pos) for _, pos in axes]
+        self.axis_index = {name: i for i, name in enumerate(self.axis_names)}
+        self.axis_positions = [list(pos) for _, pos in axes]
+        self.y_combo.blockSignals(True)
+        self.y_combo.clear()
+        self.y_combo.addItems(["time"] + self.axis_names)
+        self.y_combo.blockSignals(False)
+        self._y_source = self.axis_names[0] if self.axis_names else "time"
+        self.y_combo.setCurrentText(self._y_source)
+        self.prepare_for_run()
+
+    def set_context(self, axes: List[Tuple[str, List[float]]], preserve: bool = True) -> None:
+        prev_y = self._y_source if preserve else None
+        self.preconfigure(axes)
+        if preserve and prev_y in (["time"] + self.axis_names):
+            self._y_source = prev_y
+            self.y_combo.setCurrentText(prev_y)
+
+    def prepare_for_run(self) -> None:
+        self._lin_counter = 0
+        self._x_wl = None
+        self._y_len = self._compute_y_len(self._y_source)
+        self._sum_vec = np.full((self._y_len,), np.nan, dtype=float)
+        self._sum_yvals = np.full((self._y_len,), np.nan, dtype=float)
+        self._spec_mat = None
+        self._spec_yvals = np.full((self._y_len,), np.nan, dtype=float)
+        self._redraw_all()
+
+    def reset_all(self) -> None:
+        self.prepare_for_run()
+
+    def _compute_y_len(self, src: str) -> int:
+        if src == "time" or src not in self.axis_index:
+            prod = 1
+            for L in self.axis_lengths:
+                prod *= max(1, L)
+            return int(prod)
+        return int(self.axis_lengths[self.axis_index[src]])
+
+    def _lin_to_indices(self, k: int) -> List[int]:
+        idxs = []
+        rem = int(k)
+        for L in self.axis_lengths[::-1]:
+            idxs.append(rem % L)
+            rem //= L
+        return list(reversed(idxs))
+
+    def _y_value_from_indices(self, src: str, idxs: List[int]) -> float:
+        if src == "time" or src not in self.axis_index:
+            return float(self._index_for_time(idxs))
+        j = self.axis_index[src]
+        if j >= len(self.axis_positions) or j >= len(idxs):
+            return float(idxs[j] if j < len(idxs) else 0.0)
+        return float(self.axis_positions[j][idxs[j]])
+
+    def _index_for_time(self, idxs: List[int]) -> int:
+        s = 0
+        for i, L in enumerate(self.axis_lengths):
+            s = s * L + idxs[i]
+        return int(s)
+
+    def _on_y_source_changed(self, s: str) -> None:
+        self._y_source = s
+        self.prepare_for_run()
+
+    def set_spectrum_from_scan(self, wl, counts):
+        wl = np.asarray(wl, dtype=float).ravel()
+        y = np.asarray(counts, dtype=float).ravel()
+        if self._x_wl is None or self._x_wl.shape != wl.shape or not np.allclose(self._x_wl, wl):
+            self._x_wl = wl.copy()
+            if self._spec_mat is None or self._spec_mat.shape[1] != wl.size:
+                self._spec_mat = np.full((self._y_len, wl.size), np.nan, dtype=float)
+        idxs = self._lin_to_indices(self._lin_counter)
+        yi = self._index_for_time(idxs) if (self._y_source == "time" or self._y_source not in self.axis_index) else idxs[self.axis_index[self._y_source]]
+        if self._sum_vec is None or yi >= self._sum_vec.size:
+            new_len = yi + 1
+            sv = np.full((new_len,), np.nan, dtype=float)
+            sy = np.full((new_len,), np.nan, dtype=float)
+            if self._sum_vec is not None:
+                sv[: self._sum_vec.size] = self._sum_vec
+                sy[: self._sum_yvals.size] = self._sum_yvals
+            self._sum_vec = sv
+            self._sum_yvals = sy
+        if self._spec_mat is None or yi >= self._spec_mat.shape[0]:
+            rows = yi + 1
+            cols = self._x_wl.size if self._x_wl is not None else y.size
+            M = np.full((rows, cols), np.nan, dtype=float)
+            if self._spec_mat is not None:
+                rr, cc = self._spec_mat.shape
+                M[:rr, :cc] = self._spec_mat
+            self._spec_mat = M
+            if self._spec_yvals is None or self._spec_yvals.size < rows:
+                vy = np.full((rows,), np.nan, dtype=float)
+                if self._spec_yvals is not None:
+                    vy[: self._spec_yvals.size] = self._spec_yvals
+                self._spec_yvals = vy
+        self._sum_vec[yi] = float(np.nansum(y, dtype=np.float64))
+        self._sum_yvals[yi] = self._y_value_from_indices(self._y_source, idxs)
+        self._spec_mat[yi, : y.size] = y
+        self._spec_yvals[yi] = self._sum_yvals[yi]
+        self._lin_counter += 1
+        self._redraw_all()
+
+    def _redraw_all(self) -> None:
+        self.ax_sum.cla()
+        if self._sum_vec is not None and self._sum_yvals is not None:
+            x = self._sum_yvals
+            y = self._sum_vec
+            self.ax_sum.plot(x, y)
+            self.ax_sum.set_xlabel(self._y_source)
+            self.ax_sum.set_ylabel("Total counts")
+            self.ax_sum.grid(True, alpha=0.3)
+        self.canvas_sum.draw_idle()
+        self.ax_map.cla()
+        if self._spec_mat is not None and self._x_wl is not None:
+            self.im_map = self.ax_map.imshow(self._spec_mat, origin="lower", aspect="auto", cmap='turbo')
+            self.ax_map.set_xlabel("Wavelength (nm)")
+            self.ax_map.set_ylabel(self._y_source)
+            if self._spec_yvals is not None and self._spec_yvals.size:
+                n = self._spec_yvals.size
+                idxs = np.linspace(0, n-1, num=min(8, n), dtype=int)
+                self.ax_map.set_yticks(idxs)
+                self.ax_map.set_yticklabels([f"{self._spec_yvals[i]:.3g}" if np.isfinite(self._spec_yvals[i]) else "" for i in idxs])
+            if self._x_wl is not None and self._x_wl.size:
+                m = self._x_wl.size
+                idxs = np.linspace(0, m-1, num=min(8, m), dtype=int)
+                self.ax_map.set_xticks(idxs)
+                self.ax_map.set_xticklabels([f"{self._x_wl[i]:.3g}" if np.isfinite(self._x_wl[i]) else "" for i in idxs])
+        self.canvas_map.draw_idle()
