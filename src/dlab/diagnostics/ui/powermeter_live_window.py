@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox
 )
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 import matplotlib.pyplot as plt
 
@@ -122,6 +122,23 @@ class PowermeterLiveWindow(QWidget):
 
         main.addWidget(splitter)
         self.resize(1000, 640)
+        
+    @pyqtSlot(float, float)
+    def set_power_from_scan(self, ts: float, val: float) -> None:
+        self.update_power(ts, val)
+        
+    @pyqtSlot(object)
+    def refresh_from_device(self, dev) -> None:
+        """
+        Appelé depuis le worker: lit la puissance *depuis le même contrôleur*
+        utilisé par le scan (priorité à fetch_power) et met à jour le graphe.
+        """
+        try:
+            # priorité à fetch_power pour une lecture non bloquante si dispo
+            val = float(dev.fetch_power())
+            self.update_power(time.time(), val)
+        except Exception as e:
+            self._ui_log(f"Live refresh error: {e}")
 
     def _ui_log(self, msg: str):
         t = datetime.datetime.now().strftime("%H:%M:%S")

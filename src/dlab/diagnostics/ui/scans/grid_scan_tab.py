@@ -82,11 +82,12 @@ class GridScanWorker(QObject):
     finished = pyqtSignal(str)
     andor_frame = pyqtSignal(object, object, str)
     spec_updated = pyqtSignal(object, object)
+    pm_updated = pyqtSignal(float, float)
 
     def __init__(
         self,
         axes: List[Tuple[str, List[float]]],
-        camera_params: Dict[str, Tuple[int,int]],
+        camera_params: Dict[str, Tuple],
         settle_s: float,
         scan_name: str,
         comment: str,
@@ -127,7 +128,7 @@ class GridScanWorker(QObject):
             header_cols = []
             for i, (ax, _) in enumerate(axes, 1):
                 header_cols += [f"Stage_{i}", f"pos_{i}", f"power_{i}"]
-            header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime", "Averages", "MCP_Voltage"]
+            header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime_or_Period", "Averages_or_None", "MCP_Voltage"]
             with open(scan_log, "w", encoding="utf-8") as f:
                 f.write("\t".join(header_cols) + "\n")
                 f.write(f"# {comment}\n")
@@ -152,22 +153,35 @@ class GridScanWorker(QObject):
             stages[stage_key] = stg
 
         detectors = {}
-        for det_key, (expo_us_or_int_ms, _avg) in self.camera_params.items():
+        for det_key, params in self.camera_params.items():
             dev = REGISTRY.get(det_key)
             if dev is None:
                 self._emit(f"Detector '{det_key}' not found."); self.finished.emit(""); return
             is_camera = hasattr(dev, "grab_frame_for_scan")
             is_spectro = (hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"))
-            if not (is_camera or is_spectro):
+            is_pow = hasattr(dev, "fetch_power")
+            if not (is_camera or is_spectro or is_pow):
                 self._emit(f"Detector '{det_key}' doesn't expose a scan API."); self.finished.emit(""); return
             try:
                 if is_camera:
+                    exposure = int(params[0])
                     if hasattr(dev, "set_exposure_us"):
-                        dev.set_exposure_us(int(expo_us_or_int_ms))
+                        dev.set_exposure_us(exposure)
                     elif hasattr(dev, "setExposureUS"):
-                        dev.setExposureUS(int(expo_us_or_int_ms))
+                        dev.setExposureUS(exposure)
                     elif hasattr(dev, "set_exposure"):
-                        dev.set_exposure(int(expo_us_or_int_ms))
+                        dev.set_exposure(exposure)
+                elif is_pow:
+                    if len(params) >= 2 and hasattr(dev, "set_avg"):
+                        try:
+                            dev.set_avg(int(params[1]))
+                        except Exception:
+                            pass
+                    if len(params) >= 3 and hasattr(dev, "set_wavelength"):
+                        try:
+                            dev.set_wavelength(float(params[2]))
+                        except Exception:
+                            pass
             except Exception as e:
                 self._emit(f"Warning: failed to preset on '{det_key}': {e}")
             detectors[det_key] = dev
@@ -299,9 +313,11 @@ class GridScanWorker(QObject):
                     if self.abort:
                         self._emit("Scan aborted."); self.finished.emit(""); return
 
-                    exposure_or_int, averages = self.camera_params.get(det_key, (0, 1))
+                    params = self.camera_params.get(det_key, (0, 1))
                     try:
                         if hasattr(dev, "grab_frame_for_scan"):
+                            exposure_or_int = int(params[0]) if len(params) >= 1 else 0
+                            averages = int(params[1]) if len(params) >= 2 else 1
                             try:
                                 frame_u16, meta = dev.grab_frame_for_scan(
                                     averages=int(averages),
@@ -321,7 +337,9 @@ class GridScanWorker(QObject):
                             if det_key.startswith("camera:andor:"):
                                 self.andor_frame.emit(list(idxs), frame_u16, det_key)
                             saved_label = f"exp {exp_meta} µs"
-                        else:
+                        elif hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"):
+                            exposure_or_int = float(params[0]) if len(params) >= 1 else 0.0
+                            averages = int(params[1]) if len(params) >= 2 else 1
                             if hasattr(dev, "get_wavelengths"):
                                 wl = np.asarray(dev.get_wavelengths(), dtype=float)
                             else:
@@ -353,11 +371,34 @@ class GridScanWorker(QObject):
                                 self.spec_updated.emit(wl, counts)
                             except Exception:
                                 pass
+                        else:
+                            period_ms = float(params[0]) if len(params) >= 1 else 100.0
+                            averages = int(params[1]) if len(params) >= 2 else 1
+                            wavelength_nm = float(params[2]) if len(params) >= 3 else None
+                            if wavelength_nm is not None and hasattr(dev, "set_wavelength"):
+                                try:
+                                    dev.set_wavelength(float(wavelength_nm))
+                                except Exception:
+                                    pass
+                            vals = []
+                            n_avg = max(1, int(averages))
+                            for i in range(n_avg):
+                                v = float(dev.read_power())
+                                vals.append(v)
+                                if i + 1 < n_avg and period_ms > 0:
+                                    time.sleep(period_ms / 1000.0)
+                            power = float(np.mean(vals)) if vals else float("nan")
+                            try:
+                                self.pm_updated.emit(time.time(), float(power))
+                            except Exception:
+                                pass
+                            data_fn = f"{power:.9f}"
+                            saved_label = f"P={power:.3e} W"
 
                         row = []
                         for ax, pos_val, power_val in log_combo:
                             row += [ax, f"{float(pos_val):.9f}", ("" if power_val == "" else f"{float(power_val):.9f}")]
-                        row += [det_key, data_fn, str(int(exposure_or_int)), str(int(averages)), str(self.mcp_voltage)]
+                        row += [det_key, data_fn, str(params[0] if len(params) >= 1 else ""), str(params[1] if len(params) >= 2 else ""), str(self.mcp_voltage)]
                         with open(scan_log, "a", encoding="utf-8") as f:
                             f.write("\t".join(row) + "\n")
 
@@ -370,7 +411,7 @@ class GridScanWorker(QObject):
                                 ]),
                                 det=det_key,
                                 label=saved_label,
-                                avg=int(averages),
+                                avg=int(params[1] if len(params) >= 2 else 1),
                             )
                         )
 
@@ -452,8 +493,8 @@ class GridScanTab(QWidget):
         cam_pick_row.addWidget(QLabel("Detector:")); cam_pick_row.addWidget(self.cam_picker, 1); cam_pick_row.addWidget(self.add_cam_btn)
         cams_l.addLayout(cam_pick_row)
 
-        self.cam_tbl = QTableWidget(0, 3)
-        self.cam_tbl.setHorizontalHeaderLabels(["DetectorsKey", "Exposure_us/Int_ms", "Averages"])
+        self.cam_tbl = QTableWidget(0, 4)
+        self.cam_tbl.setHorizontalHeaderLabels(["DetectorsKey", "Exposure_us/Int_ms or Sample_ms", "Wavelength_nm", "Averages"])
         self.cam_tbl.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.cam_tbl.setEditTriggers(QAbstractItemView.AllEditTriggers)
         cams_l.addWidget(self.cam_tbl)
@@ -487,7 +528,7 @@ class GridScanTab(QWidget):
         self.abort_btn = QPushButton("Abort"); self.abort_btn.setEnabled(False); self.abort_btn.clicked.connect(self._abort)
         self.live_btn = QPushButton("Live Matrix View (Andor)"); self.live_btn.clicked.connect(self._open_live_view)
         ctl.addWidget(self.live_btn)
-        self.spec_live_btn = QPushButton("Live Matrix View (Avaspec)"); self.spec_live_btn.clicked.connect(self._open_avaspec_live_view); 
+        self.spec_live_btn = QPushButton("Live Matrix View (Avaspec)"); self.spec_live_btn.clicked.connect(self._open_avaspec_live_view)
         ctl.addWidget(self.spec_live_btn)
         self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)
         ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.prog, 1)
@@ -611,7 +652,8 @@ class GridScanTab(QWidget):
         self.cam_tbl.insertRow(r)
         self.cam_tbl.setItem(r, 0, QTableWidgetItem(cam_key))
         self.cam_tbl.setItem(r, 1, QTableWidgetItem("5000"))
-        self.cam_tbl.setItem(r, 2, QTableWidgetItem("1"))
+        self.cam_tbl.setItem(r, 2, QTableWidgetItem(""))
+        self.cam_tbl.setItem(r, 3, QTableWidgetItem("1"))
 
     def _remove_cam_row(self) -> None:
         rows = sorted({idx.row() for idx in self.cam_tbl.selectedIndexes()}, reverse=True)
@@ -625,7 +667,7 @@ class GridScanTab(QWidget):
                 continue
             self.stage_picker.addItem(k)
         self.cam_picker.clear()
-        for prefix in ("camera:daheng:", "camera:andor:", "spectrometer:avaspec:"):
+        for prefix in ("camera:daheng:", "camera:andor:", "spectrometer:avaspec:", "powermeter:"):
             for k in REGISTRY.keys(prefix):
                 if ":index:" in k:
                     continue
@@ -740,7 +782,7 @@ class GridScanTab(QWidget):
                     step=float(step),
                 )
 
-        cam_params: Dict[str, Tuple[int,int]] = {}
+        cam_params: Dict[str, Tuple] = {}
         if self.cam_tbl.rowCount() == 0:
             raise ValueError("Add at least one detector.")
         for r in range(self.cam_tbl.rowCount()):
@@ -748,16 +790,20 @@ class GridScanTab(QWidget):
             if not cam_key:
                 raise ValueError(f"Empty detector key in row {r+1}.")
             try:
-                expo = int(float((self.cam_tbl.item(r, 1) or QTableWidgetItem("0")).text()))
-                avg  = int(float((self.cam_tbl.item(r, 2) or QTableWidgetItem("1")).text()))
+                p1 = (self.cam_tbl.item(r, 1) or QTableWidgetItem("0")).text().strip()
+                p2 = (self.cam_tbl.item(r, 2) or QTableWidgetItem("")).text().strip()
+                p3 = (self.cam_tbl.item(r, 3) or QTableWidgetItem("1")).text().strip()
+                if cam_key.startswith("powermeter:"):
+                    sample_ms = float(p1) if p1 else 100.0
+                    wl = float(p2) if p2 else 1030.0
+                    avg = int(float(p3)) if p3 else 1
+                    cam_params[cam_key] = (sample_ms, avg, wl)
+                else:
+                    expo_or_int = int(float(p1)) if p1 else 0
+                    avg = int(float(p3)) if p3 else 1
+                    cam_params[cam_key] = (expo_or_int, avg)
             except ValueError:
-                raise ValueError(f"Invalid exposure/averages in detector row {r+1}.")
-            if expo <= 0:
-                raise ValueError(f"Exposure must be > 0 in detector row {r+1}.")
-            if avg <= 0:
-                raise ValueError(f"Averages must be > 0 in detector row {r+1}.")
-            cam_params[cam_key] = (expo, avg)
-
+                raise ValueError(f"Invalid detector parameters in row {r+1}.")
         settle = float(self.settle_sb.value())
         scan_name = self.scan_name.text().strip()
         if not scan_name:
@@ -848,7 +894,6 @@ class GridScanTab(QWidget):
             self._spec_live.set_context(axes, preserve=True)
         self._spec_live.show(); self._spec_live.raise_(); self._spec_live.activateWindow()
 
-
     def _start(self) -> None:
         try:
             p = self._collect_params()
@@ -893,6 +938,14 @@ class GridScanTab(QWidget):
                 self._worker.spec_updated.connect(ui_spec.set_spectrum_from_scan, Qt.QueuedConnection)
         except Exception:
             pass
+        
+        try:
+            ui_pm = REGISTRY.get("ui:powermeter_live")
+            if ui_pm is not None and hasattr(ui_pm, "set_power_from_scan"):
+                self._worker.pm_updated.connect(ui_pm.set_power_from_scan, Qt.QueuedConnection)
+        except Exception:
+            pass
+
 
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
