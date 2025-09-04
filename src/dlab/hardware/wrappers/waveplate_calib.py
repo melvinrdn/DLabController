@@ -22,8 +22,8 @@ from dlab.boot import ROOT, get_config
 # Waveplate Calibration Widget
 # ----------------------------
 
-NUM_WAVEPLATES = 6
-COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown', 'tab:pink']
+NUM_WAVEPLATES = 7
+COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown','tab:cyan', 'tab:pink']
 
 
 def _calibration_root() -> Path:

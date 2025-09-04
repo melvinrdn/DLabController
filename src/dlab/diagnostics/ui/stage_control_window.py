@@ -34,10 +34,10 @@ def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) 
     y = float(np.clip(power_fraction, 0.0, 1.0))
     return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
 
-
 def load_default_ids() -> dict[int, str]:
     cfg = get_config() or {}
-    defaults = {i: "00000000" for i in range(9)}
+    # We now have 7 waveplates (0..6) + 3 translation stages (7..9) = 10 total.
+    defaults = {i: "00000000" for i in range(10)}
     try:
         y = (cfg.get("stages", {}) or {}).get("default_ids", {}) or {}
         for k, v in y.items():
@@ -48,6 +48,7 @@ def load_default_ids() -> dict[int, str]:
     except Exception:
         pass
     return defaults
+
 
 
 class StageRow(QWidget):
@@ -310,20 +311,36 @@ class ThorlabsView(QWidget):
         g3_layout.addWidget(row5); g3_layout.addWidget(row6)
         group3.setLayout(g3_layout)
         left_layout.addWidget(group3)
-
-        # Group 4
-        group4 = QGroupBox("Translation Stages")
+        
+        # Group 4: SFG c
+        group4 = QGroupBox("SFG")
         g4_layout = QVBoxLayout()
         activate_all_g4 = QPushButton("Activate All in Group")
-        activate_all_g4.clicked.connect(lambda: self.activate_group([6, 7, 8]))
+        # The next row we append will be index 6
+        activate_all_g4.clicked.connect(lambda: self.activate_group([6]))
         g4_layout.addWidget(activate_all_g4)
-        row7 = StageRow(6, description="Focus",    log_callback=self.log_message)
-        row8 = StageRow(7, description="Delay 1",  log_callback=self.log_message)
-        row9 = StageRow(8, description="Delay 2",  log_callback=self.log_message)
-        self.stage_rows.extend([row7, row8, row9])
-        g4_layout.addWidget(row7); g4_layout.addWidget(row8); g4_layout.addWidget(row9)
+        # Waveplate 7 (0-based stage_number=6), named "3w/2w"
+        row7_wp = StageRow(6, description="3w/2w", log_callback=self.log_message)
+        self.stage_rows.append(row7_wp)
+        g4_layout.addWidget(row7_wp)
         group4.setLayout(g4_layout)
         left_layout.addWidget(group4)
+
+        # --- Group 5: Translation Stages (stages 7,8,9) ---------------------
+        group5 = QGroupBox("Translation Stages")
+        g5_layout = QVBoxLayout()
+        activate_all_g5 = QPushButton("Activate All in Group")
+        # The next three rows we append will be indices 7,8,9
+        activate_all_g5.clicked.connect(lambda: self.activate_group([7, 8, 9]))
+        g5_layout.addWidget(activate_all_g5)
+
+        row8 = StageRow(7, description="Focus",   log_callback=self.log_message)
+        row9 = StageRow(8, description="Delay 1", log_callback=self.log_message)
+        row10 = StageRow(9, description="Delay 2", log_callback=self.log_message)
+        self.stage_rows.extend([row8, row9, row10])
+        g5_layout.addWidget(row8); g5_layout.addWidget(row9); g5_layout.addWidget(row10)
+        group5.setLayout(g5_layout)
+        left_layout.addWidget(group5)
 
         left_layout.addStretch(1)
 

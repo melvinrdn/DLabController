@@ -9,7 +9,7 @@ class PowermeterControllerError(Exception):
     """Errors raised by PowermeterController."""
 
 
-class PowermeterController:
+class PowermeterController: 
 
     def __init__(self, powermeter_id: str) -> None:
         """
