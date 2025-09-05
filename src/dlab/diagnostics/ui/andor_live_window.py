@@ -118,6 +118,9 @@ class AndorLiveWindow(QWidget):
         self.crosshair_pos = None
         self.ch_h = None
         self.ch_v = None
+        self.line_mode_active = False
+        self.line_start = None
+        self.line_artists = []
         self.initUI()
     def initUI(self):
         main_layout = QHBoxLayout(self)
@@ -190,6 +193,16 @@ class AndorLiveWindow(QWidget):
         ch_l.addWidget(self.btn_ch_save)
         ch_l.addWidget(self.btn_ch_goto)
         param_layout.addWidget(ch_grp)
+
+        ln_grp = QGroupBox("Lines")
+        ln_l = QHBoxLayout(ln_grp)
+        self.btn_line_start = QPushButton("Start Line")
+        self.btn_line_start.clicked.connect(self.start_line_mode)
+        self.btn_line_clear = QPushButton("Clear Lines")
+        self.btn_line_clear.clicked.connect(self.clear_lines)
+        ln_l.addWidget(self.btn_line_start)
+        ln_l.addWidget(self.btn_line_clear)
+        param_layout.addWidget(ln_grp)
 
         btn_layout = QVBoxLayout()
         self.activate_button = QPushButton("Activate Camera")
@@ -456,21 +469,52 @@ class AndorLiveWindow(QWidget):
         x, y = self.crosshair_pos
         self.ch_h = self.ax_img.axhline(y, linestyle="-.", linewidth=1.2)
         self.ch_v = self.ax_img.axvline(x, linestyle="-.", linewidth=1.2)
-    def _on_mouse_move(self, event):
-        if not self.crosshair_visible or self.crosshair_locked:
-            return
-        if event.xdata is None or event.ydata is None:
-            return
-        self.crosshair_pos = (float(event.xdata), float(event.ydata))
-        self._refresh_crosshair()
+    def start_line_mode(self):
+        self.line_mode_active = True
+        self.line_start = None
+        self.log("Line: click to set start point.")
+    def clear_lines(self):
+        for ln in list(self.line_artists):
+            try:
+                ln.remove()
+            except Exception:
+                pass
+        self.line_artists.clear()
+        self.line_start = None
+        self.line_mode_active = False
         self.canvas.draw_idle()
-    def _on_mouse_press(self, event):
-        if event.button == 3 and self.crosshair_visible:
-            self.crosshair_locked = not self.crosshair_locked
-            if self.crosshair_locked and (event.xdata is not None and event.ydata is not None):
-                self.crosshair_pos = (float(event.xdata), float(event.ydata))
+        self.log("Lines cleared.")
+    def _on_mouse_move(self, event):
+        if self.crosshair_visible and not self.crosshair_locked:
+            if event.xdata is None or event.ydata is None or event.inaxes != self.ax_img:
+                return
+            self.crosshair_pos = (float(event.xdata), float(event.ydata))
             self._refresh_crosshair()
             self.canvas.draw_idle()
+    def _on_mouse_press(self, event):
+        if event.inaxes == self.ax_img:
+            if self.line_mode_active and event.button == 1:
+                if event.xdata is None or event.ydata is None:
+                    return
+                if self.line_start is None:
+                    self.line_start = (float(event.xdata), float(event.ydata))
+                    self.log(f"Line start anchored at {self.line_start}.")
+                else:
+                    x0, y0 = self.line_start
+                    x1, y1 = float(event.xdata), float(event.ydata)
+                    ln, = self.ax_img.plot([x0, x1], [y0, y1], linewidth=2.0, color="red")
+                    self.line_artists.append(ln)
+                    self.line_start = None
+                    self.line_mode_active = False
+                    self.canvas.draw_idle()
+                    self.log(f"Line added from ({x0:.1f}, {y0:.1f}) to ({x1:.1f}, {y1:.1f}).")
+                    return
+            if event.button == 3 and self.crosshair_visible:
+                self.crosshair_locked = not self.crosshair_locked
+                if self.crosshair_locked and (event.xdata is not None and event.ydata is not None):
+                    self.crosshair_pos = (float(event.xdata), float(event.ydata))
+                self._refresh_crosshair()
+                self.canvas.draw_idle()
     def toggle_crosshair(self):
         self.crosshair_visible = not self.crosshair_visible
         if not self.crosshair_visible:
