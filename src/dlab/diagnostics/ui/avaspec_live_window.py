@@ -1,4 +1,3 @@
-# src/dlab/diagnostics/view/AvaspecLive.py
 from __future__ import annotations
 import os, datetime, time
 import numpy as np
@@ -60,6 +59,7 @@ class AvaspecLiveWindow(QWidget):
         self.thread: LiveMeasurementThread | None = None
         self.handles = []
         self.line = None
+        self.fft_line = None
         self.last_data = None
         self._last_raw: np.ndarray | None = None
         self.registry_key = None
@@ -90,6 +90,8 @@ class AvaspecLiveWindow(QWidget):
         left_l.addWidget(QLabel("Number of Averages:"));     left_l.addWidget(self.avg_edit)
         self.cb_autoscale = QCheckBox("Autoscale"); self.cb_autoscale.setChecked(True)
         left_l.addWidget(self.cb_autoscale)
+        self.cb_fft = QCheckBox("Show Fourier Transform"); self.cb_fft.setChecked(False)
+        left_l.addWidget(self.cb_fft)
         bg_row = QHBoxLayout()
         self.btn_bg = QPushButton("Update Background")
         self.btn_bg_reset = QPushButton("Reset Background")
@@ -120,8 +122,9 @@ class AvaspecLiveWindow(QWidget):
         left_l.addWidget(self.log)
         splitter.addWidget(left)
         right = QWidget(); right_l = QVBoxLayout(right)
-        self.fig, self.ax = plt.subplots()
+        self.fig, (self.ax, self.ax_fft) = plt.subplots(2, 1, sharex=False)
         self.ax.set_xlabel("Wavelength (nm)"); self.ax.set_ylabel("Counts"); self.ax.grid(True)
+        self.ax_fft.set_xlabel("Frequency (a.u.)"); self.ax_fft.set_ylabel("Amplitude"); self.ax_fft.grid(True)
         self.canvas = FigureCanvas(self.fig)
         right_l.addWidget(NavigationToolbar(self.canvas, self))
         right_l.addWidget(self.canvas)
@@ -251,6 +254,9 @@ class AvaspecLiveWindow(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to activate: {e}")
             self._ui_log(f"Activate failed: {e}")
     def deactivate_hardware(self):
+        if self.thread:
+            QMessageBox.warning(self, "Warning", "Stop live before deactivating the spectrometer.")
+            return
         try:
             if self.ctrl:
                 self.ctrl.deactivate()
@@ -270,6 +276,8 @@ class AvaspecLiveWindow(QWidget):
         if not self.ctrl:
             QMessageBox.critical(self, "Error", "Spectrometer not activated.")
             return
+        if self.thread:
+            return
         try:
             it = float(self.int_edit.text())
             av = int(self.avg_edit.text())
@@ -281,13 +289,19 @@ class AvaspecLiveWindow(QWidget):
         self.thread.error_signal.connect(lambda e: self._ui_log(f"Error: {e}"))
         self.thread.start()
         self._ui_log("Live started.")
-        self.btn_start.setEnabled(False); self.btn_stop.setEnabled(True)
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.btn_deact.setEnabled(False)
     def stop_live(self):
         if self.thread:
-            self.thread.stop(); self.thread.wait()
+            self.thread.stop()
+            self.thread.wait()
             self.thread = None
             self._ui_log("Live stopped.")
-        self.btn_start.setEnabled(True); self.btn_stop.setEnabled(False)
+        self.btn_start.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        if self.ctrl:
+            self.btn_deact.setEnabled(True)
     def update_spectrum(self, ts: float, data: np.ndarray):
         if self.ctrl is None:
             return
@@ -319,15 +333,35 @@ class AvaspecLiveWindow(QWidget):
             self.ax.set_title(f"FTL ≈ {ftl_fs:.0f} fs")
         else:
             self.lbl_ftl.setText("FTL: — fs")
-            self.ax.setTitle("")
+            self.ax.set_title("")
         self.ax.set_yscale("linear")
         if self.cb_autoscale.isChecked():
-            self.ax.relim(); self.ax.autoscale_view()
+            self.ax.relim()
+            self.ax.autoscale_view()
         has_bg = (self.ctrl._bg_counts is not None)
         if use_cal and self.ctrl.has_calibration():
             self.ax.set_ylabel("Counts ((bg-sub)/cal)")
         else:
             self.ax.set_ylabel("Counts (bg-subtracted)" if has_bg else "Counts")
+        if self.cb_fft.isChecked():
+            y = disp if disp.size else np.array([])
+            if y.size >= 2:
+                fft_vals = np.abs(np.fft.rfft(y))
+                freqs = np.fft.rfftfreq(y.size, d=1.0)
+                if self.fft_line is None:
+                    (self.fft_line,) = self.ax_fft.plot(freqs, fft_vals, label="FFT")
+                else:
+                    self.fft_line.set_xdata(freqs)
+                    self.fft_line.set_ydata(fft_vals)
+                self.ax_fft.relim()
+                self.ax_fft.autoscale_view()
+        else:
+            self.ax_fft.cla()
+            self.ax_fft.set_xlabel("Frequency (a.u.)")
+            self.ax_fft.set_ylabel("Amplitude")
+            self.ax_fft.grid(True)
+            self.fft_line = None
+        self.fig.tight_layout()
         self.canvas.draw_idle()
     def set_spectrum_from_scan(self, wl, counts):
         try:
@@ -369,7 +403,27 @@ class AvaspecLiveWindow(QWidget):
                 self.ax.set_title("")
             self.ax.set_yscale("linear")
             if self.cb_autoscale.isChecked():
-                self.ax.relim(); self.ax.autoscale_view()
+                self.ax.relim()
+                self.ax.autoscale_view()
+            if self.cb_fft.isChecked():
+                y = disp if disp.size else np.array([])
+                if y.size >= 2:
+                    fft_vals = np.abs(np.fft.rfft(y))
+                    freqs = np.fft.rfftfreq(y.size, d=1.0)
+                    if self.fft_line is None:
+                        (self.fft_line,) = self.ax_fft.plot(freqs, fft_vals, label="FFT")
+                    else:
+                        self.fft_line.set_xdata(freqs)
+                        self.fft_line.set_ydata(fft_vals)
+                    self.ax_fft.relim()
+                    self.ax_fft.autoscale_view()
+            else:
+                self.ax_fft.cla()
+                self.ax_fft.set_xlabel("Frequency (a.u.)")
+                self.ax_fft.set_ylabel("Amplitude")
+                self.ax_fft.grid(True)
+                self.fft_line = None
+            self.fig.tight_layout()
             self.canvas.draw_idle()
         except Exception as e:
             self._ui_log(f"Scan-plot update failed: {e}")
