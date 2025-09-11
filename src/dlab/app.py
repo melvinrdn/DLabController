@@ -1,6 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
 import datetime
+import sys
+import subprocess
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
@@ -24,6 +26,7 @@ class DlabControllerWindow(QMainWindow):
         self.stage_control_window = None
         self.slm_window = None
         self.scan_window = None
+        self.smaract_proc: subprocess.Popen | None = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -57,6 +60,10 @@ class DlabControllerWindow(QMainWindow):
         self.thorlabs_button = QPushButton("Open Stage Control Window")
         self.thorlabs_button.clicked.connect(self.open_stage_control_window)
         view_layout.addWidget(self.thorlabs_button)
+
+        self.smaract_button = QPushButton("Open SmarAct Control")
+        self.smaract_button.clicked.connect(self.open_smaract_control)
+        view_layout.addWidget(self.smaract_button)
         
         self.scan_button = QPushButton("Open Scan Window")
         self.scan_button.clicked.connect(self.open_scan_window)
@@ -166,6 +173,20 @@ class DlabControllerWindow(QMainWindow):
         self.stage_control_window.activateWindow()
         self.append_log("Stage Control window opened.")
 
+    def open_smaract_control(self):
+        script = ROOT / "src" / "dlab" / "diagnostics" / "ui" / "run_smaract_gui.py"
+        if not script.exists():
+            self.append_log(f"SmarAct launcher not found: {script}")
+            return
+        if self.smaract_proc is not None and self.smaract_proc.poll() is None:
+            self.append_log("SmarAct Control already running.")
+            return
+        try:
+            self.smaract_proc = subprocess.Popen([sys.executable, str(script)], cwd=str(ROOT))
+            self.append_log("SmarAct Control launched.")
+        except Exception as e:
+            self.append_log(f"Failed to launch SmarAct Control: {e}")
+
     def open_daheng_window(self, camera_name: str, fixed_index: int):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
         if camera_name not in self.daheng_windows:
@@ -214,7 +235,6 @@ class DlabControllerWindow(QMainWindow):
 
 
 def main():
-    import sys
     app = QApplication(sys.argv)
     window = DlabControllerWindow()
     window.show()

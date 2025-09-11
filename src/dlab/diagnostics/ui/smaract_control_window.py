@@ -67,7 +67,7 @@ class SmarActControlWindow(QWidget):
         left.addLayout(self.grid)
 
         footer = QHBoxLayout()
-        self.lbl_hint = QLabel("Set Steps/Amp/Freq, puis ◀ / ▶ pour ±Steps.")
+        self.lbl_hint = QLabel("Set Steps/Amp/Freq, and ◀ / ▶ for ±Steps.")
         footer.addWidget(self.lbl_hint)
         left.addLayout(footer)
 
