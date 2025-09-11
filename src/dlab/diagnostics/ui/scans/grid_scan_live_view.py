@@ -514,13 +514,23 @@ class _Panel(QWidget):
         self.canvas.draw_idle()
 
 
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
+    QLineEdit, QCheckBox, QGroupBox
+)
+from PyQt5.QtCore import Qt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
+from dlab.core.device_registry import REGISTRY
+
+
 class AvaspecGridScanLiveView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Avaspec Grid Live View")
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setWindowFlag(Qt.Window, True)
-        self.resize(1100, 860)
+        self.resize(1100, 900)
         self.axes: List[Tuple[str, List[float]]] = []
         self.axis_names: List[str] = []
         self.axis_lengths: List[int] = []
@@ -534,6 +544,8 @@ class AvaspecGridScanLiveView(QWidget):
         self._sum_yvals: Optional[np.ndarray] = None
         self._spec_mat: Optional[np.ndarray] = None
         self._spec_yvals: Optional[np.ndarray] = None
+        self._wl_min: Optional[float] = None
+        self._wl_max: Optional[float] = None
         self._build_ui()
         try:
             REGISTRY.register("ui:avaspec_live", self)
@@ -565,6 +577,25 @@ class AvaspecGridScanLiveView(QWidget):
         main.addWidget(top, 1)
         bot = QGroupBox("Spectrum (λ) vs stage")
         bl = QVBoxLayout(bot)
+        ctrl = QHBoxLayout()
+        self.wl_min_edit = QLineEdit()
+        self.wl_min_edit.setPlaceholderText("λ min (nm)")
+        self.wl_max_edit = QLineEdit()
+        self.wl_max_edit.setPlaceholderText("λ max (nm)")
+        self.zoom_btn = QPushButton("Apply zoom")
+        self.zoom_btn.clicked.connect(self._apply_zoom)
+        self.reset_zoom_btn = QPushButton("Reset zoom")
+        self.reset_zoom_btn.clicked.connect(self._reset_zoom)
+        self.norm_chk = QCheckBox("Normalize each spectrum (0–1)")
+        self.norm_chk.stateChanged.connect(self._redraw_all)
+        ctrl.addWidget(QLabel("Zoom:"))
+        ctrl.addWidget(self.wl_min_edit)
+        ctrl.addWidget(self.wl_max_edit)
+        ctrl.addWidget(self.zoom_btn)
+        ctrl.addWidget(self.reset_zoom_btn)
+        ctrl.addStretch(1)
+        ctrl.addWidget(self.norm_chk)
+        bl.addLayout(ctrl)
         self.fig_map = plt.figure(figsize=(5.4, 3.2))
         self.ax_map = self.fig_map.add_subplot(111)
         self.im_map = self.ax_map.imshow(np.zeros((1, 1)), origin="lower", aspect="auto", cmap='turbo')
@@ -603,6 +634,11 @@ class AvaspecGridScanLiveView(QWidget):
         self._sum_yvals = np.full((self._y_len,), np.nan, dtype=float)
         self._spec_mat = None
         self._spec_yvals = np.full((self._y_len,), np.nan, dtype=float)
+        self._wl_min = None
+        self._wl_max = None
+        self.wl_min_edit.clear()
+        self.wl_max_edit.clear()
+        self.norm_chk.setChecked(False)
         self._redraw_all()
 
     def reset_all(self) -> None:
@@ -680,6 +716,46 @@ class AvaspecGridScanLiveView(QWidget):
         self._lin_counter += 1
         self._redraw_all()
 
+    def _apply_zoom(self) -> None:
+        vmin = self.wl_min_edit.text().strip()
+        vmax = self.wl_max_edit.text().strip()
+        self._wl_min = float(vmin) if vmin else None
+        self._wl_max = float(vmax) if vmax else None
+        if self._wl_min is not None and self._wl_max is not None and self._wl_min > self._wl_max:
+            self._wl_min, self._wl_max = self._wl_max, self._wl_min
+        self._redraw_all()
+
+    def _reset_zoom(self) -> None:
+        self._wl_min = None
+        self._wl_max = None
+        self.wl_min_edit.clear()
+        self.wl_max_edit.clear()
+        self._redraw_all()
+
+    def _zoom_mask(self) -> np.ndarray | slice:
+        if self._x_wl is None:
+            return slice(None)
+        lo = self._wl_min if self._wl_min is not None else np.nanmin(self._x_wl)
+        hi = self._wl_max if self._wl_max is not None else np.nanmax(self._x_wl)
+        if not np.isfinite(lo) or not np.isfinite(hi):
+            return slice(None)
+        mask = (self._x_wl >= lo) & (self._x_wl <= hi)
+        if not np.any(mask):
+            return slice(None)
+        return mask
+
+    def _maybe_normalize(self, M: np.ndarray) -> np.ndarray:
+        if not self.norm_chk.isChecked():
+            return M
+        A = M.copy()
+        with np.errstate(invalid="ignore"):
+            rmin = np.nanmin(A, axis=1, keepdims=True)
+            rmax = np.nanmax(A, axis=1, keepdims=True)
+            denom = rmax - rmin
+            denom[~np.isfinite(denom) | (denom <= 0)] = np.nan
+            A = (A - rmin) / denom
+        return A
+
     def _redraw_all(self) -> None:
         self.ax_sum.cla()
         if self._sum_vec is not None and self._sum_yvals is not None:
@@ -692,17 +768,28 @@ class AvaspecGridScanLiveView(QWidget):
         self.canvas_sum.draw_idle()
         self.ax_map.cla()
         if self._spec_mat is not None and self._x_wl is not None:
-            self.im_map = self.ax_map.imshow(self._spec_mat, origin="lower", aspect="auto", cmap='turbo')
+            mask = self._zoom_mask()
+            if isinstance(mask, slice):
+                M = self._spec_mat
+                wl = self._x_wl
+            else:
+                M = self._spec_mat[:, mask]
+                wl = self._x_wl[mask]
+            if M.shape[1] == 0:
+                M = np.zeros((self._spec_mat.shape[0], 1))
+                wl = np.array([0.0])
+            M = self._maybe_normalize(M)
+            self.im_map = self.ax_map.imshow(M, origin="lower", aspect="auto", cmap='turbo')
             self.ax_map.set_xlabel("Wavelength (nm)")
             self.ax_map.set_ylabel(self._y_source)
             if self._spec_yvals is not None and self._spec_yvals.size:
                 n = self._spec_yvals.size
-                idxs = np.linspace(0, n-1, num=min(8, n), dtype=int)
+                idxs = np.linspace(0, n - 1, num=min(8, max(1, n)), dtype=int)
                 self.ax_map.set_yticks(idxs)
                 self.ax_map.set_yticklabels([f"{self._spec_yvals[i]:.3g}" if np.isfinite(self._spec_yvals[i]) else "" for i in idxs])
-            if self._x_wl is not None and self._x_wl.size:
-                m = self._x_wl.size
-                idxs = np.linspace(0, m-1, num=min(8, m), dtype=int)
+            if wl is not None and wl.size:
+                m = wl.size
+                idxs = np.linspace(0, m - 1, num=min(8, max(1, m)), dtype=int)
                 self.ax_map.set_xticks(idxs)
-                self.ax_map.set_xticklabels([f"{self._x_wl[i]:.3g}" if np.isfinite(self._x_wl[i]) else "" for i in idxs])
+                self.ax_map.set_xticklabels([f"{wl[i]:.3g}" if np.isfinite(wl[i]) else "" for i in idxs])
         self.canvas_map.draw_idle()

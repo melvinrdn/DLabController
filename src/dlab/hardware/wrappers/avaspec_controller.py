@@ -1,4 +1,3 @@
-# dlab/hardware/wrappers/avaspec_controller.py
 from __future__ import annotations
 from typing import Any, Tuple, Optional
 import time
@@ -34,6 +33,7 @@ class AvaspecController:
         self._cal_wavelength: np.ndarray | None = None
         self._cal_values: np.ndarray | None = None
         self._suppress_until: float = 0.0
+
     def activate(self) -> None:
         try:
             avs.AVS_Init()
@@ -47,12 +47,14 @@ class AvaspecController:
         except Exception as e:
             self._h = None
             raise AvaspecError(f"Activate failed: {e}") from e
+
     def deactivate(self) -> None:
         if self._h:
             try:
                 avs.AVS_Deactivate(self._h)
             finally:
                 self._h = None
+
     @classmethod
     def list_spectrometers(cls) -> list[Any]:
         try:
@@ -60,22 +62,35 @@ class AvaspecController:
             return avs.AVS_GetList() or []
         except Exception:
             return []
+
+    def abort_measurement(self) -> None:
+        if self._h:
+            try:
+                avs.AVS_StopMeasure(self._h)
+            except Exception:
+                pass
+
     def set_measurement_parameters(self, int_time_ms: float, no_avg: int) -> None:
         if self._h is None:
             raise AvaspecError("Not activated")
         avs.set_measure_params(self._h, float(int_time_ms), int(no_avg))
+
     def set_integration_time_ms(self, int_time_ms: float) -> None:
         self.set_measurement_parameters(float(int_time_ms), 1)
+
     def get_wavelengths(self) -> np.ndarray:
         if self.wavelength is None:
             raise AvaspecError("Not activated")
         return np.asarray(self.wavelength, dtype=float)
+
     def set_background(self, wl: np.ndarray, counts: np.ndarray) -> None:
         self._bg_wavelength = np.asarray(wl, dtype=float)
         self._bg_counts = np.asarray(counts, dtype=float)
+
     def reset_background(self) -> None:
         self._bg_wavelength = None
         self._bg_counts = None
+
     def _apply_background(self, wl: np.ndarray, counts: np.ndarray) -> np.ndarray:
         if self._bg_wavelength is None or self._bg_counts is None:
             return counts
@@ -87,17 +102,21 @@ class AvaspecController:
                 bg = np.interp(wl, self._bg_wavelength, self._bg_counts, left=np.nan, right=np.nan)
                 if np.isnan(bg[0]):
                     i0 = np.flatnonzero(~np.isnan(bg))
-                    if i0.size: bg[:i0[0]] = bg[i0[0]]
+                    if i0.size:
+                        bg[:i0[0]] = bg[i0[0]]
                 if np.isnan(bg[-1]):
                     i1 = np.flatnonzero(~np.isnan(bg))
-                    if i1.size: bg[i1[-1]:] = bg[i1[-1]]
+                    if i1.size:
+                        bg[i1[-1]:] = bg[i1[-1]]
             return counts - bg
         except Exception:
             return counts
+
     def has_calibration(self) -> bool:
         if time.monotonic() < self._suppress_until:
             return False
         return self._cal_wavelength is not None and self._cal_values is not None
+
     def load_calibration_from_config(self, silent: bool=False) -> Optional[Path]:
         path = _cal_path_from_config()
         if not path or not path.exists():
@@ -116,6 +135,7 @@ class AvaspecController:
         self._cal_wavelength = wl
         self._cal_values = val
         return path
+
     def _read_calibration_dat(self, path: Path) -> Tuple[np.ndarray, np.ndarray]:
         arr = np.loadtxt(path, dtype=float, delimiter=',')
         if arr.ndim == 1 and arr.size >= 2:
@@ -123,6 +143,7 @@ class AvaspecController:
         if arr.ndim != 2 or arr.shape[1] < 2:
             raise AvaspecError("Calibration .dat must have 2 columns: wavelength, value.")
         return arr[:, 0], arr[:, 1]
+
     def _apply_calibration(self, wl: np.ndarray, counts: np.ndarray) -> np.ndarray:
         if not self.has_calibration():
             return counts
@@ -130,15 +151,18 @@ class AvaspecController:
             cal = np.interp(wl, self._cal_wavelength, self._cal_values, left=np.nan, right=np.nan)
             if np.isnan(cal[0]):
                 i0 = np.flatnonzero(~np.isnan(cal))
-                if i0.size: cal[:i0[0]] = cal[i0[0]]
+                if i0.size:
+                    cal[:i0[0]] = cal[i0[0]]
             if np.isnan(cal[-1]):
                 i1 = np.flatnonzero(~np.isnan(cal))
-                if i1.size: cal[i1[-1]:] = cal[i1[-1]]
+                if i1.size:
+                    cal[i1[-1]:] = cal[i1[-1]]
             eps = np.finfo(float).tiny
             cal = np.where(np.isfinite(cal) & (np.abs(cal) > 0), cal, eps)
             return counts / cal
         except Exception:
             return counts
+
     def apply_processing(self, wl: np.ndarray, counts: np.ndarray, use_calibration: bool) -> np.ndarray:
         y = self._apply_background(wl, counts)
         if use_calibration:
@@ -146,8 +170,10 @@ class AvaspecController:
                 self.load_calibration_from_config(silent=True)
             y = self._apply_calibration(wl, y)
         return y
+
     def _suppress_processing_for(self, seconds: float) -> None:
         self._suppress_until = max(self._suppress_until, time.monotonic() + float(seconds))
+
     def grab_spectrum_for_scan(self, int_ms: float, averages: int) -> Tuple[np.ndarray, dict]:
         if averages <= 0:
             averages = 1
@@ -171,6 +197,7 @@ class AvaspecController:
         }
         self._suppress_processing_for(2.0)
         return y, meta
+
     def measure_spectrum(self, int_time_ms: float, no_avg: int) -> Tuple[float, np.ndarray]:
         if self._h is None:
             raise AvaspecError("Not activated")
