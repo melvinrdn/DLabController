@@ -8,13 +8,12 @@ from PyQt5.QtWidgets import (
 from dlab.diagnostics.ui.scans.m2_measurement_tab import M2Tab
 from dlab.diagnostics.ui.scans.grid_scan_tab import GridScanTab
 from dlab.diagnostics.ui.scans.grating_compressor_scan_tab import GCScanTab
+from dlab.diagnostics.ui.scans.stability_scan_tab import StabilityScanTab
 
-# ---------- worker ----------
 import logging
 logger = logging.getLogger("dlab.ui.ScanWindow")
 
 
-# ---------- main window ----------
 class ScanWindow(QMainWindow):
     closed = pyqtSignal()
     def __init__(self) -> None:
@@ -22,12 +21,10 @@ class ScanWindow(QMainWindow):
         self.setWindowTitle("Scan")
         self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
 
-        self.tabs.addTab(M2Tab(), "M2")
         self.tabs.addTab(GridScanTab(), "Grid scan")
         self.tabs.addTab(GCScanTab(), "Grating compressor scan")
-
-        # Future: add more tabs easily
-        # self.tabs.addTab(SomeOtherScanTab(), "Whatever")
+        self.tabs.addTab(M2Tab(), "M2 Scan")
+        self.tabs.addTab(StabilityScanTab(), "Stability scan")
         
     def closeEvent(self, event):
         try:
