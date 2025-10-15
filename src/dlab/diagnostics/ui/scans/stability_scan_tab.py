@@ -345,7 +345,7 @@ class _MetricPlotDialog(QDialog):
 
 
 class StabilityScanTab(QWidget):
-    def __init__(self, parent: Optional[Widget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._thread: Optional[QThread] = None
         self._worker: Optional[StabilityScanWorker] = None
