@@ -35,7 +35,7 @@ chip_height= DEFAULT_CHIP_H
 pixel_size = DEFAULT_PIXEL_SIZE
 bit_depth  = DEFAULT_BIT_DEPTH
 
-phase_types = ['Background', 'Lens', 'Zernike', 'Flat', 'Binary', 'Vortex', 'PhaseJumps', 'Grating', 'Square','Checkerboard', 'Tilt', 'Axicon']
+phase_types = ['Background', 'Lens', 'Zernike', 'Binary', 'Vortex', 'PhaseJumps', 'Tilt', 'TwoFocii']
 
 class BaseTypeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -914,7 +914,102 @@ class TypeCheckerboard(BaseTypeWidget):
         self.le_phaseA.setText(settings.get('phaseA', '0'))
         self.le_phaseB.setText(settings.get('phaseB', '1'))
         
-        
+class TypeTwoFocii(BaseTypeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.name = 'TwoFocii'
+
+        layout = QVBoxLayout(self)
+        group = QGroupBox("Two Focii (Intertwined) Settings")
+        layout.addWidget(group)
+        grid = QGridLayout(group)
+
+        # GUI fields with sensible defaults
+        row = 0
+        grid.addWidget(QLabel("Wavelength [nm]:"), row, 0)
+        self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
+
+        grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
+        self.le_f = QLineEdit("0.50"); grid.addWidget(self.le_f, row, 1); row += 1
+
+        grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
+        self.le_sep = QLineEdit("150"); grid.addWidget(self.le_sep, row, 1); row += 1
+
+        grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
+        self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
+
+        grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
+        # typiquement 2–4 pixels; si pixel ~20 µm, mettre 40–80 µm
+        self.le_pitch = QLineEdit("40"); grid.addWidget(self.le_pitch, row, 1); row += 1
+
+        grid.addWidget(QLabel("Angle (deg):"), row, 0)
+        self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
+
+    def phase(self):
+        # --- read & convert inputs ---
+        try:
+            wl = float(self.le_wl.text()) * 1e-9               # m
+            f_focus = float(self.le_f.text())                   # m
+            D = float(self.le_sep.text()) * 1e-6                # m
+            dphi = float(self.le_dphi_pi.text()) * np.pi        # rad
+            pitch = float(self.le_pitch.text()) * 1e-6          # m
+            angle_deg = float(self.le_angle.text())
+        except ValueError:
+            print("TwoFocii: invalid numeric input.")
+            return np.zeros(slm_size)
+
+        if wl <= 0 or f_focus == 0 or pitch <= 0:
+            print("TwoFocii: wavelength, focal length, and checker pitch must be > 0.")
+            return np.zeros(slm_size)
+
+        # --- SLM plane coordinates (meters) ---
+        x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
+        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
+        X, Y = np.meshgrid(x, y, indexing='xy')
+
+        # --- physics ---
+        k0 = 2.0 * np.pi / wl
+        theta = D / (2.0 * f_focus)           # small-angle
+        k_t = k0 * theta
+
+        ang = np.deg2rad(angle_deg)
+        U = X * np.cos(ang) + Y * np.sin(ang)
+
+        # opposite tilts + relative phase
+        phi_A = +k_t * U
+        phi_B = -k_t * U + dphi
+
+        # --- checkerboard assignment ---
+        # index squares from the physical lower-left corner
+        xmin, ymin = x[0], y[0]
+        iX = np.floor((X - xmin) / pitch).astype(np.int64)
+        iY = np.floor((Y - ymin) / pitch).astype(np.int64)
+        checker = (iX + iY) & 1  # 0/1 alternating
+
+        phase = np.where(checker == 0, phi_A, phi_B)
+
+        # wrap 0..2π and scale to SLM bit-depth units
+        wrapped = np.mod(phase, 2.0 * np.pi)
+        return wrapped * (bit_depth / (2.0 * np.pi))
+
+    def save_(self):
+        return {
+            'wl_nm': self.le_wl.text(),
+            'f_focus_m': self.le_f.text(),
+            'sep_um': self.le_sep.text(),
+            'dphi_pi': self.le_dphi_pi.text(),
+            'pitch_um': self.le_pitch.text(),
+            'angle_deg': self.le_angle.text(),
+        }
+
+    def load_(self, settings):
+        self.le_wl.setText(settings.get('wl_nm', '1030'))
+        self.le_f.setText(settings.get('f_focus_m', '0.20'))
+        self.le_sep.setText(settings.get('sep_um', '100'))
+        self.le_dphi_pi.setText(settings.get('dphi_pi', '0.0'))
+        self.le_pitch.setText(settings.get('pitch_um', '32'))
+        self.le_angle.setText(settings.get('angle_deg', '0.0'))
+
 
 def new_type(parent, typ):
     types_dict = {
@@ -925,11 +1020,8 @@ def new_type(parent, typ):
         'Vortex': TypeVortex,
         'Zernike': TypeZernike,
         'PhaseJumps': TypePhaseJumps,
-        'Grating': TypeGrating,
-        'Square': TypeSquare,
-        'Checkerboard': TypeCheckerboard,
         'Tilt': TypeTilt,
-        'Axicon': TypeAxicon,
+        'TwoFocii': TypeTwoFocii,
     }
     if typ not in types_dict:
         raise ValueError("Unrecognized type '{}'. Valid types are: {}".format(typ, list(types_dict.keys())))
