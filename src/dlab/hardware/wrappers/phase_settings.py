@@ -930,17 +930,16 @@ class TypeTwoFocii(BaseTypeWidget):
         self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
 
         grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
-        self.le_f = QLineEdit("0.50"); grid.addWidget(self.le_f, row, 1); row += 1
+        self.le_f = QLineEdit("0.20"); grid.addWidget(self.le_f, row, 1); row += 1
 
         grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
-        self.le_sep = QLineEdit("150"); grid.addWidget(self.le_sep, row, 1); row += 1
+        self.le_sep = QLineEdit("100"); grid.addWidget(self.le_sep, row, 1); row += 1
 
         grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
         self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
 
         grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
-        # typiquement 2–4 pixels; si pixel ~20 µm, mettre 40–80 µm
-        self.le_pitch = QLineEdit("40"); grid.addWidget(self.le_pitch, row, 1); row += 1
+        self.le_pitch = QLineEdit("32"); grid.addWidget(self.le_pitch, row, 1); row += 1
 
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
