@@ -1,67 +1,57 @@
 from __future__ import annotations
-import sys
-import os
-import time
-import datetime
-import numpy as np
-from typing import Optional, Tuple
+import sys, os, time, datetime, numpy as np, yaml, logging, threading
 from PIL import Image, PngImagePlugin
-import yaml
-
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QGroupBox, QSpinBox, QShortcut
+    QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QGroupBox, QSpinBox, QShortcut, QComboBox
 )
 from PyQt5.QtGui import QIntValidator, QKeySequence
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
-from matplotlib.backends.backend_qt5agg import (
-    FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
-)
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.widgets import RectangleSelector
 import matplotlib.pyplot as plt
-import logging
-import threading
-
 from dlab.hardware.wrappers.daheng_controller import (
     DahengController, DahengControllerError,
     DEFAULT_EXPOSURE_US, MIN_EXPOSURE_US, MAX_EXPOSURE_US,
     DEFAULT_GAIN, MIN_GAIN, MAX_GAIN,
 )
-from dlab.diagnostics.utils import white_turbo
 from dlab.boot import get_config
 from dlab.core.device_registry import REGISTRY
+import cmasher as cmr
 
 PIXEL_SIZE_M = 3.45e-6
 MIN_INTERVAL_US = 500_000
-
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 DATE_FORMAT = "%H:%M:%S"
 
-
-def _data_root() -> str:
+def _data_root():
     cfg = get_config() or {}
     return str((cfg.get("paths", {}) or {}).get("data_dir", r"C:/data"))
 
-def _config_path() -> str:
+def _config_path():
     return os.path.abspath(os.path.join("config", "config.yaml"))
 
-def _read_yaml(path: str) -> dict:
+def _read_yaml(path):
     try:
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}
 
-def _write_yaml(path: str, data: dict) -> None:
+def _write_yaml(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)
 
+def _resolve_cmap(key):
+    if isinstance(key, str) and key.startswith("cmr."):
+        name = key.split(".", 1)[1]
+        return getattr(cmr, name)
+    return plt.get_cmap(key)
 
 class LiveCaptureThread(QThread):
     image_signal = pyqtSignal(np.ndarray)
-
-    def __init__(self, cam: DahengController, exposure_us: int, gain: int, interval_us: int, cap_lock=None):
+    def __init__(self, cam, exposure_us, gain, interval_us, cap_lock=None):
         super().__init__()
         self.cam = cam
         self.exposure_us = exposure_us
@@ -70,14 +60,12 @@ class LiveCaptureThread(QThread):
         self._running = True
         self._lock = threading.Lock()
         self._cap_lock = cap_lock
-
-    def update_parameters(self, exposure_us: int, gain: int, interval_us: int):
+    def update_parameters(self, exposure_us, gain, interval_us):
         with self._lock:
             self.exposure_us = exposure_us
             self.gain = gain
             self.interval_s = interval_us / 1e6
-
-    def run(self) -> None:
+    def run(self):
         while self._running:
             try:
                 with self._lock:
@@ -91,17 +79,14 @@ class LiveCaptureThread(QThread):
                 time.sleep(wait_s)
             except Exception:
                 break
-
     def stop(self):
         self._running = False
-
 
 class DahengLiveWindow(QWidget):
     closed = pyqtSignal()
     gui_update_image = pyqtSignal(object)
     gui_log = pyqtSignal(str)
-
-    def __init__(self, camera_name: str = "Daheng", fixed_index: int = 1):
+    def __init__(self, camera_name="Daheng", fixed_index=1):
         super().__init__()
         self.live_running = False
         self.capture_lock = threading.Lock()
@@ -109,41 +94,33 @@ class DahengLiveWindow(QWidget):
         self.camera_name = camera_name
         self.fixed_index = fixed_index
         self.setWindowTitle(f"DahengLiveWindow - {camera_name}")
-
-        self.cam: Optional[DahengController] = None
-        self.thread: Optional[LiveCaptureThread] = None
+        self.cam = None
+        self.thread = None
         self.image_artist = None
         self.cbar = None
-        self.last_frame: Optional[np.ndarray] = None
+        self.last_frame = None
         self.fix_cbar = False
-        self.fixed_vmax: Optional[float] = None
-
-        self.cmap = white_turbo(512)
-
-        self.roi_px: Optional[Tuple[int, int, int, int]] = None
+        self.fixed_vmax = None
+        self.cmap_key = "cmr.rainforest"
+        self.cmap = _resolve_cmap(self.cmap_key)
+        self.roi_px = None
         self.roi_artist = None
-        self.rect_selector: Optional[RectangleSelector] = None
-
+        self.rect_selector = None
         self.use_roi_cb = QCheckBox("Use ROI")
         self.use_roi_cb.setChecked(False)
         self.preview_roi_cb = QCheckBox("Preview crop")
         self.preview_roi_cb.setChecked(False)
-
         self.center_w_spin = QSpinBox()
         self.center_h_spin = QSpinBox()
         for sp, dv in ((self.center_w_spin, 200), (self.center_h_spin, 200)):
-            sp.setRange(4, 4096)
-            sp.setSingleStep(10)
-            sp.setValue(dv)
-
+            sp.setRange(4, 4096); sp.setSingleStep(10); sp.setValue(dv)
         self.crosshair_visible = False
         self.crosshair_locked = False
-        self.crosshair_pos_mm: Optional[Tuple[float, float]] = None
+        self.crosshair_pos_mm = None
         self.crosshair_hline = None
         self.crosshair_vline = None
         self._mpl_cid_click = None
         self._mpl_cid_motion = None
-
         self.initUI()
         self.gui_update_image.connect(self.update_image, Qt.QueuedConnection)
         self.gui_log.connect(self.log, Qt.QueuedConnection)
@@ -151,7 +128,6 @@ class DahengLiveWindow(QWidget):
     def initUI(self):
         main_layout = QHBoxLayout(self)
         splitter = QSplitter()
-
         param_panel = QWidget()
         param_layout = QVBoxLayout(param_panel)
 
@@ -210,6 +186,16 @@ class DahengLiveWindow(QWidget):
         self.fix_cb.toggled.connect(self.fix_value_edit.setEnabled)
         param_layout.addWidget(self.fix_value_edit)
 
+        cmap_group = QGroupBox("Colormap")
+        cmap_layout = QHBoxLayout(cmap_group)
+        self.cmap_combo = QComboBox()
+        self.cmap_combo.addItems(["cmr.rainforest", "cmr.neutral", "cmr.sunburst", "turbo"])
+        self.cmap_combo.setCurrentText(self.cmap_key)
+        self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
+        cmap_layout.addWidget(QLabel("Map:"))
+        cmap_layout.addWidget(self.cmap_combo)
+        param_layout.addWidget(cmap_group)
+
         roi_group = QGroupBox("ROI")
         roi_layout = QHBoxLayout(roi_group)
         set_btn = QPushButton("Set ROI")
@@ -245,12 +231,7 @@ class DahengLiveWindow(QWidget):
 
         btn_layout = QVBoxLayout()
         def make_btn(text, slot, enabled=True):
-            b = QPushButton(text)
-            b.clicked.connect(slot)
-            b.setEnabled(enabled)
-            btn_layout.addWidget(b)
-            return b
-
+            b = QPushButton(text); b.clicked.connect(slot); b.setEnabled(enabled); btn_layout.addWidget(b); return b
         self.activate_camera_btn = make_btn("Activate Camera", self.activate_camera)
         self.deactivate_camera_btn = make_btn("Deactivate Camera", self.deactivate_camera, False)
         self.start_capture_btn = make_btn("Start Live Capture", self.start_capture, False)
@@ -258,10 +239,8 @@ class DahengLiveWindow(QWidget):
         self.save_btn = make_btn("Save Frame(s)", self.save_frames)
         param_layout.addLayout(btn_layout)
 
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
+        self.log_text = QTextEdit(); self.log_text.setReadOnly(True)
         param_layout.addWidget(self.log_text)
-
         splitter.addWidget(param_panel)
 
         plot_panel = QWidget()
@@ -279,29 +258,36 @@ class DahengLiveWindow(QWidget):
 
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
-
         main_layout.addWidget(splitter)
 
         self.shortcut_toggle_cross = QShortcut(QKeySequence("Shift+C"), self)
         self.shortcut_toggle_cross.activated.connect(self.toggle_crosshair)
-
         self._mpl_cid_click = self.canvas.mpl_connect("button_press_event", self._on_mpl_click)
         self._mpl_cid_motion = self.canvas.mpl_connect("motion_notify_event", self._on_mpl_motion)
-
         self.resize(1080, 720)
 
-    def log(self, message: str):
+    def on_cmap_changed(self, key):
+        self.cmap_key = key
+        self.cmap = _resolve_cmap(self.cmap_key)
+        if self.image_artist is not None:
+            self.image_artist.set_cmap(self.cmap)
+            if self.cbar:
+                self.cbar.update_normal(self.image_artist)
+            self.canvas.draw_idle()
+        self.log(f"Colormap set to {key}")
+
+    def log(self, message):
         now = datetime.datetime.now().strftime(DATE_FORMAT)
         self.log_text.append(f"[{now}] {message}")
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
         logging.getLogger("dlab.ui.DahengLiveWindow").info(message)
 
-    def _update_interval_field(self, exp_us: int):
+    def _update_interval_field(self, exp_us):
         interval_us = exp_us if exp_us >= MIN_INTERVAL_US else MIN_INTERVAL_US
         self.interval_edit.setText(str(interval_us))
         return interval_us
 
-    def _px_per_mm(self) -> float:
+    def _px_per_mm(self):
         return 1.0 / (PIXEL_SIZE_M * 1e3)
 
     def start_roi_selection(self):
@@ -312,7 +298,6 @@ class DahengLiveWindow(QWidget):
             try: self.rect_selector.disconnect_events()
             except Exception: pass
             self.rect_selector = None
-
         def _on_select(eclick, erelease):
             if eclick.xdata is None or eclick.ydata is None or erelease.xdata is None or erelease.ydata is None:
                 return
@@ -335,11 +320,7 @@ class DahengLiveWindow(QWidget):
             if self.rect_selector:
                 self.rect_selector.set_visible(False)
                 self.canvas.draw_idle()
-
-        self.rect_selector = RectangleSelector(
-            self.ax, _on_select, useblit=True,
-            button=[1], minspanx=2, minspany=2, spancoords='pixels', interactive=True
-        )
+        self.rect_selector = RectangleSelector(self.ax, _on_select, useblit=True, button=[1], minspanx=2, minspany=2, spancoords='pixels', interactive=True)
 
     def _draw_roi_overlay(self):
         try:
@@ -356,10 +337,7 @@ class DahengLiveWindow(QWidget):
         x0_mm, x1_mm = x0 * mm_per_px, x1 * mm_per_px
         y0_mm, y1_mm = y0 * mm_per_px, y1 * mm_per_px
         from matplotlib.patches import Rectangle
-        self.roi_artist = self.ax.add_patch(
-            Rectangle((x0_mm, y0_mm), (x1_mm - x0_mm), (y1_mm - y0_mm),
-                      fill=False, linewidth=1.5, linestyle="--")
-        )
+        self.roi_artist = self.ax.add_patch(Rectangle((x0_mm, y0_mm), (x1_mm - x0_mm), (y1_mm - y0_mm), fill=False, linewidth=1.5, linestyle="--"))
         self.canvas.draw_idle()
 
     def clear_roi(self):
@@ -478,8 +456,7 @@ class DahengLiveWindow(QWidget):
             QMessageBox.information(self, "Crosshair", "No saved position found for this camera.")
             return
         try:
-            x_mm = float(pos["x_mm"])
-            y_mm = float(pos["y_mm"])
+            x_mm = float(pos["x_mm"]); y_mm = float(pos["y_mm"])
         except Exception:
             QMessageBox.critical(self, "Crosshair", "Saved position is invalid.")
             return
@@ -504,10 +481,8 @@ class DahengLiveWindow(QWidget):
 
     def activate_camera(self):
         if self.cam:
-            try:
-                self.cam.deactivate()
-            except Exception:
-                pass
+            try: self.cam.deactivate()
+            except Exception: pass
             self.cam = None
         try:
             self.cam = DahengController(self.fixed_index)
@@ -530,10 +505,8 @@ class DahengLiveWindow(QWidget):
 
     def deactivate_camera(self):
         if self.cam:
-            try:
-                self.cam.deactivate()
-            except Exception:
-                pass
+            try: self.cam.deactivate()
+            except Exception: pass
             self.log(f"Camera {self.fixed_index} deactivated")
         for k in (f"camera:daheng:{self.camera_name.lower()}",
                   f"camera:daheng:index:{self.fixed_index}"):
@@ -573,7 +546,7 @@ class DahengLiveWindow(QWidget):
         self.start_capture_btn.setEnabled(True)
         self.stop_capture_btn.setEnabled(False)
 
-    def update_image(self, image: np.ndarray):
+    def update_image(self, image):
         if not isinstance(image, np.ndarray):
             self.log("Invalid image received")
             return
@@ -588,7 +561,6 @@ class DahengLiveWindow(QWidget):
             disp = disp[y0:y1, x0:x1]
             mm_per_px = PIXEL_SIZE_M * 1e3
             extent_mm = [x0*mm_per_px, x1*mm_per_px, y0*mm_per_px, y1*mm_per_px]
-
         vmin, vmax = float(disp.min()), float(disp.max())
         h, w = disp.shape
         if extent_mm is None:
@@ -597,12 +569,9 @@ class DahengLiveWindow(QWidget):
             extent = [0, x_mm, 0, y_mm]
         else:
             extent = extent_mm
-
         if self.image_artist is None:
             self.ax.clear()
-            self.image_artist = self.ax.imshow(
-                disp, cmap=self.cmap, vmin=vmin, vmax=vmax, extent=extent, origin="lower", aspect="equal",
-            )
+            self.image_artist = self.ax.imshow(disp, cmap=self.cmap, vmin=vmin, vmax=vmax, extent=extent, origin="lower", aspect="equal")
             self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax, fraction=0.046, pad=0.04)
         else:
             self.image_artist.set_data(disp)
@@ -611,18 +580,16 @@ class DahengLiveWindow(QWidget):
             else:
                 self.image_artist.set_clim(vmin, vmax)
             self.image_artist.set_extent(extent)
+            self.image_artist.set_cmap(self.cmap)
             if self.cbar:
                 self.cbar.update_normal(self.image_artist)
-
         if not (self.preview_roi_cb.isChecked() and self.use_roi_cb.isChecked()):
             self._draw_roi_overlay()
-
         if self.crosshair_visible:
             self._refresh_crosshair()
-
         self.canvas.draw_idle()
 
-    def on_fix_cbar(self, checked: bool):
+    def on_fix_cbar(self, checked):
         self.fix_cbar = checked
         if checked:
             try:
@@ -636,7 +603,7 @@ class DahengLiveWindow(QWidget):
             self.fixed_vmax = None
             self.log("Colorbar auto scale")
 
-    def on_fix_value_changed(self, text: str):
+    def on_fix_value_changed(self, text):
         if not self.fix_cb.isChecked() or not self.image_artist:
             return
         try:
@@ -650,7 +617,7 @@ class DahengLiveWindow(QWidget):
         except ValueError:
             pass
 
-    def _capture_one(self, exp_us: int, gain: int) -> np.ndarray:
+    def _capture_one(self, exp_us, gain):
         if not self.cam:
             raise DahengControllerError("Camera not activated.")
         return self.cam.capture_single(exp_us, gain)
@@ -672,7 +639,7 @@ class DahengLiveWindow(QWidget):
         ts_prefix = now.strftime("%Y%m%d_%H%M%S")
         stem = f"{self.camera_name}_{'Background' if self.background_cb.isChecked() else 'Image'}"
         comment = self.comment_edit.text()
-        saved: list[str] = []
+        saved = []
         for i in range(1, n_frames + 1):
             try:
                 frame = self._capture_one(exp_us, gain) if self.cam else self.last_frame
@@ -715,74 +682,20 @@ class DahengLiveWindow(QWidget):
             self.log(f"Error writing log: {e}")
             QMessageBox.critical(self, "Error", f"Error writing log: {e}")
 
-    def grab_frame_for_scan(
-        self,
-        averages: int = 1,
-        adaptive: dict | None = None,
-        dead_pixel_cleanup: bool = False,
-        background: bool = False,
-        *,
-        force_roi: bool = False,
-    ):
+    def grab_frame_for_scan(self, averages=1, adaptive=None, dead_pixel_cleanup=False, background=False, *, force_roi=False):
         if not self.cam:
             raise DahengControllerError("Camera not activated.")
         was_live = bool(self.live_running)
         if was_live:
-            try:
-                self.stop_capture()
-            except Exception:
-                pass
-        try:
-            exp_us = int(self.exposure_edit.text())
-        except ValueError:
-            exp_us = DEFAULT_EXPOSURE_US
-        try:
-            device_gain = int(self.gain_edit.text())
-        except ValueError:
-            device_gain = DEFAULT_GAIN
-        cfg = adaptive or {}
-        use_adapt   = bool(cfg.get("enabled", False))
-        target_frac = float(cfg.get("target_frac", 0.75))
-        lo_frac     = float(cfg.get("low_frac", 0.60))
-        hi_frac     = float(cfg.get("high_frac", 0.90))
-        min_us      = int(cfg.get("min_us", 20))
-        max_us      = int(cfg.get("max_us", 1_000_000))
-        max_iters   = int(cfg.get("max_iters", 6))
-
-        def _cap_once(cur_exp_us: int):
-            self.cam.set_exposure(cur_exp_us)
-            self.cam.set_gain(device_gain)
+            try: self.stop_capture()
+            except Exception: pass
+        try: exp_us = int(self.exposure_edit.text())
+        except ValueError: exp_us = DEFAULT_EXPOSURE_US
+        try: device_gain = int(self.gain_edit.text())
+        except ValueError: device_gain = DEFAULT_GAIN
+        def _cap_once(cur_exp_us):
+            self.cam.set_exposure(cur_exp_us); self.cam.set_gain(device_gain)
             return self.cam.capture_single(cur_exp_us, device_gain)
-
-        if use_adapt:
-            cur = int(exp_us)
-            for _ in range(max_iters):
-                f0 = np.asarray(_cap_once(cur), dtype=np.float64)
-                if (force_roi or self.use_roi_cb.isChecked()) and self.roi_px is not None:
-                    x0, y0, x1, y1 = self.roi_px
-                    h0, w0 = f0.shape
-                    x0 = max(0, min(w0 - 1, x0)); x1 = max(1, min(w0, x1))
-                    y0 = max(0, min(h0 - 1, y0)); y1 = max(1, min(h0, y1))
-                    f0 = f0[y0:y1, x0:x1]
-                f8 = np.clip(f0, 0, 255).astype(np.uint8)
-                nz = f8[f8 > 0]
-                if nz.size == 0:
-                    cur = int(min(max_us, max(cur * 2, min_us)))
-                    exp_us = cur
-                    continue
-                robust_max_8 = float(np.percentile(nz, 99.9))
-                frac = robust_max_8 / 255.0
-                if lo_frac <= frac <= hi_frac:
-                    break
-                scale = target_frac / max(frac, 1e-6)
-                scale = float(np.clip(scale, 0.5, 2.0))
-                next_exp = int(np.clip(cur * scale, min_us, max_us))
-                if next_exp == cur:
-                    next_exp = min(max_us, cur + 1)
-                cur = next_exp
-                self.log(f"Adapt: robust_max={robust_max_8:.1f}/255 (frac={frac:.3f}) -> exp={cur} us")
-            exp_us = int(cur)
-
         n = max(1, int(averages))
         acc = None
         for _ in range(n):
@@ -820,8 +733,7 @@ class DahengLiveWindow(QWidget):
         if self.cam:
             try: self.cam.deactivate()
             except Exception: pass
-        for k in (f"camera:daheng:{self.camera_name.lower()}",
-                  f"camera:daheng:index:{self.fixed_index}"):
+        for k in (f"camera:daheng:{self.camera_name.lower()}", f"camera:daheng:index:{self.fixed_index}"):
             REGISTRY.unregister(k)
         try:
             if self._mpl_cid_click is not None:
@@ -832,7 +744,6 @@ class DahengLiveWindow(QWidget):
             pass
         self.closed.emit()
         super().closeEvent(event)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

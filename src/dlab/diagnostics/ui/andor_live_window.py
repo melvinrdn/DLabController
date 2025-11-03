@@ -1,70 +1,44 @@
 from __future__ import annotations
-import sys
-import time
-import datetime
-import os
-import numpy as np
-import matplotlib.pyplot as plt
+import sys, time, datetime, os, numpy as np, matplotlib.pyplot as plt, yaml, logging, threading
 from PIL import Image, PngImagePlugin
-import yaml
-
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QMessageBox, QSplitter, QCheckBox, QSpinBox, QGroupBox,
-    QDoubleSpinBox, QShortcut
+    QDoubleSpinBox, QShortcut, QComboBox
 )
 from PyQt5.QtGui import QIntValidator, QKeySequence
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-
-import logging
-import threading
+from scipy.ndimage import rotate as sp_rotate
 
 from dlab.hardware.wrappers.andor_controller import (
     AndorController, AndorControllerError,
     DEFAULT_EXPOSURE_US, MIN_EXPOSURE_US, MAX_EXPOSURE_US
 )
-from dlab.diagnostics.utils import white_turbo
 from dlab.boot import get_config
 from dlab.core.device_registry import REGISTRY
 from dlab.hardware.wrappers.andor_registry_adapter import AndorRegistryCamera
+import cmasher as cmr
 
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
-
-LOG_FORMAT = "[%(asctime)s] %(message)s"
 DATE_FORMAT = "%H:%M:%S"
 
-try:
-    from skimage.transform import rotate as _sk_rotate
-    _HAS_SKIMAGE = True
-except Exception:
-    _HAS_SKIMAGE = False
-try:
-    from scipy.ndimage import rotate as _sp_rotate
-    _HAS_SCIPY = True
-except Exception:
-    _HAS_SCIPY = False
-
-def _data_root() -> str:
+def _data_root():
     cfg = get_config() or {}
     return str((cfg.get("paths", {}) or {}).get("data_dir", r"C:/data"))
 
-def _config_path() -> str:
+def _config_path():
     return os.path.join("config", "config.yaml")
 
-class QTextEditHandler(logging.Handler):
-    def __init__(self, widget: QTextEdit):
-        super().__init__()
-        self.widget = widget
-        self.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
-    def emit(self, record: logging.LogRecord) -> None:
-        msg = self.format(record)
-        self.widget.append(msg)
-        self.widget.verticalScrollBar().setValue(self.widget.verticalScrollBar().maximum())
+def _resolve_cmap(key):
+    if isinstance(key, str) and key.startswith("cmr."):
+        name = key.split(".", 1)[1]
+        return getattr(cmr, name)
+    return plt.get_cmap(key)
 
 class LiveCaptureThread(QThread):
     image_signal = pyqtSignal(np.ndarray)
-    def __init__(self, camera_controller: AndorController, exposure: int, update_interval_ms: int):
+    def __init__(self, camera_controller, exposure, update_interval_ms):
         super().__init__()
         self.camera_controller = camera_controller
         self.exposure = exposure
@@ -72,12 +46,12 @@ class LiveCaptureThread(QThread):
         self.interval_sec = update_interval_ms / 1000.0
         self._running = True
         self._param_lock = threading.Lock()
-    def update_parameters(self, exposure: int, update_interval_ms: int):
+    def update_parameters(self, exposure, update_interval_ms):
         with self._param_lock:
             self.exposure = exposure
             self.update_interval_ms = update_interval_ms
             self.interval_sec = update_interval_ms / 1000.0
-    def _capture_one(self, exp_us: int) -> np.ndarray:
+    def _capture_one(self, exp_us):
         if hasattr(self.camera_controller, "capture_single"):
             return self.camera_controller.capture_single(exp_us)
         return self.camera_controller.take_image(exp_us, 1)
@@ -104,15 +78,13 @@ class AndorLiveWindow(QWidget):
         super().__init__()
         self.setWindowTitle("Live Andor Camera Feed")
         self.setAttribute(Qt.WA_DeleteOnClose)
-        self.cam: AndorController | None = None
-        self.capture_thread: LiveCaptureThread | None = None
+        self.cam = None
+        self.capture_thread = None
         self.image_artist = None
         self.cbar = None
-        self.current_interval_ms = None
-        self.fixed_cbar_max: float | None = None
-        self.last_frame: np.ndarray | None = None
+        self.fixed_cbar_max = None
+        self.last_frame = None
         self.external_image_signal.connect(self.update_image)
-        self._logger = logging.getLogger("dlab.ui.AndorLiveWindow")
         self.crosshair_visible = False
         self.crosshair_locked = False
         self.crosshair_pos = None
@@ -121,6 +93,8 @@ class AndorLiveWindow(QWidget):
         self.line_mode_active = False
         self.line_start = None
         self.line_artists = []
+        self.cmap_key = "cmr.rainforest"
+        self.cmap = _resolve_cmap(self.cmap_key)
         self.initUI()
     def initUI(self):
         main_layout = QHBoxLayout(self)
@@ -177,6 +151,16 @@ class AndorLiveWindow(QWidget):
         self.background_checkbox = QCheckBox("Background")
         self.background_checkbox.setChecked(False)
         param_layout.addWidget(self.background_checkbox)
+
+        cmap_group = QGroupBox("Colormap")
+        cmap_layout = QHBoxLayout(cmap_group)
+        self.cmap_combo = QComboBox()
+        self.cmap_combo.addItems(["cmr.rainforest", "cmr.neutral", "cmr.sunburst", "cmr.freeze", "turbo"])
+        self.cmap_combo.setCurrentText(self.cmap_key)
+        self.cmap_combo.currentTextChanged.connect(self.on_cmap_changed)
+        cmap_layout.addWidget(QLabel("Map:"))
+        cmap_layout.addWidget(self.cmap_combo)
+        param_layout.addWidget(cmap_group)
 
         ch_grp = QGroupBox("Crosshair")
         ch_l = QHBoxLayout(ch_grp)
@@ -262,18 +246,11 @@ class AndorLiveWindow(QWidget):
         self.log_text.setReadOnly(True)
         param_layout.addWidget(self.log_text)
 
-        ui_logger = logging.getLogger("dlab.ui.AndorLiveWindow")
-        ui_logger.handlers = []
-        ui_logger.setLevel(logging.INFO)
-        ui_logger.propagate = True
-
         splitter.addWidget(param_panel)
 
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
-        self.figure, (self.ax_img, self.ax_profile) = plt.subplots(
-            2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True
-        )
+        self.figure, (self.ax_img, self.ax_profile) = plt.subplots(2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True)
         self.ax_img.set_title("Live Andor Camera Image")
         self.ax_profile.set_title("Integrated Profile")
         self.figure.subplots_adjust(right=0.85)
@@ -283,34 +260,30 @@ class AndorLiveWindow(QWidget):
 
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 4)
-
         main_layout.addWidget(splitter)
         self.resize(1080, 720)
         self.canvas.mpl_connect("motion_notify_event", self._on_mouse_move)
         self.canvas.mpl_connect("button_press_event", self._on_mouse_press)
         self._shortcut_cross = QShortcut(QKeySequence("Shift+C"), self)
         self._shortcut_cross.activated.connect(self.toggle_crosshair)
-    def log(self, message: str):
+    def log(self, message):
         current_time = datetime.datetime.now().strftime(DATE_FORMAT)
         self.log_text.append(f"[{current_time}] {message}")
         self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
         logging.getLogger("dlab.ui.AndorLiveWindow").info(message)
-    def _profile_axis_for_display(self) -> int:
+    def _profile_axis_for_display(self):
         if not self.pre_enable_cb.isChecked():
             return 1
         ang = float(self.pre_angle_sb.value()) % 180.0
         ang = min(ang, 180.0 - ang)
         return 0 if ang > 45.0 else 1
-    def _display_preprocess(self, image: np.ndarray) -> np.ndarray:
+    def _display_preprocess(self, image):
         out = image
         if self.pre_enable_cb.isChecked():
             angle = float(self.pre_angle_sb.value())
             if abs(angle) > 1e-9:
                 try:
-                    if _HAS_SKIMAGE:
-                        out = _sk_rotate(out, angle, resize=True, order=3, mode="edge", preserve_range=True).astype(image.dtype)
-                    elif _HAS_SCIPY:
-                        out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
+                    out = sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
                 except Exception:
                     pass
             y0, y1 = int(self.pre_y0_sb.value()), int(self.pre_y1_sb.value())
@@ -333,6 +306,15 @@ class AndorLiveWindow(QWidget):
                     self.cam.set_exposure(exposure)
         except ValueError:
             pass
+    def on_cmap_changed(self, key):
+        self.cmap_key = key
+        self.cmap = _resolve_cmap(self.cmap_key)
+        if self.image_artist is not None:
+            self.image_artist.set_cmap(self.cmap)
+            if self.cbar:
+                self.cbar.update_normal(self.image_artist)
+            self.canvas.draw_idle()
+        self.log(f"Colormap set to {key}")
     def activate_camera(self):
         try:
             self.cam = AndorController(device_index=0)
@@ -355,8 +337,8 @@ class AndorLiveWindow(QWidget):
             self.current_exposure = DEFAULT_EXPOSURE_US
         def enable_debug(self, *_, **__): pass
         def activate(self): pass
-        def set_exposure(self, exposure: int): self.current_exposure = exposure
-        def capture_single(self, exposure_us: int) -> np.ndarray:
+        def set_exposure(self, exposure): self.current_exposure = exposure
+        def capture_single(self, exposure_us):
             amp = 10000 * (exposure_us / max(DEFAULT_EXPOSURE_US, 1))
             sigma = 50
             cy, cx = self.image_shape[0] // 2, self.image_shape[1] // 2
@@ -425,7 +407,7 @@ class AndorLiveWindow(QWidget):
             self.capture_thread = None
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
-    def on_fix_cbar(self, checked: bool):
+    def on_fix_cbar(self, checked):
         if checked:
             try:
                 self.fixed_cbar_max = float(self.fix_value_edit.text())
@@ -436,7 +418,7 @@ class AndorLiveWindow(QWidget):
         else:
             self.fixed_cbar_max = None
             self.log("Colorbar auto scale")
-    def on_fix_value_changed(self, text: str):
+    def on_fix_value_changed(self, text):
         if not self.fix_cbar_checkbox.isChecked() or not self.image_artist:
             return
         try:
@@ -475,10 +457,8 @@ class AndorLiveWindow(QWidget):
         self.log("Line: click to set start point.")
     def clear_lines(self):
         for ln in list(self.line_artists):
-            try:
-                ln.remove()
-            except Exception:
-                pass
+            try: ln.remove()
+            except Exception: pass
         self.line_artists.clear()
         self.line_start = None
         self.line_mode_active = False
@@ -565,7 +545,7 @@ class AndorLiveWindow(QWidget):
         self._refresh_crosshair()
         self.canvas.draw_idle()
         self.log(f"Went to saved crosshair: {self.crosshair_pos}")
-    def update_image(self, image: np.ndarray):
+    def update_image(self, image):
         self.last_frame = image
         disp = self._display_preprocess(image)
         max_val = float(np.max(disp))
@@ -573,7 +553,7 @@ class AndorLiveWindow(QWidget):
         title_text = f"Live Andor Camera Image - Max: {max_val:.0f}"
         if self.image_artist is None:
             self.ax_img.clear()
-            self.image_artist = self.ax_img.imshow(disp, cmap=white_turbo(512))
+            self.image_artist = self.ax_img.imshow(disp, cmap=self.cmap)
             self.ax_img.set_title(title_text)
             self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax_img, fraction=0.046, pad=0.04)
         else:
@@ -588,6 +568,7 @@ class AndorLiveWindow(QWidget):
             else:
                 self.fixed_cbar_max = None
                 self.image_artist.set_clim(min_val, max_val)
+            self.image_artist.set_cmap(self.cmap)
             self.cbar.update_normal(self.image_artist)
         axis = self._profile_axis_for_display()
         profile = np.sum(disp, axis=axis)
@@ -606,7 +587,7 @@ class AndorLiveWindow(QWidget):
             self.ax_profile.set_xlim(0, disp.shape[1])
         self._refresh_crosshair()
         self.canvas.draw_idle()
-    def _capture_one(self, exp_us: int) -> np.ndarray:
+    def _capture_one(self, exp_us):
         if self.cam is None:
             raise AndorControllerError("Camera not activated.")
         if hasattr(self.cam, "capture_single"):
@@ -633,7 +614,7 @@ class AndorLiveWindow(QWidget):
         is_bg = self.background_checkbox.isChecked()
         ts_prefix = now.strftime("%Y%m%d_%H%M%S")
         stem = "AndorCamera_MCP_Background" if is_bg else "AndorCamera_MCP_Image"
-        saved_files: list[str] = []
+        saved_files = []
         for i in range(1, n_frames + 1):
             try:
                 frame = self._capture_one(exposure_us) if self.cam else self.last_frame
