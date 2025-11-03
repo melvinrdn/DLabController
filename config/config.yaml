@@ -49,8 +49,11 @@ metrics:
   grafana_url: http://localhost:3000/goto/FsiuGkbHg?orgId=1
 crosshair:
   daheng_1:
-    x_mm: 1.382122250588573
-    y_mm: 2.927346500615851
+    x_mm: 2.50514254723088
+    y_mm: 2.8337411632219167
+  daheng_2:
+    x_mm: 2.576213086981695
+    y_mm: 2.103298574425944
 andor:
   crosshair:
     x: 114.56372885154052

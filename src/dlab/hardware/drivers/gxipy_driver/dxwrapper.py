@@ -1,29 +1,24 @@
 #!/usr/bin/python
-# -*- coding:utf-8 -*-
-# -*-mode:python ; tab-width:4 -*- ex:set tabstop=4 shiftwidth=4 expandtab: -*-
-#
+# -*- coding: utf-8 -*-
 
 from ctypes import *
-import sys
 import os
+import sys
+from ctypes import WinDLL
 
-if sys.platform == 'linux2' or sys.platform == 'linux':
-    if os.path.exists('/usr/lib/libdximageproc.so') : 
-        filepath = '/usr/lib/libdximageproc.so'
-    else:
-        filepath = '/usr/lib/libgxiapi.so'
-    try:
-        dll = CDLL(filepath)
-    except OSError:
-        print('Cannot find libdximageproc.so or libgxiapi.so.')
-else:
-    try:
-        if (sys.version_info.major == 3 and sys.version_info.minor >= 8) or (sys.version_info.major > 3):
-            dll = WinDLL('DxImageProc.dll', winmode=0)
-        else:
-            dll = WinDLL('DxImageProc.dll')
-    except OSError:
-        print('Cannot find DxImageProc.dll.')
+# --- Paths (adjust if your SDK is elsewhere) ---
+SDK_DIR     = r"C:\Program Files\Daheng Imaging\GalaxySDK\APIDll\Win64"
+DX_DLL_PATH = rf"{SDK_DIR}\DxImageProc.dll"
+GENICAM_DIR = r"C:\Program Files\Daheng Imaging\GalaxySDK\GenICam\bin\Win64_x64"
+
+os.add_dll_directory(SDK_DIR)
+if os.path.isdir(GENICAM_DIR):
+    os.add_dll_directory(GENICAM_DIR)
+
+try:
+    dll = WinDLL(DX_DLL_PATH, winmode=0) if sys.version_info >= (3, 8) else WinDLL(DX_DLL_PATH)
+except OSError as e:
+    raise RuntimeError(f"Failed to load DxImageProc.dll from '{DX_DLL_PATH}': {e}") from e
 
 
 # status  definition

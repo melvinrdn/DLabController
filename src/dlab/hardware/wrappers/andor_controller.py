@@ -5,12 +5,10 @@ from typing import Optional
 
 import numpy as np
 from pylablib.devices import Andor
+import pylablib as pylablib
 
-# Defaults (microseconds)
-DEFAULT_EXPOSURE_US = 500_000  # 100 ms
+DEFAULT_EXPOSURE_US = 500_000
 DEFAULT_AVERAGES = 1
-
-# Exposure limits (microseconds) — tune to your camera
 MIN_EXPOSURE_US = 1_000
 MAX_EXPOSURE_US = 10000000
 
@@ -47,6 +45,7 @@ class AndorController:
             return  # already active
 
         try:
+            pylablib.par['devices/dlls/andor_sdk2']='src/dlab/hardware/drivers/andor_driver'
             cam = Andor.AndorSDK2Camera()  # selects first camera by default
             # If you need a specific camera/index, adapt here (enumeration depends on pylablib version)
             exp_us = self._clamp_exposure(DEFAULT_EXPOSURE_US)

@@ -1,24 +1,42 @@
 #!/usr/bin/python
-# -*-mode:python ; tab-width:4 -*- ex:set tabstop=4 shiftwidth=4 expandtab: -*-
-# -*- coding:utf-8 -*-
+# -*- coding: utf-8 -*-
 
 from ctypes import *
+import os
 import sys
+from ctypes import WinDLL, c_int
+
+# --- Paths (adjust if your SDK is elsewhere) ---
+SDK_DIR      = r"C:\Program Files\Daheng Imaging\GalaxySDK\APIDll\Win64"
+GENICAM_DIR  = r"C:\Program Files\Daheng Imaging\GalaxySDK\GenICam\bin\Win64_x64"
+GENTL_DIR    = r"C:\Program Files\Daheng Imaging\GalaxySDK\GenTL\Win64"
+GX_DLL_PATH  = rf"{SDK_DIR}\GxIAPI.dll"
+
+os.add_dll_directory(SDK_DIR)                 # GxIAPI, DxImageProc, runtimes
+if os.path.isdir(GENICAM_DIR):
+    os.add_dll_directory(GENICAM_DIR)         # GenICam binaries (if present)
+
+os.environ.setdefault("GENICAM_GENTL64_PATH", GENTL_DIR)
+
+dll = None
+try:
+    dll = WinDLL(GX_DLL_PATH, winmode=0) if sys.version_info >= (3, 8) else WinDLL(GX_DLL_PATH)
+except OSError as e:
+    raise RuntimeError(f"Failed to load GxIAPI.dll from '{GX_DLL_PATH}': {e}") from e
+
+gx_init_lib  = dll.GXInitLib
+gx_init_lib.restype  = c_int
+gx_init_lib.argtypes = []
+
+gx_close_lib = dll.GXCloseLib
+gx_close_lib.restype  = c_int
+gx_close_lib.argtypes = []
+
+ret = gx_init_lib()
+if ret != 0:
+    raise RuntimeError(f"GXInitLib failed with code {ret}")
 
 
-if sys.platform == 'linux2' or sys.platform == 'linux':
-    try:
-        dll = CDLL('/usr/lib/libgxiapi.so')
-    except OSError:
-        print("Cannot find libgxiapi.so.")
-else:
-    try:
-        if (sys.version_info.major == 3 and sys.version_info.minor >= 8) or (sys.version_info.major > 3):
-            dll = WinDLL('GxIAPI.dll', winmode=0)
-        else:
-            dll = WinDLL('GxIAPI.dll')
-    except OSError:
-        print('Cannot find GxIAPI.dll.')
 
 
 # Error code
