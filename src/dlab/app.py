@@ -92,10 +92,8 @@ class DlabControllerWindow(QMainWindow):
         windows_group.setLayout(view_layout)
         left_panel.addWidget(windows_group)
 
-        grafana_url = (get_config() or {}).get("metrics", {}).get(
-            "grafana_url", "http://localhost:3000"
-        )
-        self.path_label = QLabel(f'Dashboard URL: <a href="{grafana_url}">{grafana_url}</a>')
+        dashboard_url = "http://localhost:3000/d/ad6bbh8/pressure-dashboard?orgId=1&from=now-30m&to=now&timezone=browser&refresh=auto"
+        self.path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
         self.path_label.setOpenExternalLinks(True)
         left_panel.addWidget(self.path_label)
 

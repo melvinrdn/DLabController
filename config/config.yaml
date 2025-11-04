@@ -8,8 +8,6 @@ paths:
 runtime:
   pressure_update_interval_s: 5.0
   log_level: INFO
-devices:
-  pressure: false
 stages:
   default_ids:
     0: '83837714'
@@ -42,11 +40,8 @@ slm:
   green_default: ressources/saved_settings/SLM_green/green_default_settings.txt
 avaspec:
   calibration_file: ressources/calibration/avaspec/avaspec_calibration_1030nm.dat
-ports:
-  pfeiffer: COM9
-metrics:
-  prometheus_port: 8000
-  grafana_url: http://localhost:3000/goto/FsiuGkbHg?orgId=1
+pressure:
+  port: COM3
 crosshair:
   daheng_1:
     x_mm: 2.50514254723088
