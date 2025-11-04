@@ -15,7 +15,6 @@ from dlab.diagnostics.utils import GUI_LOG_DATE_FORMAT
 
 CFG = bootstrap(ROOT / "config" / "config.yaml")
 
-
 class DlabControllerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -91,7 +90,12 @@ class DlabControllerWindow(QMainWindow):
 
         windows_group.setLayout(view_layout)
         left_panel.addWidget(windows_group)
-
+        
+        """
+        To run Grafana, Windows powershell:
+        cd C:\Prometheus
+        .\prometheus.exe --config.file=prometheus.yml
+        """
         dashboard_url = "http://localhost:3000/d/ad6bbh8/pressure-dashboard?orgId=1&from=now-30m&to=now&timezone=browser&refresh=auto"
         self.path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
         self.path_label.setOpenExternalLinks(True)
