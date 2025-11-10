@@ -139,6 +139,7 @@ class DlabControllerWindow(QMainWindow):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
         if self.avaspec_window is None:
             self.avaspec_window = AvaspecLive()
+            self.avaspec_window.closed.connect(self.on_avaspec_window_closed)
             self.avaspec_window.show()
             self.avaspec_window.raise_()
             self.avaspec_window.activateWindow()

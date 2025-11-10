@@ -57,9 +57,11 @@ class MeasureThread(QThread):
         self.requestInterruption()
 
 class AvaspecLive(QWidget):
+    closed = pyqtSignal()
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Avaspec Live")
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         self.ctrl = None
         self.th = None
         self._handles = []
@@ -475,6 +477,79 @@ class AvaspecLive(QWidget):
             self.btn_cal_toggle.setText("Calibration: OFF")
             self.log_msg(f"Calibration failed: {e}")
             QMessageBox.warning(self, "Calibration", f"Failed: {e}")
+            
+    def _safe_shutdown(self):
+        if self.th is not None:
+            try:
+                self.log_msg("Stopping live thread...")
+                th = self.th
+                self.th = None
+                th.stop()
+                th.wait(2000)
+                try:
+                    th.finished.disconnect(self._on_thread_finished)
+                except Exception:
+                    pass
+                try:
+                    th.error.disconnect(self._on_thread_error)
+                except Exception:
+                    pass
+                try:
+                    th.data_ready.disconnect(self._on_data)
+                except Exception:
+                    pass
+            except Exception as e:
+                self.log_msg(f"Error stopping thread: {e}")
+
+        try:
+            if self.ctrl is not None:
+                self.log_msg("Deactivating spectrometer...")
+                try:
+                    self.ctrl.deactivate()
+                except Exception as e:
+                    self.log_msg(f"Deactivate failed: {e}")
+        finally:
+            try:
+                if getattr(self, "_reg_key", None):
+                    REGISTRY.unregister(self._reg_key)
+            except Exception:
+                pass
+            self._reg_key = None
+            self.ctrl = None
+
+        try:
+            if getattr(self, "ax", None) is not None:
+                self.ax.cla()
+            if getattr(self, "canvas", None) is not None:
+                self.canvas.draw_idle()
+        except Exception:
+            pass
+
+        try:
+            self.btn_start.setEnabled(True)
+            self.btn_stop.setEnabled(False)
+            self.btn_deact.setEnabled(self.ctrl is not None)
+        except Exception:
+            pass
+
+        self.log_msg("AvaspecLive shutdown complete.")
+
+    def closeEvent(self, event):
+        try:
+            self._safe_shutdown()
+        finally:
+            try:
+                self.closed.emit()
+            except Exception:
+                pass
+        super().closeEvent(event)
+
+    def __del__(self):
+        try:
+            self._safe_shutdown()
+        except Exception:
+            pass
+
 
 def main():
     app = QApplication(sys.argv)

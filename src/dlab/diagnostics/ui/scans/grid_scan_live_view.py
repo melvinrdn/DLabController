@@ -11,17 +11,9 @@ from PyQt5.QtWidgets import (
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
+import cmasher as cmr 
+from scipy.ndimage import rotate as _sp_rotate
 
-try:
-    from skimage.transform import rotate as _sk_rotate
-    _HAS_SKIMAGE = True
-except Exception:
-    _HAS_SKIMAGE = False
-try:
-    from scipy.ndimage import rotate as _sp_rotate
-    _HAS_SCIPY = True
-except Exception:
-    _HAS_SCIPY = False
 
 from dlab.core.device_registry import REGISTRY
 
@@ -242,10 +234,7 @@ class AndorGridScanLiveView(QWidget):
         out = image
         angle = float(self.angle_sb.value())
         if abs(angle) > 1e-9:
-            if _HAS_SKIMAGE:
-                out = _sk_rotate(out, angle, resize=True, order=3, mode="edge", preserve_range=True).astype(image.dtype)
-            elif _HAS_SCIPY:
-                out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
+            out = _sp_rotate(out, angle, reshape=True, order=3, mode="nearest").astype(image.dtype)
         y0, y1 = int(self.y0_sb.value()), int(self.y1_sb.value())
         x0, x1 = int(self.x0_sb.value()), int(self.x1_sb.value())
         h, w = out.shape
@@ -464,7 +453,7 @@ class _Panel(QWidget):
     def _ensure_heatmap_artist(self) -> None:
         self.ax.cla()
         mat = np.zeros((max(1, self._y_len), 1), dtype=float)
-        self._im = self.ax.imshow(mat, origin="lower", aspect="auto", cmap='turbo')
+        self._im = self.ax.imshow(mat, origin="lower", aspect="auto", cmap='cmr.rainforest')
         self.ax.set_xlabel("pixel")
         self.ax.set_ylabel("Y value")
         self._line = None
@@ -598,7 +587,7 @@ class AvaspecGridScanLiveView(QWidget):
         bl.addLayout(ctrl)
         self.fig_map = plt.figure(figsize=(5.4, 3.2))
         self.ax_map = self.fig_map.add_subplot(111)
-        self.im_map = self.ax_map.imshow(np.zeros((1, 1)), origin="lower", aspect="auto", cmap='turbo')
+        self.im_map = self.ax_map.imshow(np.zeros((1, 1)), origin="lower", aspect="auto", cmap='cmr.rainforest')
         self.ax_map.set_xlabel("Wavelength (nm)")
         self.ax_map.set_ylabel("Stage value")
         self.canvas_map = FigureCanvas(self.fig_map)
@@ -779,7 +768,7 @@ class AvaspecGridScanLiveView(QWidget):
                 M = np.zeros((self._spec_mat.shape[0], 1))
                 wl = np.array([0.0])
             M = self._maybe_normalize(M)
-            self.im_map = self.ax_map.imshow(M, origin="lower", aspect="auto", cmap='turbo')
+            self.im_map = self.ax_map.imshow(M, origin="lower", aspect="auto", cmap='cmr.rainforest')
             self.ax_map.set_xlabel("Wavelength (nm)")
             self.ax_map.set_ylabel(self._y_source)
             if self._spec_yvals is not None and self._spec_yvals.size:
