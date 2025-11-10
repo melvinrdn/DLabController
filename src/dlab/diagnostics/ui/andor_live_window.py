@@ -251,7 +251,7 @@ class AndorLiveWindow(QWidget):
         plot_panel = QWidget()
         plot_layout = QVBoxLayout(plot_panel)
         self.figure, (self.ax_img, self.ax_profile) = plt.subplots(2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True)
-        self.ax_img.set_title("Live Andor Camera Image")
+        self.ax_img.set_title("Andor Camera Image")
         self.ax_profile.set_title("Integrated Profile")
         self.figure.subplots_adjust(right=0.85)
         self.canvas = FigureCanvas(self.figure)
@@ -548,9 +548,10 @@ class AndorLiveWindow(QWidget):
     def update_image(self, image):
         self.last_frame = image
         disp = self._display_preprocess(image)
+        sum_val = float(np.sum(disp))
         max_val = float(np.max(disp))
         min_val = float(np.min(disp))
-        title_text = f"Live Andor Camera Image - Max: {max_val:.0f}"
+        title_text = f"Sum: {sum_val:.0f}, Max: {max_val:.0f}"
         if self.image_artist is None:
             self.ax_img.clear()
             self.image_artist = self.ax_img.imshow(disp, cmap=self.cmap)
@@ -607,13 +608,13 @@ class AndorLiveWindow(QWidget):
             return
         now = datetime.datetime.now()
         base_dir = _data_root()
-        dir_path = os.path.join(base_dir, now.strftime("%Y-%m-%d"), "AndorCamera")
+        dir_path = os.path.join(base_dir, now.strftime("%Y-%m-%d"), "AndorCam_1")
         os.makedirs(dir_path, exist_ok=True)
         mcp_voltage_val = self.mcp_voltage_edit.text()
         comment_text = self.comment_edit.text()
         is_bg = self.background_checkbox.isChecked()
         ts_prefix = now.strftime("%Y%m%d_%H%M%S")
-        stem = "AndorCamera_MCP_Background" if is_bg else "AndorCamera_MCP_Image"
+        stem = "AndorCam_1_Background" if is_bg else "AndorCam_1_Image"
         saved_files = []
         for i in range(1, n_frames + 1):
             try:

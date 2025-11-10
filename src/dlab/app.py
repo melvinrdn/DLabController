@@ -95,6 +95,7 @@ class DlabControllerWindow(QMainWindow):
         To run Grafana, Windows powershell:
         cd C:\Prometheus
         .\prometheus.exe --config.file=prometheus.yml
+        On Grafana: user: admin password: admin
         """
         dashboard_url = "http://localhost:3000/d/ad6bbh8/pressure-dashboard?orgId=1&from=now-30m&to=now&timezone=browser&refresh=auto"
         self.path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
@@ -135,10 +136,9 @@ class DlabControllerWindow(QMainWindow):
         self.append_log("Andor window closed.")
 
     def open_avaspec_window(self):
-        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
+        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
         if self.avaspec_window is None:
-            self.avaspec_window = AvaspecLiveWindow()
-            self.avaspec_window.closed.connect(self.on_avaspec_window_closed)
+            self.avaspec_window = AvaspecLive()
             self.avaspec_window.show()
             self.avaspec_window.raise_()
             self.avaspec_window.activateWindow()
