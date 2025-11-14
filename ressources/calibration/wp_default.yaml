@@ -1,5 +1,5 @@
 wp_defaults:
-  '1': wp1/calib_2025_09_02.txt
+  '1': wp1/default_wp1.txt
   '2': wp2/calib_2025_09_02.txt
   '3': wp3/default_wp3.txt
   '4': wp4/calib_2025_09_02.txt
