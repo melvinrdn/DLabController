@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
-from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView, AvaspecGridScanLiveView
+from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView
 import logging
 logger = logging.getLogger("dlab.scans.grid_scan_tab")
 
@@ -528,8 +528,6 @@ class GridScanTab(QWidget):
         self.abort_btn = QPushButton("Abort"); self.abort_btn.setEnabled(False); self.abort_btn.clicked.connect(self._abort)
         self.live_btn = QPushButton("Live Matrix View (Andor)"); self.live_btn.clicked.connect(self._open_live_view)
         ctl.addWidget(self.live_btn)
-        self.spec_live_btn = QPushButton("Live Matrix View (Avaspec)"); self.spec_live_btn.clicked.connect(self._open_avaspec_live_view)
-        ctl.addWidget(self.spec_live_btn)
         self.prog = QProgressBar(); self.prog.setMinimum(0); self.prog.setValue(0)
         ctl.addWidget(self.start_btn); ctl.addWidget(self.abort_btn); ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
@@ -876,24 +874,13 @@ class GridScanTab(QWidget):
         andor_keys = self._read_andor_keys_from_cam_table()
         need_new = (self._live_view is None or sip.isdeleted(self._live_view) or not self._live_view.isVisible())
         if need_new:
-            self._live_view = AndorGridScanLiveView(self)
+            self._live_view = AndorGridScanLiveView(None)
             self._live_view.destroyed.connect(lambda: setattr(self, "_live_view", None))
             self._live_view.preconfigure(axes, andor_keys)
         else:
             self._live_view.set_context(axes, andor_keys, preserve=True)
         self._live_view.show(); self._live_view.raise_(); self._live_view.activateWindow()
         
-    def _open_avaspec_live_view(self) -> None:
-        axes = self._read_axes_from_table()
-        need_new = (self._spec_live is None or sip.isdeleted(self._spec_live) or not self._spec_live.isVisible())
-        if need_new:
-            self._spec_live = AvaspecGridScanLiveView(self)
-            self._spec_live.destroyed.connect(lambda: setattr(self, "_spec_live", None))
-            self._spec_live.preconfigure(axes)
-        else:
-            self._spec_live.set_context(axes, preserve=True)
-        self._spec_live.show(); self._spec_live.raise_(); self._spec_live.activateWindow()
-
     def _start(self) -> None:
         try:
             p = self._collect_params()

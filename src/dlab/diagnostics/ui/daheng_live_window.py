@@ -114,11 +114,21 @@ class DahengLiveWindow(QWidget):
         self.center_h_spin = QSpinBox()
         for sp, dv in ((self.center_w_spin, 200), (self.center_h_spin, 200)):
             sp.setRange(4, 4096); sp.setSingleStep(10); sp.setValue(dv)
+
+        # Crosshair 1
         self.crosshair_visible = False
         self.crosshair_locked = False
         self.crosshair_pos_mm = None
         self.crosshair_hline = None
         self.crosshair_vline = None
+
+        # Crosshair 2
+        self.crosshair2_visible = False
+        self.crosshair2_locked = False
+        self.crosshair2_pos_mm = None
+        self.crosshair2_hline = None
+        self.crosshair2_vline = None
+
         self._mpl_cid_click = None
         self._mpl_cid_motion = None
         self.initUI()
@@ -214,19 +224,38 @@ class DahengLiveWindow(QWidget):
         param_layout.addWidget(roi_group)
 
         xhair_group = QGroupBox("Crosshair")
-        xh_layout = QHBoxLayout(xhair_group)
-        self.btn_xhair_toggle = QPushButton("Toggle (Shift+C)")
+        xh_layout = QVBoxLayout(xhair_group)
+
+        row1 = QHBoxLayout()
+        self.btn_xhair_toggle = QPushButton("X1 Toggle (Shift+C)")
         self.btn_xhair_toggle.clicked.connect(self.toggle_crosshair)
-        self.btn_xhair_lock = QPushButton("Lock/Unlock")
+        self.btn_xhair_lock = QPushButton("X1 Lock/Unlock")
         self.btn_xhair_lock.clicked.connect(self.toggle_lock_manual)
-        self.btn_xhair_save = QPushButton("Save Crosshair Position")
-        self.btn_xhair_goto = QPushButton("Go to Saved Position")
+        self.btn_xhair_save = QPushButton("X1 Save Pos")
+        self.btn_xhair_goto = QPushButton("X1 Go To Saved")
         self.btn_xhair_save.clicked.connect(self.save_crosshair_position)
         self.btn_xhair_goto.clicked.connect(self.goto_saved_crosshair_position)
-        xh_layout.addWidget(self.btn_xhair_toggle)
-        xh_layout.addWidget(self.btn_xhair_lock)
-        xh_layout.addWidget(self.btn_xhair_save)
-        xh_layout.addWidget(self.btn_xhair_goto)
+        row1.addWidget(self.btn_xhair_toggle)
+        row1.addWidget(self.btn_xhair_lock)
+        row1.addWidget(self.btn_xhair_save)
+        row1.addWidget(self.btn_xhair_goto)
+        xh_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        self.btn_xhair2_toggle = QPushButton("X2 Toggle (Ctrl+D)")
+        self.btn_xhair2_toggle.clicked.connect(self.toggle_crosshair2)
+        self.btn_xhair2_lock = QPushButton("X2 Lock/Unlock")
+        self.btn_xhair2_lock.clicked.connect(self.toggle_lock_manual2)
+        self.btn_xhair2_save = QPushButton("X2 Save Pos")
+        self.btn_xhair2_goto = QPushButton("X2 Go To Saved")
+        self.btn_xhair2_save.clicked.connect(self.save_crosshair2_position)
+        self.btn_xhair2_goto.clicked.connect(self.goto_saved_crosshair2_position)
+        row2.addWidget(self.btn_xhair2_toggle)
+        row2.addWidget(self.btn_xhair2_lock)
+        row2.addWidget(self.btn_xhair2_save)
+        row2.addWidget(self.btn_xhair2_goto)
+        xh_layout.addLayout(row2)
+
         param_layout.addWidget(xhair_group)
 
         btn_layout = QVBoxLayout()
@@ -262,6 +291,10 @@ class DahengLiveWindow(QWidget):
 
         self.shortcut_toggle_cross = QShortcut(QKeySequence("Shift+C"), self)
         self.shortcut_toggle_cross.activated.connect(self.toggle_crosshair)
+
+        self.shortcut_toggle_cross2 = QShortcut(QKeySequence("Ctrl+D"), self)
+        self.shortcut_toggle_cross2.activated.connect(self.toggle_crosshair2)
+
         self._mpl_cid_click = self.canvas.mpl_connect("button_press_event", self._on_mpl_click)
         self._mpl_cid_motion = self.canvas.mpl_connect("motion_notify_event", self._on_mpl_motion)
         self.resize(1080, 720)
@@ -375,10 +408,17 @@ class DahengLiveWindow(QWidget):
 
     def _ensure_crosshair_artists(self):
         if self.crosshair_hline is None or self.crosshair_vline is None:
-            self.crosshair_hline = self.ax.axhline(0, linestyle="-.", linewidth=1.2)
-            self.crosshair_vline = self.ax.axvline(0, linestyle="-.", linewidth=1.2)
+            self.crosshair_hline = self.ax.axhline(0, linestyle="--", linewidth=1.2, color="r")
+            self.crosshair_vline = self.ax.axvline(0, linestyle="--", linewidth=1.2, color="r")
             self.crosshair_hline.set_visible(self.crosshair_visible)
             self.crosshair_vline.set_visible(self.crosshair_visible)
+
+    def _ensure_crosshair2_artists(self):
+        if self.crosshair2_hline is None or self.crosshair2_vline is None:
+            self.crosshair2_hline = self.ax.axhline(0, linestyle="-.", linewidth=1.2, color="green")
+            self.crosshair2_vline = self.ax.axvline(0, linestyle="-.", linewidth=1.2, color="green")
+            self.crosshair2_hline.set_visible(self.crosshair2_visible)
+            self.crosshair2_vline.set_visible(self.crosshair2_visible)
 
     def toggle_crosshair(self):
         if not self.crosshair_visible and self.crosshair_pos_mm is None:
@@ -393,13 +433,34 @@ class DahengLiveWindow(QWidget):
         self.crosshair_visible = not self.crosshair_visible
         self._ensure_crosshair_artists()
         self._refresh_crosshair()
-        self.log(f"Crosshair {'shown' if self.crosshair_visible else 'hidden'}")
+        self.log(f"Crosshair 1 {'shown' if self.crosshair_visible else 'hidden'}")
+
+    def toggle_crosshair2(self):
+        if not self.crosshair2_visible and self.crosshair2_pos_mm is None:
+            if self.last_frame is not None:
+                h, w = self.last_frame.shape
+                mm_per_px = PIXEL_SIZE_M * 1e3
+                cx = (w * mm_per_px) / 2.0
+                cy = (h * mm_per_px) / 2.0
+                self.crosshair2_pos_mm = (cx, cy)
+            else:
+                self.crosshair2_pos_mm = (0.0, 0.0)
+        self.crosshair2_visible = not self.crosshair2_visible
+        self._ensure_crosshair2_artists()
+        self._refresh_crosshair2()
+        self.log(f"Crosshair 2 {'shown' if self.crosshair2_visible else 'hidden'}")
 
     def toggle_lock_manual(self):
         if not self.crosshair_visible:
             return
         self.crosshair_locked = not self.crosshair_locked
         self._refresh_crosshair()
+
+    def toggle_lock_manual2(self):
+        if not self.crosshair2_visible:
+            return
+        self.crosshair2_locked = not self.crosshair2_locked
+        self._refresh_crosshair2()
 
     def _refresh_crosshair(self):
         self._ensure_crosshair_artists()
@@ -412,28 +473,44 @@ class DahengLiveWindow(QWidget):
             self.crosshair_vline.set_xdata([x_mm, x_mm])
         self.canvas.draw_idle()
 
+    def _refresh_crosshair2(self):
+        self._ensure_crosshair2_artists()
+        vis = bool(self.crosshair2_visible)
+        self.crosshair2_hline.set_visible(vis)
+        self.crosshair2_vline.set_visible(vis)
+        if vis and self.crosshair2_pos_mm is not None:
+            x_mm, y_mm = self.crosshair2_pos_mm
+            self.crosshair2_hline.set_ydata([y_mm, y_mm])
+            self.crosshair2_vline.set_xdata([x_mm, x_mm])
+        self.canvas.draw_idle()
+
     def _on_mpl_click(self, event):
-        if not self.crosshair_visible:
+        if event.xdata is None or event.ydata is None:
             return
-        if event.button == 3:
-            if event.xdata is None or event.ydata is None:
-                return
+        if event.button == 3 and self.crosshair_visible:
             self.crosshair_locked = not self.crosshair_locked
             if self.crosshair_locked:
                 self.crosshair_pos_mm = (float(event.xdata), float(event.ydata))
             self._refresh_crosshair()
+        elif event.button == 2 and self.crosshair2_visible:
+            self.crosshair2_locked = not self.crosshair2_locked
+            if self.crosshair2_locked:
+                self.crosshair2_pos_mm = (float(event.xdata), float(event.ydata))
+            self._refresh_crosshair2()
 
     def _on_mpl_motion(self, event):
-        if not self.crosshair_visible or self.crosshair_locked:
-            return
         if event.xdata is None or event.ydata is None:
             return
-        self.crosshair_pos_mm = (float(event.xdata), float(event.ydata))
-        self._refresh_crosshair()
+        if self.crosshair_visible and not self.crosshair_locked:
+            self.crosshair_pos_mm = (float(event.xdata), float(event.ydata))
+            self._refresh_crosshair()
+        if self.crosshair2_visible and not self.crosshair2_locked:
+            self.crosshair2_pos_mm = (float(event.xdata), float(event.ydata))
+            self._refresh_crosshair2()
 
     def save_crosshair_position(self):
         if not self.crosshair_visible or self.crosshair_pos_mm is None:
-            QMessageBox.warning(self, "Crosshair", "Crosshair must be visible to save its position.")
+            QMessageBox.warning(self, "Crosshair", "Crosshair 1 must be visible to save its position.")
             return
         path = _config_path()
         data = _read_yaml(path)
@@ -443,9 +520,25 @@ class DahengLiveWindow(QWidget):
         data["crosshair"] = node
         try:
             _write_yaml(path, data)
-            self.log(f"Crosshair position saved to {path} under key crosshair.{cam_key}")
+            self.log(f"Crosshair 1 position saved to {path} under key crosshair.{cam_key}")
         except Exception as e:
-            QMessageBox.critical(self, "Crosshair", f"Failed to save: {e}")
+            QMessageBox.critical(self, "Crosshair", f"Failed to save crosshair 1: {e}")
+
+    def save_crosshair2_position(self):
+        if not self.crosshair2_visible or self.crosshair2_pos_mm is None:
+            QMessageBox.warning(self, "Crosshair 2", "Crosshair 2 must be visible to save its position.")
+            return
+        path = _config_path()
+        data = _read_yaml(path)
+        cam_key = f"daheng_{self.fixed_index}"
+        node = data.get("crosshair2", {})
+        node[cam_key] = {"x_mm": float(self.crosshair2_pos_mm[0]), "y_mm": float(self.crosshair2_pos_mm[1])}
+        data["crosshair2"] = node
+        try:
+            _write_yaml(path, data)
+            self.log(f"Crosshair 2 position saved to {path} under key crosshair2.{cam_key}")
+        except Exception as e:
+            QMessageBox.critical(self, "Crosshair 2", f"Failed to save crosshair 2: {e}")
 
     def goto_saved_crosshair_position(self):
         path = _config_path()
@@ -453,18 +546,37 @@ class DahengLiveWindow(QWidget):
         cam_key = f"daheng_{self.fixed_index}"
         pos = ((data.get("crosshair") or {}).get(cam_key)) if isinstance(data, dict) else None
         if not pos:
-            QMessageBox.information(self, "Crosshair", "No saved position found for this camera.")
+            QMessageBox.information(self, "Crosshair", "No saved position found for crosshair 1 on this camera.")
             return
         try:
             x_mm = float(pos["x_mm"]); y_mm = float(pos["y_mm"])
         except Exception:
-            QMessageBox.critical(self, "Crosshair", "Saved position is invalid.")
+            QMessageBox.critical(self, "Crosshair", "Saved position for crosshair 1 is invalid.")
             return
         self.crosshair_pos_mm = (x_mm, y_mm)
         if not self.crosshair_visible:
             self.crosshair_visible = True
         self._refresh_crosshair()
-        self.log(f"Crosshair moved to saved position ({x_mm:.3f} mm, {y_mm:.3f} mm)")
+        self.log(f"Crosshair 1 moved to saved position ({x_mm:.3f} mm, {y_mm:.3f} mm)")
+
+    def goto_saved_crosshair2_position(self):
+        path = _config_path()
+        data = _read_yaml(path)
+        cam_key = f"daheng_{self.fixed_index}"
+        pos = ((data.get("crosshair2") or {}).get(cam_key)) if isinstance(data, dict) else None
+        if not pos:
+            QMessageBox.information(self, "Crosshair 2", "No saved position found for crosshair 2 on this camera.")
+            return
+        try:
+            x_mm = float(pos["x_mm"]); y_mm = float(pos["y_mm"])
+        except Exception:
+            QMessageBox.critical(self, "Crosshair 2", "Saved position for crosshair 2 is invalid.")
+            return
+        self.crosshair2_pos_mm = (x_mm, y_mm)
+        if not self.crosshair2_visible:
+            self.crosshair2_visible = True
+        self._refresh_crosshair2()
+        self.log(f"Crosshair 2 moved to saved position ({x_mm:.3f} mm, {y_mm:.3f} mm)")
 
     def update_params(self):
         try:
@@ -587,6 +699,8 @@ class DahengLiveWindow(QWidget):
             self._draw_roi_overlay()
         if self.crosshair_visible:
             self._refresh_crosshair()
+        if self.crosshair2_visible:
+            self._refresh_crosshair2()
         self.canvas.draw_idle()
 
     def on_fix_cbar(self, checked):
