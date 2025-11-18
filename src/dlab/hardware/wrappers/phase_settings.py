@@ -930,16 +930,16 @@ class TypeTwoFocii(BaseTypeWidget):
         self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
 
         grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
-        self.le_f = QLineEdit("0.20"); grid.addWidget(self.le_f, row, 1); row += 1
+        self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
 
         grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
-        self.le_sep = QLineEdit("100"); grid.addWidget(self.le_sep, row, 1); row += 1
+        self.le_sep = QLineEdit("65"); grid.addWidget(self.le_sep, row, 1); row += 1
 
         grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
         self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
 
         grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
-        self.le_pitch = QLineEdit("32"); grid.addWidget(self.le_pitch, row, 1); row += 1
+        self.le_pitch = QLineEdit("64"); grid.addWidget(self.le_pitch, row, 1); row += 1
 
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
@@ -961,24 +961,23 @@ class TypeTwoFocii(BaseTypeWidget):
             print("TwoFocii: wavelength, focal length, and checker pitch must be > 0.")
             return np.zeros(slm_size)
 
-        # --- SLM plane coordinates (meters) ---
+        # --- SLM plane coordinates) ---
         x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
         y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
         X, Y = np.meshgrid(x, y, indexing='xy')
 
-        # --- physics ---
         k0 = 2.0 * np.pi / wl
-        theta = D / (2.0 * f_focus)           # small-angle
+        # one tilted beam: D = f_focus * theta
+        theta = D / f_focus
         k_t = k0 * theta
 
         ang = np.deg2rad(angle_deg)
         U = X * np.cos(ang) + Y * np.sin(ang)
 
-        # opposite tilts + relative phase
-        phi_A = +k_t * U
-        phi_B = -k_t * U + dphi
+        # A: on-axis, B: tilted + relative phase
+        phi_A = 0.0
+        phi_B = k_t * U + dphi
 
-        # --- checkerboard assignment ---
         # index squares from the physical lower-left corner
         xmin, ymin = x[0], y[0]
         iX = np.floor((X - xmin) / pitch).astype(np.int64)
@@ -1003,10 +1002,10 @@ class TypeTwoFocii(BaseTypeWidget):
 
     def load_(self, settings):
         self.le_wl.setText(settings.get('wl_nm', '1030'))
-        self.le_f.setText(settings.get('f_focus_m', '0.20'))
-        self.le_sep.setText(settings.get('sep_um', '100'))
+        self.le_f.setText(settings.get('f_focus_m', '0.175'))
+        self.le_sep.setText(settings.get('sep_um', '65'))
         self.le_dphi_pi.setText(settings.get('dphi_pi', '0.0'))
-        self.le_pitch.setText(settings.get('pitch_um', '32'))
+        self.le_pitch.setText(settings.get('pitch_um', '64'))
         self.le_angle.setText(settings.get('angle_deg', '0.0'))
 
 
