@@ -15,6 +15,7 @@ from dlab.diagnostics.utils import GUI_LOG_DATE_FORMAT
 
 CFG = bootstrap(ROOT / "config" / "config.yaml")
 
+
 class DlabControllerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -25,6 +26,7 @@ class DlabControllerWindow(QMainWindow):
         self.stage_control_window = None
         self.slm_window = None
         self.scan_window = None
+        self.phase_lock_window = None
         self.smaract_proc: subprocess.Popen | None = None
         self.setup_ui()
 
@@ -51,11 +53,11 @@ class DlabControllerWindow(QMainWindow):
         self.avaspec_button = QPushButton("Open Avaspec Window")
         self.avaspec_button.clicked.connect(self.open_avaspec_window)
         view_layout.addWidget(self.avaspec_button)
-        
+
         self.powermeter_button = QPushButton("Open Powermeter Window")
         self.powermeter_button.clicked.connect(self.open_powermeter_window)
         view_layout.addWidget(self.powermeter_button)
-        
+
         self.thorlabs_button = QPushButton("Open Stage Control Window")
         self.thorlabs_button.clicked.connect(self.open_stage_control_window)
         view_layout.addWidget(self.thorlabs_button)
@@ -63,10 +65,16 @@ class DlabControllerWindow(QMainWindow):
         self.smaract_button = QPushButton("Open SmarAct Control")
         self.smaract_button.clicked.connect(self.open_smaract_control)
         view_layout.addWidget(self.smaract_button)
-        
+
         self.scan_button = QPushButton("Open Scan Window")
         self.scan_button.clicked.connect(self.open_scan_window)
         view_layout.addWidget(self.scan_button)
+
+        # ---- New: Phase lock window ----
+        self.phase_lock_button = QPushButton("Open Phase Lock Window")
+        self.phase_lock_button.clicked.connect(self.open_phase_lock_window)
+        view_layout.addWidget(self.phase_lock_button)
+        # ---------------------------------
 
         self.camera_controls = {}
         default_indices = {"DahengCam_1": 1, "DahengCam_2": 2, "DahengCam_3": 3}
@@ -90,7 +98,7 @@ class DlabControllerWindow(QMainWindow):
 
         windows_group.setLayout(view_layout)
         left_panel.addWidget(windows_group)
-        
+
         """
         To run Grafana, Windows powershell:
         cd C:\Prometheus
@@ -235,6 +243,20 @@ class DlabControllerWindow(QMainWindow):
     def on_powermeter_window_closed(self):
         self.powermeter_window = None
         self.append_log("Powermeter window closed.")
+
+    def open_phase_lock_window(self):
+        from dlab.diagnostics.ui.avaspec_phase_lock_window import AvaspecPhaseLock
+        if self.phase_lock_window is None:
+            self.phase_lock_window = AvaspecPhaseLock()
+            self.phase_lock_window.destroyed.connect(self.on_phase_lock_window_closed)
+        self.phase_lock_window.show()
+        self.phase_lock_window.raise_()
+        self.phase_lock_window.activateWindow()
+        self.append_log("Phase Lock window opened.")
+
+    def on_phase_lock_window_closed(self, *args, **kwargs):
+        self.phase_lock_window = None
+        self.append_log("Phase Lock window closed.")
 
 
 def main():
