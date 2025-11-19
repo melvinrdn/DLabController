@@ -22,6 +22,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 
 from dlab.core.device_registry import REGISTRY
+from dlab.hardware.wrappers.piezojena_controller import NV40
 
 
 class PhaseMeasureThread(QThread):
@@ -54,15 +55,15 @@ class AvaspecPhaseLock(QWidget):
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
         self.spec_ctrl = None
-        self.stage = None
+        self.stage: NV40 | None = None
         self.th = None
 
         self._fft_freq = None
         self._fft_peak_idx = None
         self._fft_peak_freq = None
 
-        self._peak_hist_t = []
-        self._peak_hist_phi = []
+        self._peak_hist_t: list[float] = []
+        self._peak_hist_phi: list[float] = []
         self._t0 = None
 
         self._fft_line = None
@@ -78,30 +79,33 @@ class AvaspecPhaseLock(QWidget):
 
         self._mpl_cid_click = None
 
+        # NV40
+        self._vmin, self._vmax = NV40.get_voltage_limits()
+        self._stage_v: float | None = None
+        self._phi_last: float | None = None  # unwrapped last phase
+
         self._build_ui()
         self.resize(1100, 700)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
 
-        # Registry keys row
         row_keys = QHBoxLayout()
         self.ed_spec_key = QLineEdit("spectrometer:avaspec:spec_1")
-        self.ed_stage_key = QLineEdit("stage:delay")
+        self.ed_stage_key = QLineEdit("stage:piezojena:nv40")
         self.btn_spec_connect = QPushButton("Connect spectrometer")
-        self.btn_stage_connect = QPushButton("Connect stage")
+        self.btn_stage_connect = QPushButton("Connect NV40")
         self.btn_spec_connect.clicked.connect(self._connect_spec)
         self.btn_stage_connect.clicked.connect(self._connect_stage)
         row_keys.addWidget(QLabel("Spec key:"))
         row_keys.addWidget(self.ed_spec_key, 1)
         row_keys.addWidget(self.btn_spec_connect)
         row_keys.addSpacing(10)
-        row_keys.addWidget(QLabel("Stage key:"))
+        row_keys.addWidget(QLabel("NV40 key:"))
         row_keys.addWidget(self.ed_stage_key, 1)
         row_keys.addWidget(self.btn_stage_connect)
         root.addLayout(row_keys)
 
-        # Phase / FFT controls
         row_ctrl = QHBoxLayout()
         self.ed_fft_peak = QLineEdit("")
         self.ed_fft_peak.setPlaceholderText("ν₀ (1/nm)")
@@ -134,7 +138,6 @@ class AvaspecPhaseLock(QWidget):
         row_ctrl.addStretch(1)
         root.addLayout(row_ctrl)
 
-        # PID controls
         row_pid = QHBoxLayout()
         self.ed_setpoint = QLineEdit("0.0")
         self.ed_setpoint.setFixedWidth(70)
@@ -142,9 +145,9 @@ class AvaspecPhaseLock(QWidget):
         self.ed_kp.setFixedWidth(60)
         self.ed_ki = QLineEdit("0.0")
         self.ed_ki.setFixedWidth(60)
-        self.ed_gain = QLineEdit("1.0")
+        self.ed_gain = QLineEdit("1.0")      # V/rad
         self.ed_gain.setFixedWidth(70)
-        self.ed_max_step = QLineEdit("0.1")
+        self.ed_max_step = QLineEdit("0.1")  # V
         self.ed_max_step.setFixedWidth(70)
 
         self.chk_lock = QCheckBox("Lock enabled")
@@ -158,17 +161,16 @@ class AvaspecPhaseLock(QWidget):
         row_pid.addWidget(QLabel("Ki:"))
         row_pid.addWidget(self.ed_ki)
         row_pid.addSpacing(10)
-        row_pid.addWidget(QLabel("Gain (stage_units/rad):"))
+        row_pid.addWidget(QLabel("Gain (V/rad):"))
         row_pid.addWidget(self.ed_gain)
         row_pid.addSpacing(10)
-        row_pid.addWidget(QLabel("Max step:"))
+        row_pid.addWidget(QLabel("Max step (V):"))
         row_pid.addWidget(self.ed_max_step)
         row_pid.addSpacing(15)
         row_pid.addWidget(self.chk_lock)
         row_pid.addStretch(1)
         root.addLayout(row_pid)
 
-        # Start/stop
         row_run = QHBoxLayout()
         self.btn_start = QPushButton("Start loop")
         self.btn_stop = QPushButton("Stop loop")
@@ -186,7 +188,6 @@ class AvaspecPhaseLock(QWidget):
         row_run.addWidget(self.lbl_phase)
         root.addLayout(row_run)
 
-        # Figure: FFT and phase vs time
         self.fig, (self.ax_fft, self.ax_phase) = plt.subplots(
             1, 2, gridspec_kw={"width_ratios": [2, 2]}
         )
@@ -197,7 +198,6 @@ class AvaspecPhaseLock(QWidget):
         self.ax_phase.set_xlabel("Time (s)")
         self.ax_phase.set_ylabel("arg(FFT(ν₀)) (rad)")
         self.ax_phase.grid(True)
-        self.ax_phase.set_ylim(-np.pi, np.pi)
 
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setSizePolicy(
@@ -210,7 +210,6 @@ class AvaspecPhaseLock(QWidget):
             "button_press_event", self._on_canvas_click
         )
 
-        # Log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(160)
@@ -236,14 +235,30 @@ class AvaspecPhaseLock(QWidget):
     def _connect_stage(self):
         key = self.ed_stage_key.text().strip()
         if not key:
-            QMessageBox.warning(self, "Phase lock", "Empty stage key.")
+            QMessageBox.warning(self, "Phase lock", "Empty NV40 key.")
             return
         st = REGISTRY.get(key)
         if st is None:
             QMessageBox.critical(self, "Phase lock", f"No object in registry at '{key}'.")
             return
+        if not hasattr(st, "set_position"):
+            QMessageBox.critical(
+                self,
+                "Phase lock",
+                f"Object at '{key}' has no set_position().",
+            )
+            return
         self.stage = st
-        self._log(f"Connected stage from registry key '{key}'.")
+
+        # Optionnel : une seule read au connect pour initialiser self._stage_v
+        v0 = 0.0
+        if hasattr(st, "get_position"):
+            try:
+                v0 = float(st.get_position())
+            except Exception:
+                v0 = 0.0
+        self._stage_v = v0
+        self._log(f"Connected NV40 stage from registry key '{key}', V ≈ {v0:.3f}.")
 
     # ---------- UI helpers ----------
 
@@ -265,9 +280,8 @@ class AvaspecPhaseLock(QWidget):
             return
         x = float(event.xdata)
         idx = int(np.argmin(np.abs(self._fft_freq - x)))
-        if idx < 0 or idx >= self._fft_freq.size:
-            return
-        self._set_peak_idx(idx)
+        if 0 <= idx < self._fft_freq.size:
+            self._set_peak_idx(idx)
 
     def _on_set_peak_freq(self):
         if self._fft_freq is None or self._fft_freq.size == 0:
@@ -292,6 +306,7 @@ class AvaspecPhaseLock(QWidget):
         self._peak_hist_t = []
         self._peak_hist_phi = []
         self._t0 = time.monotonic()
+        self._phi_last = None
 
         if self._fft_peak_vline is None:
             self._fft_peak_vline = self.ax_fft.axvline(
@@ -305,7 +320,7 @@ class AvaspecPhaseLock(QWidget):
         self._log(f"Tracking FFT phase at ν₀ ≈ {self._fft_peak_freq:.4g} 1/nm")
         self.canvas.draw_idle()
 
-    def _log(self, msg):
+    def _log(self, msg: str):
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log.append(f"[{t}] {msg}")
 
@@ -323,6 +338,7 @@ class AvaspecPhaseLock(QWidget):
         self._t0 = time.monotonic()
         self._last_ctrl_t = None
         self._integral = 0.0
+        self._phi_last = None
 
         self.th = PhaseMeasureThread(self.spec_ctrl)
         self.th.data_ready.connect(self._on_data, Qt.QueuedConnection)
@@ -342,18 +358,15 @@ class AvaspecPhaseLock(QWidget):
                 th.stop()
                 th.wait(2000)
             finally:
-                try:
-                    th.finished.disconnect(self._on_thread_finished)
-                except Exception:
-                    pass
-                try:
-                    th.error.disconnect(self._on_thread_error)
-                except Exception:
-                    pass
-                try:
-                    th.data_ready.disconnect(self._on_data)
-                except Exception:
-                    pass
+                for sig, slot in (
+                    (th.finished, self._on_thread_finished),
+                    (th.error, self._on_thread_error),
+                    (th.data_ready, self._on_data),
+                ):
+                    try:
+                        sig.disconnect(slot)
+                    except Exception:
+                        pass
 
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
@@ -370,33 +383,60 @@ class AvaspecPhaseLock(QWidget):
 
     # ---------- FFT / phase / control ----------
 
-    def _apply_fft_zoom(self, freq):
-        if not self.chk_fft_zoom.isChecked():
-            self.ax_fft.autoscale_view()
+    def _apply_fft_zoom(self, freq, mag):
+        freq = np.asarray(freq, float).ravel()
+        mag = np.asarray(mag, float).ravel()
+        if freq.size == 0 or mag.size != freq.size:
             return
+
+        if not self.chk_fft_zoom.isChecked():
+            fmin, fmax = float(freq.min()), float(freq.max())
+            self.ax_fft.set_xlim(fmin, fmax)
+            self.ax_fft.relim()
+            self.ax_fft.autoscale_view(scalex=False, scaley=True)
+            return
+
         try:
             fc = float(self.ed_fft_c.text())
             pm = float(self.ed_fft_pm.text())
         except Exception:
-            self.ax_fft.autoscale_view()
+            fmin, fmax = float(freq.min()), float(freq.max())
+            self.ax_fft.set_xlim(fmin, fmax)
+            self.ax_fft.relim()
+            self.ax_fft.autoscale_view(scalex=False, scaley=True)
             return
+
         if pm <= 0:
-            self.ax_fft.autoscale_view()
+            fmin, fmax = float(freq.min()), float(freq.max())
+            self.ax_fft.set_xlim(fmin, fmax)
+            self.ax_fft.relim()
+            self.ax_fft.autoscale_view(scalex=False, scaley=True)
             return
-        freq = np.asarray(freq, float).ravel()
-        if freq.size < 2:
-            return
+
         fmin, fmax = float(freq.min()), float(freq.max())
         x0 = max(fmin, fc - pm)
         x1 = min(fmax, fc + pm)
         if x1 <= x0:
             self.ax_fft.set_xlim(fmin, fmax)
-        else:
-            self.ax_fft.set_xlim(x0, x1)
+            self.ax_fft.relim()
+            self.ax_fft.autoscale_view(scalex=False, scaley=True)
+            return
 
-    @staticmethod
-    def _wrap_phase(x):
-        return (x + np.pi) % (2 * np.pi) - np.pi
+        self.ax_fft.set_xlim(x0, x1)
+
+        mask = (freq >= x0) & (freq <= x1)
+        m_sel = mag[mask]
+        if m_sel.size == 0:
+            self.ax_fft.relim()
+            self.ax_fft.autoscale_view(scalex=False, scaley=True)
+            return
+
+        ymax = float(m_sel.max())
+        if ymax <= 0:
+            self.ax_fft.set_ylim(0.0, 1.0)
+        else:
+            self.ax_fft.set_ylim(0.0, 1.05 * ymax)
+
 
     def _update_fft_and_phase(self, wl, y):
         wl = np.asarray(wl, float).ravel()
@@ -416,7 +456,6 @@ class AvaspecPhaseLock(QWidget):
 
         self._fft_freq = freq
 
-        # FFT amplitude
         if self._fft_line is None:
             self.ax_fft.cla()
             self.ax_fft.set_xlabel("Frequency (1/nm)")
@@ -427,10 +466,13 @@ class AvaspecPhaseLock(QWidget):
             self._fft_line.set_xdata(freq)
             self._fft_line.set_ydata(mag)
 
-        self._apply_fft_zoom(freq)
+        self._apply_fft_zoom(freq, mag)
 
-        # Phase tracking
-        if self._fft_peak_idx is None or self._fft_peak_idx < 0 or self._fft_peak_idx >= freq.size:
+        if (
+            self._fft_peak_idx is None
+            or self._fft_peak_idx < 0
+            or self._fft_peak_idx >= freq.size
+        ):
             self.canvas.draw_idle()
             return
 
@@ -449,8 +491,21 @@ class AvaspecPhaseLock(QWidget):
             self._t0 = time.monotonic()
         t_rel = time.monotonic() - self._t0
 
-        phi_val = float(phase[self._fft_peak_idx])
-        phi_val = self._wrap_phase(phi_val)
+        phi_raw = float(phase[self._fft_peak_idx])
+
+        # Unwrap phase incrementally
+        if self._phi_last is None:
+            phi_val = phi_raw
+        else:
+            phi_val = phi_raw
+            delta = phi_val - self._phi_last
+            while delta > np.pi:
+                phi_val -= 2 * np.pi
+                delta -= 2 * np.pi
+            while delta < -np.pi:
+                phi_val += 2 * np.pi
+                delta += 2 * np.pi
+        self._phi_last = phi_val
 
         self._peak_hist_t.append(t_rel)
         self._peak_hist_phi.append(phi_val)
@@ -488,7 +543,6 @@ class AvaspecPhaseLock(QWidget):
             self.ax_phase.set_xlabel("Time (s)")
             self.ax_phase.set_ylabel("arg(FFT(ν₀)) (rad)")
             self.ax_phase.grid(True)
-            self.ax_phase.set_ylim(-np.pi, np.pi)
             self._peak_scatter = self.ax_phase.plot(
                 t_win,
                 pp,
@@ -501,12 +555,13 @@ class AvaspecPhaseLock(QWidget):
             self._peak_scatter.set_ydata(pp)
 
         self.ax_phase.set_xlim(0.0, twin)
-        self.ax_phase.set_ylim(-np.pi, np.pi)
+        self.ax_phase.relim()
+        self.ax_phase.autoscale_view(scalex=False, scaley=True)
 
         self._apply_control(phi_val)
         self.canvas.draw_idle()
 
-    def _apply_control(self, phi_val):
+    def _apply_control(self, phi_val: float):
         try:
             sp = float(self.ed_setpoint.text())
             kp = float(self.ed_kp.text())
@@ -516,7 +571,7 @@ class AvaspecPhaseLock(QWidget):
         except Exception:
             return
 
-        err = self._wrap_phase(sp - phi_val)
+        err = sp - phi_val  # unwrapped error
 
         now = time.monotonic()
         if self._last_ctrl_t is None:
@@ -527,13 +582,17 @@ class AvaspecPhaseLock(QWidget):
 
         self._integral += err * dt
         u = kp * err + ki * self._integral
-        step = gain * u
+        step = gain * u  # Volts
 
-        if max_step > 0:
-            if step > max_step:
-                step = max_step
-            elif step < -max_step:
-                step = -max_step
+        # Quantification + seuil à 0.1 V
+        quant = 0.1
+        if abs(step) < quant:
+            step = 0.0
+        else:
+            step = round(step / quant) * quant
+
+        if max_step > 0 and abs(step) > max_step:
+            step = np.sign(step) * max_step
 
         self.lbl_phase.setText(f"φ = {phi_val:+.3f} rad, err = {err:+.3f} rad")
 
@@ -541,26 +600,36 @@ class AvaspecPhaseLock(QWidget):
             return
         if self.stage is None:
             return
+        if step == 0.0:
+            return
 
         try:
             self._move_stage(step)
         except Exception as e:
             self._log(f"Stage move error: {e}")
 
-    def _move_stage(self, step):
+    def _move_stage(self, step: float):
         st = self.stage
-        if hasattr(st, "move_relative"):
-            st.move_relative(step)
-        elif hasattr(st, "move_rel"):
-            st.move_rel(step)
-        elif hasattr(st, "move_to"):
-            pos = None
-            if hasattr(st, "get_position"):
-                pos = st.get_position()
-            elif hasattr(st, "position"):
-                pos = st.position
-            if pos is not None:
-                st.move_to(pos + step)
+        if st is None:
+            return
+
+        if self._stage_v is None:
+            self._stage_v = 0.0
+
+        tgt = self._stage_v + step
+        if tgt < self._vmin:
+            tgt = self._vmin
+        if tgt > self._vmax:
+            tgt = self._vmax
+
+        quant = 0.1
+        tgt = round(tgt / quant) * quant
+
+        try:
+            st.set_position(tgt)
+            self._stage_v = tgt
+        except Exception as e:
+            self._log(f"NV40 set_position failed: {e}")
 
     def _on_data(self, ts, wl, counts):
         now = time.monotonic()
@@ -571,8 +640,7 @@ class AvaspecPhaseLock(QWidget):
             return
         self._last_draw = now
 
-        y = counts
-        self._update_fft_and_phase(wl, y)
+        self._update_fft_and_phase(wl, counts)
 
     # ---------- shutdown ----------
 

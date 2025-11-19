@@ -14,7 +14,8 @@ from dlab.boot import get_config
 from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
 from dlab.hardware.wrappers.waveplate_calib import WaveplateCalibWidget, NUM_WAVEPLATES
 from dlab.diagnostics.ui.auto_waveplate_calib_window import AutoWaveplateCalibWindow
-from dlab.diagnostics.ui.grating_compressor import GratingCompressorWindow
+from dlab.diagnostics.ui.grating_compressor_window import GratingCompressorWindow
+from dlab.diagnostics.ui.piezojena_window import PiezoJenaStageWindow
 from dlab.core.device_registry import REGISTRY
 
 import logging
@@ -393,6 +394,9 @@ class StageControlWindow(QMainWindow):
 
         self.gc_view = GratingCompressorWindow()
         self.tabs.addTab(self.gc_view, "Grating Compressor")
+        
+        self.piezojena_view = PiezoJenaStageWindow()
+        self.tabs.addTab(self.piezojena_view, "PiezoJena")
 
         self.calib_widget = WaveplateCalibWidget(
             log_callback=self.thorlabs_view.log_message,
