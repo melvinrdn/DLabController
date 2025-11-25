@@ -6,7 +6,7 @@ import numpy as np
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import (
     QFileDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
-    QPushButton, QComboBox, QGroupBox, QSpinBox, QDoubleSpinBox
+    QPushButton, QComboBox, QGroupBox, QSpinBox, QDoubleSpinBox, QCheckBox
 )
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -35,7 +35,7 @@ chip_height= DEFAULT_CHIP_H
 pixel_size = DEFAULT_PIXEL_SIZE
 bit_depth  = DEFAULT_BIT_DEPTH
 
-phase_types = ['Background', 'Lens', 'Zernike', 'Binary', 'Vortex', 'PhaseJumps', 'Tilt', 'TwoFocii']
+phase_types = ['Background', 'Lens', 'Zernike', 'Binary', 'Vortex', 'PhaseJumps', 'Tilt', 'TwoFoci', 'TwoFociRandom']
 
 class BaseTypeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -914,17 +914,115 @@ class TypeCheckerboard(BaseTypeWidget):
         self.le_phaseA.setText(settings.get('phaseA', '0'))
         self.le_phaseB.setText(settings.get('phaseB', '1'))
         
-class TypeTwoFocii(BaseTypeWidget):
+class TypeTwoFoci(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.name = 'TwoFocii'
+        self.name = 'TwoFoci'
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Two Focii (Intertwined) Settings")
+        group = QGroupBox("Two Foci Settings")
         layout.addWidget(group)
         grid = QGridLayout(group)
 
-        # GUI fields with sensible defaults
+        row = 0
+        grid.addWidget(QLabel("Wavelength [nm]:"), row, 0)
+        self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
+
+        grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
+        self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
+
+        grid.addWidget(QLabel("Separation between beams D [µm]:"), row, 0)
+        self.le_sep = QLineEdit("50"); grid.addWidget(self.le_sep, row, 1); row += 1
+
+        grid.addWidget(QLabel("Relative phase ΔΦ [π units]:"), row, 0)
+        self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
+
+        grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
+        self.le_pitch = QLineEdit("128"); grid.addWidget(self.le_pitch, row, 1); row += 1
+
+        grid.addWidget(QLabel("Angle (deg):"), row, 0)
+        self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
+        
+        self.cb_noA = QCheckBox("No tilt A")
+        self.cb_noB = QCheckBox("No tilt B")
+        grid.addWidget(self.cb_noA, row, 0, 1, 2); row += 1
+        grid.addWidget(self.cb_noB, row, 0, 1, 2); row += 1
+
+
+    def phase(self):
+        try:
+            wl = float(self.le_wl.text()) * 1e-9
+            f_focus = float(self.le_f.text())
+            D = float(self.le_sep.text()) * 1e-6      
+            dphi = float(self.le_dphi_pi.text()) * np.pi  
+            pitch = float(self.le_pitch.text()) * 1e-6
+            angle_deg = float(self.le_angle.text())
+        except ValueError:
+            print("TwoFoci: invalid numeric input.")
+            return np.zeros(slm_size)
+
+        x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
+        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
+        X, Y = np.meshgrid(x, y, indexing='xy')
+
+        k0 = 2*np.pi/wl
+        theta = D / (2.0 * f_focus)  
+        k_t = k0 * theta
+
+        ang = np.deg2rad(angle_deg)
+        U = X*np.cos(ang) + Y*np.sin(ang)
+
+        phi_A = +k_t * U
+        phi_B = -k_t * U + dphi
+        
+        if self.cb_noA.isChecked():
+            phi_A = 0.0
+        if self.cb_noB.isChecked():
+            phi_B = 0.0
+
+        xmin, ymin = x[0], y[0]
+        iX = np.floor((X - xmin) / pitch).astype(int)
+        iY = np.floor((Y - ymin) / pitch).astype(int)
+        checker = (iX + iY) & 1
+
+        phase = np.where(checker == 0, phi_A, phi_B)
+
+        wrapped = np.mod(phase, 2*np.pi)
+        return wrapped * (bit_depth / (2*np.pi))
+
+
+    def save_(self):
+        return {
+            'wl_nm': self.le_wl.text(),
+            'f_focus_m': self.le_f.text(),
+            'sep_um': self.le_sep.text(),
+            'dphi_pi': self.le_dphi_pi.text(),
+            'pitch_um': self.le_pitch.text(),
+            'angle_deg': self.le_angle.text(),
+            'noA': self.cb_noA.isChecked(),
+            'noB': self.cb_noB.isChecked(),
+        }
+
+    def load_(self, s):
+        self.le_wl.setText(s.get('wl_nm', '1030'))
+        self.le_f.setText(s.get('f_focus_m', '0.175'))
+        self.le_sep.setText(s.get('sep_um', '65'))
+        self.le_dphi_pi.setText(s.get('dphi_pi', '0.0'))
+        self.le_pitch.setText(s.get('pitch_um', '64'))
+        self.le_angle.setText(s.get('angle_deg', '0.0'))
+        self.cb_noA.setChecked(s.get('noA', False) )
+        self.cb_noB.setChecked(s.get('noB', False) )
+
+class TypeTwoFociRandom(BaseTypeWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.name = 'TwoFociRandom'
+
+        layout = QVBoxLayout(self)
+        group = QGroupBox("Two Foci Random Settings")
+        layout.addWidget(group)
+        grid = QGridLayout(group)
+
         row = 0
         grid.addWidget(QLabel("Wavelength [nm]:"), row, 0)
         self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
@@ -933,60 +1031,79 @@ class TypeTwoFocii(BaseTypeWidget):
         self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
 
         grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
-        self.le_sep = QLineEdit("65"); grid.addWidget(self.le_sep, row, 1); row += 1
+        self.le_sep = QLineEdit("50"); grid.addWidget(self.le_sep, row, 1); row += 1
 
         grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
         self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
 
         grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
-        self.le_pitch = QLineEdit("64"); grid.addWidget(self.le_pitch, row, 1); row += 1
+        self.le_pitch = QLineEdit("124"); grid.addWidget(self.le_pitch, row, 1); row += 1
 
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
 
+        grid.addWidget(QLabel("Relative amplitude A_rel (tilted vs on-axis):"), row, 0)
+        self.le_amp = QLineEdit("0.5")
+        grid.addWidget(self.le_amp, row, 1)
+        row += 1
+        
+        self.cb_noA = QCheckBox("No tilt A")
+        self.cb_noB = QCheckBox("No tilt B")
+        grid.addWidget(self.cb_noA, row, 0, 1, 2); row += 1
+        grid.addWidget(self.cb_noB, row, 0, 1, 2); row += 1
+
     def phase(self):
-        # --- read & convert inputs ---
         try:
-            wl = float(self.le_wl.text()) * 1e-9               # m
-            f_focus = float(self.le_f.text())                   # m
-            D = float(self.le_sep.text()) * 1e-6                # m
-            dphi = float(self.le_dphi_pi.text()) * np.pi        # rad
-            pitch = float(self.le_pitch.text()) * 1e-6          # m
+            wl = float(self.le_wl.text()) * 1e-9
+            f_focus = float(self.le_f.text())
+            D = float(self.le_sep.text()) * 1e-6
+            dphi = float(self.le_dphi_pi.text()) * np.pi
+            pitch = float(self.le_pitch.text()) * 1e-6
             angle_deg = float(self.le_angle.text())
+            A_rel = float(self.le_amp.text())            
         except ValueError:
             print("TwoFocii: invalid numeric input.")
             return np.zeros(slm_size)
 
-        if wl <= 0 or f_focus == 0 or pitch <= 0:
-            print("TwoFocii: wavelength, focal length, and checker pitch must be > 0.")
+        if wl <= 0 or f_focus == 0 or pitch <= 0 or A_rel < 0:
+            print("TwoFocii: invalid physical parameters.")
             return np.zeros(slm_size)
 
-        # --- SLM plane coordinates) ---
         x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
         y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
         X, Y = np.meshgrid(x, y, indexing='xy')
 
-        k0 = 2.0 * np.pi / wl
-        # one tilted beam: D = f_focus * theta
-        theta = D / f_focus
+        k0 = 2*np.pi/wl
+        theta = D / (2.0 * f_focus)  
         k_t = k0 * theta
 
         ang = np.deg2rad(angle_deg)
         U = X * np.cos(ang) + Y * np.sin(ang)
 
-        # A: on-axis, B: tilted + relative phase
-        phi_A = 0.0
-        phi_B = k_t * U + dphi
+        phi_A = +k_t * U
+        phi_B = -k_t * U + dphi
+        
+        if self.cb_noA.isChecked():
+            phi_A = 0.0
+        if self.cb_noB.isChecked():
+            phi_B = 0.0
 
-        # index squares from the physical lower-left corner
         xmin, ymin = x[0], y[0]
         iX = np.floor((X - xmin) / pitch).astype(np.int64)
         iY = np.floor((Y - ymin) / pitch).astype(np.int64)
-        checker = (iX + iY) & 1  # 0/1 alternating
 
-        phase = np.where(checker == 0, phi_A, phi_B)
+        fill_tilted = A_rel / (1.0 + A_rel)
 
-        # wrap 0..2π and scale to SLM bit-depth units
+        ix0, iy0 = iX.min(), iY.min()
+        nx = int(iX.max() - ix0 + 1)
+        ny = int(iY.max() - iy0 + 1)
+
+        rng = np.random.default_rng(12345)  
+        cell_random = rng.random((ny, nx))
+        selector = cell_random[iY - iy0, iX - iy0]
+
+        phase = np.where(selector < fill_tilted, phi_B, phi_A)
+
         wrapped = np.mod(phase, 2.0 * np.pi)
         return wrapped * (bit_depth / (2.0 * np.pi))
 
@@ -998,15 +1115,21 @@ class TypeTwoFocii(BaseTypeWidget):
             'dphi_pi': self.le_dphi_pi.text(),
             'pitch_um': self.le_pitch.text(),
             'angle_deg': self.le_angle.text(),
+            'A_rel': self.le_amp.text(),     
+            'noA': self.cb_noA.isChecked(),
+            'noB': self.cb_noB.isChecked(),  
         }
 
     def load_(self, settings):
         self.le_wl.setText(settings.get('wl_nm', '1030'))
         self.le_f.setText(settings.get('f_focus_m', '0.175'))
-        self.le_sep.setText(settings.get('sep_um', '65'))
+        self.le_sep.setText(settings.get('sep_um', '50'))
         self.le_dphi_pi.setText(settings.get('dphi_pi', '0.0'))
-        self.le_pitch.setText(settings.get('pitch_um', '64'))
+        self.le_pitch.setText(settings.get('pitch_um', '124'))
         self.le_angle.setText(settings.get('angle_deg', '0.0'))
+        self.le_amp.setText(settings.get('A_rel', '0.5'))  
+        self.cb_noA.setChecked( settings.get('noA', False) )
+        self.cb_noB.setChecked( settings.get('noB', False) ) 
 
 
 def new_type(parent, typ):
@@ -1019,7 +1142,8 @@ def new_type(parent, typ):
         'Zernike': TypeZernike,
         'PhaseJumps': TypePhaseJumps,
         'Tilt': TypeTilt,
-        'TwoFocii': TypeTwoFocii,
+        'TwoFoci': TypeTwoFoci,
+        'TwoFociRandom': TypeTwoFociRandom,
     }
     if typ not in types_dict:
         raise ValueError("Unrecognized type '{}'. Valid types are: {}".format(typ, list(types_dict.keys())))
