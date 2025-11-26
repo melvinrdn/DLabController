@@ -35,7 +35,7 @@ chip_height= DEFAULT_CHIP_H
 pixel_size = DEFAULT_PIXEL_SIZE
 bit_depth  = DEFAULT_BIT_DEPTH
 
-phase_types = ['Background', 'Lens', 'Zernike', 'Binary', 'Vortex', 'PhaseJumps', 'Tilt', 'TwoFoci', 'TwoFociRandom']
+phase_types = ['Background', 'Lens', 'Zernike', 'Binary', 'Vortex', 'PhaseJumps', 'TwoFociStochastic']
 
 class BaseTypeWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -1013,13 +1013,13 @@ class TypeTwoFoci(BaseTypeWidget):
         self.cb_noA.setChecked(s.get('noA', False) )
         self.cb_noB.setChecked(s.get('noB', False) )
 
-class TypeTwoFociRandom(BaseTypeWidget):
+class TypeTwoFociStochastic(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.name = 'TwoFociRandom'
+        self.name = 'TwoFociStochastic'
 
         layout = QVBoxLayout(self)
-        group = QGroupBox("Two Foci Random Settings")
+        group = QGroupBox("Two Foci Stochastic Settings")
         layout.addWidget(group)
         grid = QGridLayout(group)
 
@@ -1030,7 +1030,7 @@ class TypeTwoFociRandom(BaseTypeWidget):
         grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
         self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
 
-        grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
+        grid.addWidget(QLabel("Separation at focus D [µm] (do x2 if no tilt!):"), row, 0)
         self.le_sep = QLineEdit("50"); grid.addWidget(self.le_sep, row, 1); row += 1
 
         grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
@@ -1042,7 +1042,7 @@ class TypeTwoFociRandom(BaseTypeWidget):
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
 
-        grid.addWidget(QLabel("Relative amplitude A_rel (tilted vs on-axis):"), row, 0)
+        grid.addWidget(QLabel("A_rel (A=0 is all in A):"), row, 0)
         self.le_amp = QLineEdit("0.5")
         grid.addWidget(self.le_amp, row, 1)
         row += 1
@@ -1062,11 +1062,11 @@ class TypeTwoFociRandom(BaseTypeWidget):
             angle_deg = float(self.le_angle.text())
             A_rel = float(self.le_amp.text())            
         except ValueError:
-            print("TwoFocii: invalid numeric input.")
+            print("TypeTwoFociStochastic: invalid numeric input.")
             return np.zeros(slm_size)
 
-        if wl <= 0 or f_focus == 0 or pitch <= 0 or A_rel < 0:
-            print("TwoFocii: invalid physical parameters.")
+        if wl <= 0 or f_focus == 0 or pitch <= 0 or not (0.0 <= A_rel <= 1.0):
+            print("TypeTwoFociStochastic: invalid physical parameters.")
             return np.zeros(slm_size)
 
         x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
@@ -1092,7 +1092,7 @@ class TypeTwoFociRandom(BaseTypeWidget):
         iX = np.floor((X - xmin) / pitch).astype(np.int64)
         iY = np.floor((Y - ymin) / pitch).astype(np.int64)
 
-        fill_tilted = A_rel / (1.0 + A_rel)
+        fill_tilted = A_rel
 
         ix0, iy0 = iX.min(), iY.min()
         nx = int(iX.max() - ix0 + 1)
@@ -1141,9 +1141,7 @@ def new_type(parent, typ):
         'Vortex': TypeVortex,
         'Zernike': TypeZernike,
         'PhaseJumps': TypePhaseJumps,
-        'Tilt': TypeTilt,
-        'TwoFoci': TypeTwoFoci,
-        'TwoFociRandom': TypeTwoFociRandom,
+        'TwoFociStochastic': TypeTwoFociStochastic,
     }
     if typ not in types_dict:
         raise ValueError("Unrecognized type '{}'. Valid types are: {}".format(typ, list(types_dict.keys())))
