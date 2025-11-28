@@ -1030,7 +1030,7 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
         self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
 
-        grid.addWidget(QLabel("Separation at focus D [µm] (do x2 if no tilt!):"), row, 0)
+        grid.addWidget(QLabel("Separation at focus D [µm]:"), row, 0)
         self.le_sep = QLineEdit("50"); grid.addWidget(self.le_sep, row, 1); row += 1
 
         grid.addWidget(QLabel("Phase difference ΔΦ [π units]:"), row, 0)
@@ -1042,11 +1042,15 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
 
-        grid.addWidget(QLabel("A_rel (A=0 is all in A):"), row, 0)
-        self.le_amp = QLineEdit("0.5")
-        grid.addWidget(self.le_amp, row, 1)
-        row += 1
-        
+        grid.addWidget(QLabel("A_rel (A vs B):"), row, 0)
+        self.le_Arel = QLineEdit("0.5"); grid.addWidget(self.le_Arel, row, 1); row += 1
+
+        grid.addWidget(QLabel("A_rel_A (A vs DumpA):"), row, 0)
+        self.le_ArelA = QLineEdit("0.0"); grid.addWidget(self.le_ArelA, row, 1); row += 1
+
+        grid.addWidget(QLabel("A_rel_B (B vs DumpB):"), row, 0)
+        self.le_ArelB = QLineEdit("0.0"); grid.addWidget(self.le_ArelB, row, 1); row += 1
+
         self.cb_noA = QCheckBox("No tilt A")
         self.cb_noB = QCheckBox("No tilt B")
         grid.addWidget(self.cb_noA, row, 0, 1, 2); row += 1
@@ -1060,52 +1064,75 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             dphi = float(self.le_dphi_pi.text()) * np.pi
             pitch = float(self.le_pitch.text()) * 1e-6
             angle_deg = float(self.le_angle.text())
-            A_rel = float(self.le_amp.text())            
-        except ValueError:
-            print("TypeTwoFociStochastic: invalid numeric input.")
+            Arel = float(self.le_Arel.text())
+            ArelA = float(self.le_ArelA.text())
+            ArelB = float(self.le_ArelB.text())
+        except:
             return np.zeros(slm_size)
 
-        if wl <= 0 or f_focus == 0 or pitch <= 0 or not (0.0 <= A_rel <= 1.0):
-            print("TypeTwoFociStochastic: invalid physical parameters.")
+        if wl <= 0 or f_focus == 0 or pitch <= 0:
+            return np.zeros(slm_size)
+        if not (0 <= Arel <= 1 and 0 <= ArelA <= 1 and 0 <= ArelB <= 1):
             return np.zeros(slm_size)
 
-        x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
+        x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
         y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
         X, Y = np.meshgrid(x, y, indexing='xy')
 
         k0 = 2*np.pi/wl
-        theta = D / (2.0 * f_focus)  
+        theta = D / (2*f_focus)
         k_t = k0 * theta
+        k_dump = 10 * k_t
 
         ang = np.deg2rad(angle_deg)
-        U = X * np.cos(ang) + Y * np.sin(ang)
+        U = X*np.cos(ang) + Y*np.sin(ang)
 
         phi_A = +k_t * U
         phi_B = -k_t * U + dphi
-        
-        if self.cb_noA.isChecked():
-            phi_A = 0.0
-        if self.cb_noB.isChecked():
-            phi_B = 0.0
+        phi_dumpA = +k_dump * U
+        phi_dumpB = -k_dump * U
 
-        xmin, ymin = x[0], y[0]
-        iX = np.floor((X - xmin) / pitch).astype(np.int64)
-        iY = np.floor((Y - ymin) / pitch).astype(np.int64)
+        if self.cb_noA.isChecked(): phi_A = np.zeros_like(phi_A)
+        if self.cb_noB.isChecked(): phi_B = np.zeros_like(phi_B)
 
-        fill_tilted = A_rel
+        xmin = x[0]
+        iX = np.floor((X - xmin)/pitch).astype(int)
+        iY = np.floor((Y - y[0])/pitch).astype(int)
+        ix0 = iX.min(); iy0 = iY.min()
+        nx = iX.max() - ix0 + 1
+        ny = iY.max() - iy0 + 1
 
-        ix0, iy0 = iX.min(), iY.min()
-        nx = int(iX.max() - ix0 + 1)
-        ny = int(iY.max() - iy0 + 1)
+        rng = np.random.default_rng(12345)
+        rnd = rng.random((ny, nx))
+        sel = rnd[iY - iy0, iX - ix0]
 
-        rng = np.random.default_rng(12345)  
-        cell_random = rng.random((ny, nx))
-        selector = cell_random[iY - iy0, iX - iy0]
+        fA = 1 - Arel
+        fB = Arel
 
-        phase = np.where(selector < fill_tilted, phi_B, phi_A)
+        fA_main = fA * (1 - ArelA)
+        fA_dump = fA * ArelA
+        fB_main = fB * (1 - ArelB)
+        fB_dump = fB * ArelB
 
-        wrapped = np.mod(phase, 2.0 * np.pi)
-        return wrapped * (bit_depth / (2.0 * np.pi))
+        tA = fA_main
+        tA_dump = tA + fA_dump
+        tB = tA_dump + fB_main
+        tB_dump = tB + fB_dump
+
+        phase = np.zeros_like(X)
+
+        mask_A = sel < tA
+        mask_A_dump = (sel >= tA) & (sel < tA_dump)
+        mask_B = (sel >= tA_dump) & (sel < tB)
+        mask_B_dump = sel >= tB
+
+        phase[mask_A] = phi_A[mask_A]
+        phase[mask_A_dump] = phi_dumpA[mask_A_dump]
+        phase[mask_B] = phi_B[mask_B]
+        phase[mask_B_dump] = phi_dumpB[mask_B_dump]
+
+        wrapped = np.mod(phase, 2*np.pi)
+        return wrapped * (bit_depth/(2*np.pi))
 
     def save_(self):
         return {
@@ -1115,21 +1142,25 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             'dphi_pi': self.le_dphi_pi.text(),
             'pitch_um': self.le_pitch.text(),
             'angle_deg': self.le_angle.text(),
-            'A_rel': self.le_amp.text(),     
+            'A_rel': self.le_Arel.text(),
+            'A_rel_A': self.le_ArelA.text(),
+            'A_rel_B': self.le_ArelB.text(),
             'noA': self.cb_noA.isChecked(),
-            'noB': self.cb_noB.isChecked(),  
+            'noB': self.cb_noB.isChecked(),
         }
 
-    def load_(self, settings):
-        self.le_wl.setText(settings.get('wl_nm', '1030'))
-        self.le_f.setText(settings.get('f_focus_m', '0.175'))
-        self.le_sep.setText(settings.get('sep_um', '50'))
-        self.le_dphi_pi.setText(settings.get('dphi_pi', '0.0'))
-        self.le_pitch.setText(settings.get('pitch_um', '124'))
-        self.le_angle.setText(settings.get('angle_deg', '0.0'))
-        self.le_amp.setText(settings.get('A_rel', '0.5'))  
-        self.cb_noA.setChecked( settings.get('noA', False) )
-        self.cb_noB.setChecked( settings.get('noB', False) ) 
+    def load_(self, s):
+        self.le_wl.setText(s.get('wl_nm','1030'))
+        self.le_f.setText(s.get('f_focus_m','0.175'))
+        self.le_sep.setText(s.get('sep_um','50'))
+        self.le_dphi_pi.setText(s.get('dphi_pi','0.0'))
+        self.le_pitch.setText(s.get('pitch_um','124'))
+        self.le_angle.setText(s.get('angle_deg','0.0'))
+        self.le_Arel.setText(s.get('A_rel','0.5'))
+        self.le_ArelA.setText(s.get('A_rel_A','0.0'))
+        self.le_ArelB.setText(s.get('A_rel_B','0.0'))
+        self.cb_noA.setChecked(s.get('noA',False))
+        self.cb_noB.setChecked(s.get('noB',False))
 
 
 def new_type(parent, typ):
