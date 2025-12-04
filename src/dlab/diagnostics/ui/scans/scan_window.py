@@ -10,6 +10,8 @@ from dlab.diagnostics.ui.scans.grid_scan_tab import GridScanTab
 from dlab.diagnostics.ui.scans.grating_compressor_scan_tab import GCScanTab
 from dlab.diagnostics.ui.scans.stability_scan_tab import StabilityScanTab
 from dlab.diagnostics.ui.scans.temporal_overlap_scan_tab import TOverlapTab
+from dlab.diagnostics.ui.scans.two_color_scan_tab import TwoColorScanTab
+
 import logging
 logger = logging.getLogger("dlab.ui.ScanWindow")
 
@@ -26,6 +28,7 @@ class ScanWindow(QMainWindow):
         self.tabs.addTab(M2Tab(), "M2 Scan")
         self.tabs.addTab(StabilityScanTab(), "Stability scan")
         self.tabs.addTab(TOverlapTab(), "Temporal overlap scan")
+        self.tabs.addTab(TwoColorScanTab(), "Two-Color Scan")
         
     def closeEvent(self, event):
         try:

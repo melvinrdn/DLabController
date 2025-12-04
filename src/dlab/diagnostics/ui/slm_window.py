@@ -18,8 +18,6 @@ from dlab.core.device_registry import REGISTRY
 
 logger = logging.getLogger("dlab.ui.SlmWindow")
 
-# ---------- Helpers chemins / config ----------
-
 def _ressources_root() -> Path:
     cfg = get_config() or {}
     rel = (cfg.get("paths", {}) or {}).get("ressources", "ressources")
@@ -82,13 +80,7 @@ class SlmWindow(QtWidgets.QMainWindow):
         for color in ["red", "green"]:
             self.load_default_parameters(color)
 
-
-
-
     def compose_levels(self):
-        """
-        Recompose only the layers whose checkboxes are enabled.
-        """
         slm = self.SLM_red
 
         active = REGISTRY.get("slm:red:active_classes") or []
@@ -158,20 +150,14 @@ class SlmWindow(QtWidgets.QMainWindow):
         REGISTRY.register("slm:red:active_classes", list(publish_types))
         REGISTRY.register("slm:red:widgets", phase_refs)
         params = {}
-        for pref, name in zip(phase_refs, publish_types):
+        for pref in phase_refs:
+            name = pref.name_()
             try:
                 params[name] = pref.save_()
             except Exception:
                 params[name] = {}
         REGISTRY.register("slm:red:params", params)
         REGISTRY.register("slm:red:last_update", datetime.datetime.now().isoformat())
-
-
-    # unchanged from here …
-    # (all remaining code is exactly your original implementation)
-    # ------------------------------------------------------------
-    # COPY OF REMAINING CODE
-    # ------------------------------------------------------------
 
     def create_slm_panel(self, color: str):
         panel = QtWidgets.QGroupBox(f"{color.capitalize()} SLM Interface")
@@ -364,7 +350,10 @@ class SlmWindow(QtWidgets.QMainWindow):
         checkboxes = getattr(self, f"checkboxes_{color}")
         spin = getattr(self, f"spin_{color}")
         for phase_ref, cb in zip(phase_refs, checkboxes):
-            settings[phase_ref.name_] = {"Enabled": cb.isChecked(), "Params": phase_ref.save_()}
+            settings[phase_ref.name_()] = {
+                "Enabled": cb.isChecked(),
+                "Params": phase_ref.save_(),
+            }
         settings["screen_pos"] = spin.value()
 
         filepath.parent.mkdir(parents=True, exist_ok=True)

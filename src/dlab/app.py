@@ -245,9 +245,9 @@ class DlabControllerWindow(QMainWindow):
         self.append_log("Powermeter window closed.")
 
     def open_phase_lock_window(self):
-        from dlab.diagnostics.ui.avaspec_phase_lock_window import AvaspecPhaseLock
+        from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
         if self.phase_lock_window is None:
-            self.phase_lock_window = AvaspecPhaseLock()
+            self.phase_lock_window = PhaseLockApp()
             self.phase_lock_window.destroyed.connect(self.on_phase_lock_window_closed)
         self.phase_lock_window.show()
         self.phase_lock_window.raise_()

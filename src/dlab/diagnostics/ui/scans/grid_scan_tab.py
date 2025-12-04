@@ -973,14 +973,32 @@ class GridScanTab(QWidget):
                 pm = bool(w.isChecked()) if w else False
 
             if pm and wp is not None:
-                sf = max(0.0, min(1.0, start))
+                f_start = max(0.0, min(1.0, start))
+                f_end   = max(0.0, min(1.0, end))
+                if step <= 0:
+                    raise ValueError(f"{ax}: Step must be > 0.")
+
                 amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
                 if amp_off[1] is None:
                     raise ValueError(f"{ax}: Power mode ON but no calibration.")
                 phase = float(amp_off[1])
-                start_angle = power_to_angle(sf, 1.0, phase)
-                end_angle_abs = start_angle + end
-                pos = self._positions(start_angle, end_angle_abs, step)
+
+
+                def frac_to_angle(frac):
+                    return power_to_angle(float(frac), 1.0, phase)
+                
+                if f_end >= f_start:
+                    n = int((f_end - f_start) // step)
+                    fracs = [f_start + i * step for i in range(n + 1)]
+                    if fracs[-1] < f_end:
+                        fracs.append(f_end)
+                else:
+                    n = int((f_start - f_end) // step)
+                    fracs = [f_start - i * step for i in range(n + 1)]
+                    if fracs[-1] > f_end:
+                        fracs.append(f_end)
+
+                pos = [frac_to_angle(f) for f in fracs]
                 axes.append((ax, pos))
 
                 max_item = self.axes_tbl.item(r, 7)
@@ -994,12 +1012,12 @@ class GridScanTab(QWidget):
 
                 axes_meta[ax] = {
                     "pm": True,
-                    "start_fraction": float(sf),
-                    "start_angle_deg": float(start_angle),
-                    "delta_deg": float(end),
-                    "step_deg": float(step),
+                    "fraction_start": float(f_start),
+                    "fraction_end": float(f_end),
+                    "fraction_step": float(step),
                     "max_value_W": float(mv),
                 }
+
             else:
                 pos = self._positions(start, end, step)
                 axes.append((ax, pos))
@@ -1126,9 +1144,6 @@ class GridScanTab(QWidget):
 
         self.start_btn.setEnabled(False)
         self.abort_btn.setEnabled(True)
-        
-        if getattr(self, "worker_connect_pending", False) and self._live_view:
-            self._worker.andor_frame.connect(self._live_view.on_andor_frame)
 
         total = 1
         for _, pos in p["axes"]:

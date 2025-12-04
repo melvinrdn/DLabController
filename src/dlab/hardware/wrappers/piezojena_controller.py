@@ -17,7 +17,7 @@ class NV40:
     V_MAX = 140.0
     RANGE_UM = 100.0
 
-    def __init__(self, port, timeout=0.2, closed_loop=False):
+    def __init__(self, port, timeout=0.05, closed_loop=False):
         self.ser = serial.Serial(
             port=port,
             baudrate=9600,
@@ -25,24 +25,18 @@ class NV40:
             stopbits=serial.STOPBITS_ONE,
             parity=serial.PARITY_NONE,
             timeout=timeout,
+            write_timeout=0.05,
         )
-        time.sleep(0.1)
+        time.sleep(0.05)
 
         self.set_remote_control(True)
 
         if closed_loop:
             raise RuntimeError(
-                "Closed-loop mode was requested but this NV40 controller "
-                "does not support it. Use closed_loop=False."
+                "Closed-loop mode is not supported on this NV40."
             )
 
-        self.__execute("ol")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.close()
+        self._send("ol")
 
     def close(self):
         if self.ser and self.ser.is_open:
@@ -51,39 +45,50 @@ class NV40:
     def __del__(self):
         try:
             self.close()
-        except Exception:
+        except:
             pass
 
-    def __execute(self, cmd: str) -> str:
+    # ----------------------------------------------------------
+    # LOW LEVEL: FAST WRITE, OPTIONAL READ
+    # ----------------------------------------------------------
+    def _send(self, cmd: str):
+        self.ser.write((cmd + "\r").encode())
+
+    def _query(self, cmd: str) -> str:
         self.ser.reset_input_buffer()
         self.ser.write((cmd + "\r").encode())
-        time.sleep(0.1)
-
-        ans = self.ser.read(100).decode(errors="ignore").strip()
-
+        ans = self.ser.readline().decode(errors="ignore").strip()
         if ans in self.ERRORS:
             raise ValueError(self.ERRORS[ans])
-
         return ans
 
-    def set_remote_control(self, enable: bool = True) -> str:
-        return self.__execute("i1" if enable else "i0")
+    # ----------------------------------------------------------
+    # HIGH LEVEL API
+    # ----------------------------------------------------------
+    def set_remote_control(self, enable=True):
+        self._send("i1" if enable else "i0")
 
-    def set_closed_loop(self, enable: bool = True) -> str:
+    def set_closed_loop(self, enable=True):
         if enable:
-            raise RuntimeError(
-                "Closed-loop mode is not supported on this controller. "
-                "This call would result in undefined behavior."
-            )
-        return self.__execute("ol")
+            raise RuntimeError("Closed loop not supported.")
+        self._send("ol")
 
-    def set_position(self, value: float) -> str:
+    # ----------------------------------------------------------
+    # NON-BLOCKING SET POSITION
+    # ----------------------------------------------------------
+    def set_position(self, value: float):
         value = max(self.V_MIN, min(self.V_MAX, value))
-        return self.__execute(f"wr,{value:.3f}")
+        self._send(f"wr,{value:.3f}")
 
+    # ----------------------------------------------------------
+    # BLOCKING READ POSITION (rarely used)
+    # ----------------------------------------------------------
     def get_position(self) -> float:
-        ans = self.__execute("rd")
-        return float(ans.split(",")[1])
+        ans = self._query("rd")
+        try:
+            return float(ans.split(",")[1])
+        except:
+            return float('nan')
 
     @classmethod
     def get_voltage_limits(cls):
@@ -91,12 +96,12 @@ class NV40:
 
 
 if __name__ == "__main__":
-    dev = NV40("COM6")
+        dev = NV40("COM6")
 
-    import numpy as np
+        import numpy as np
+        for v in np.arange(10, 11, 0.1):
+            dev.set_position(v)
+            time.sleep(0.05)
+            print(v, dev.get_position())
 
-    for v in np.arange(10, 11, 0.1):
-        dev.set_position(v)
-        print(v, dev.get_position())
-
-    dev.close()
+        dev.close()

@@ -224,8 +224,8 @@ class PiezoJenaStageWindow(QWidget):
 
         try:
             self.stage.set_position(val)
-            self._log(f"Move to {val:.3f} V …")
-            self._safe_refresh_position()
+            self.cur_pos.setText(f"{val:.3f}")
+            self._log(f"Move command: {val:.3f} V")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Move failed: {e}")
             self._log(f"Move failed: {e}")
@@ -242,17 +242,13 @@ class PiezoJenaStageWindow(QWidget):
             return
 
         try:
-            cur = self.stage.get_position() or 0.0
+            cur = float(self.cur_pos.text()) if self.cur_pos.text() not in ("", "—") else 0.0
             tgt = cur + sign * step
-
-            if tgt < self.range_min:
-                tgt = self.range_min
-            if tgt > self.range_max:
-                tgt = self.range_max
+            tgt = max(self.range_min, min(self.range_max, tgt))
 
             self.stage.set_position(tgt)
-            self._log(f"Move to {tgt:.3f} V …")
-            self._safe_refresh_position()
+            self.cur_pos.setText(f"{tgt:.3f}")
+            self._log(f"Move command: {tgt:.3f} V")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Relative move failed: {e}")
             self._log(f"Relative move failed: {e}")
