@@ -6,7 +6,6 @@ from typing import Optional, Tuple, List
 import numpy as np
 from dlab.hardware.drivers import gxipy_driver as gx
 
-# Exposure and gain defaults/ranges (microseconds for exposure)
 DEFAULT_EXPOSURE_US = 1_000
 DEFAULT_GAIN = 0
 MIN_EXPOSURE_US = 20
@@ -23,8 +22,6 @@ class DahengControllerError(Exception):
 class DahengController:
     """
     Controller for a Daheng camera via gxipy wrapper.
-
-    Thread-safe for capture. Exposure in microseconds. Gain is unitless (device-specific).
     """
 
     def __init__(self, index: int) -> None:
@@ -37,21 +34,16 @@ class DahengController:
         self.current_exposure: Optional[int] = None
         self.current_gain: Optional[int] = None
 
-    # --------------- lifecycle ---------------
 
     def activate(self) -> None:
-        """Open device, set defaults, and cache image shape."""
         try:
             self._mgr.update_device_list()
             self._cam = self._mgr.open_device_by_index(self.index)
-            # Defaults
             self._cam.ExposureTime.set(self._clamp_exposure(DEFAULT_EXPOSURE_US))
             self._cam.Gain.set(self._clamp_gain(DEFAULT_GAIN))
-            # Software trigger mode
             self._cam.TriggerMode.set(gx.GxSwitchEntry.ON)
             self._cam.TriggerSource.set(gx.GxTriggerSourceEntry.SOFTWARE)
             self._cam.PixelFormat.set(gx.GxPixelFormatEntry.MONO8)
-            # Prime one frame to know the shape
             self._cam.stream_on()
             try:
                 self._cam.TriggerSoftware.send_command()
@@ -73,7 +65,6 @@ class DahengController:
             raise DahengControllerError(f"activate failed: {e}") from e
 
     def deactivate(self) -> None:
-        """Close device."""
         self._safe_close()
         self._log.info("Daheng[%s] deactivated", self.index)
 
@@ -81,7 +72,6 @@ class DahengController:
         try:
             if self._cam is not None:
                 try:
-                    # Make sure stream is off before closing
                     self._cam.stream_off()
                 except Exception:
                     pass
@@ -91,8 +81,6 @@ class DahengController:
             self._imshape = None
             self.current_exposure = None
             self.current_gain = None
-
-    # --------------- configuration ---------------
 
     def _clamp_exposure(self, us: int) -> int:
         if us < MIN_EXPOSURE_US or us > MAX_EXPOSURE_US:
@@ -111,7 +99,6 @@ class DahengController:
         return g
 
     def set_exposure(self, exposure_us: int) -> None:
-        """Set exposure in microseconds."""
         if not isinstance(exposure_us, int) or exposure_us <= 0:
             raise ValueError("exposure_us must be a positive integer (µs)")
         if self._cam is None:
@@ -143,12 +130,7 @@ class DahengController:
             raise DahengControllerError("image shape unknown; call activate() first")
         return self._imshape
 
-    # --------------- capture ---------------
-
     def capture_single(self, exposure_us: int, gain: Optional[int] = None) -> np.ndarray:
-        """
-        Capture a single frame (float64). If gain is given, update it first.
-        """
         if self._cam is None or self._imshape is None:
             raise DahengControllerError("camera not active; call activate() first")
 
@@ -170,9 +152,7 @@ class DahengController:
                 self._cam.stream_off()
 
     def capture_sequence(self, n: int, exposure_us: int, gain: Optional[int] = None) -> List[np.ndarray]:
-        """
-        Capture N frames as a list (each float64). Faster than calling capture_single N times.
-        """
+
         if self._cam is None or self._imshape is None:
             raise DahengControllerError("camera not active; call activate() first")
         if n <= 0:
@@ -198,11 +178,9 @@ class DahengController:
 
         return frames
 
-    # --------------- legacy compatibility ---------------
-
     def take_image(self, exposure: int, gain: int, avgs: int) -> np.ndarray:
         """
-        Legacy API: capture with 'avgs' frames averaged. Prefer capture_single / capture_sequence.
+        Legacy API: capture with 'avgs' frames averaged.
         """
         if avgs <= 0:
             raise ValueError("avgs must be >= 1")
@@ -212,11 +190,8 @@ class DahengController:
             acc += f
         return acc / avgs
 
-    # --------------- misc ---------------
-
     @staticmethod
     def get_available_indices() -> list[int]:
-        """Return available 1-based camera indices."""
         mgr = gx.DeviceManager()
         dev_num, _ = mgr.update_device_list()
         return list(range(1, dev_num + 1))

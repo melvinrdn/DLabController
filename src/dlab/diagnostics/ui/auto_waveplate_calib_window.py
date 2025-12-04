@@ -20,8 +20,6 @@ from dlab.hardware.wrappers.powermeter_controller import PowermeterController
 
 logger = logging.getLogger("dlab.ui.AutoWaveplateCalibWindow")
 
-
-# ---------- path helpers ----------
 def _ressources_root() -> Path:
     cfg = get_config() or {}
     rel = (cfg.get("paths", {}) or {}).get("ressources", "ressources")
@@ -34,10 +32,6 @@ def _calib_dir(waveplate_name: str) -> Path:
 
 # ---------- worker ----------
 class AutoAttCalibWorker(QObject):
-    """
-    Runs in a background thread. Moves a motor across angles and reads power.
-    Emits live (angle, power), logs, and a finished signal with output file path.
-    """
     measurement_updated = pyqtSignal(float, float)
     log_signal = pyqtSignal(str)
     finished = pyqtSignal(str)
@@ -93,7 +87,6 @@ class AutoAttCalibWorker(QObject):
         )
 
     def _close_hardware(self) -> None:
-        # Best-effort shutdown
         try:
             if self._pm:
                 self._pm.deactivate()
@@ -108,7 +101,7 @@ class AutoAttCalibWorker(QObject):
         #self._motor = None
 
     def run(self) -> None:
-        # Prepare output
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y_%m_%d")
         out_path = self._unique_path(self.output_dir / f"calib_{ts}.txt")
@@ -119,7 +112,7 @@ class AutoAttCalibWorker(QObject):
             msg = f"Hardware init failed: {e}"
             self.log_signal.emit(msg)
             logger.exception(msg)
-            self.finished.emit("")  # signal failure
+            self.finished.emit("")
             return
 
         try:
@@ -147,7 +140,6 @@ class AutoAttCalibWorker(QObject):
 
                     time.sleep(self.stabilization_s)
 
-                    # Read power
                     try:
                         assert self._pm is not None
                         power_w = float(self._pm.read_power())
@@ -155,7 +147,6 @@ class AutoAttCalibWorker(QObject):
                         self.log_signal.emit(f"Power read failed at {angle:.2f}°: {e}")
                         power_w = float("nan")
 
-                    # Emit + write
                     self.measurement_updated.emit(float(angle), power_w)
                     self.log_signal.emit(f"Angle {angle:.2f}° → {power_w:.6e} W")
                     f.write(f"{angle:.6f}\t{power_w:.9f}\n")
@@ -171,7 +162,6 @@ class AutoAttCalibWorker(QObject):
             self.finished.emit(out_path.as_posix())
 
 
-# ---------- GUI ----------
 class AutoWaveplateCalibWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -183,12 +173,10 @@ class AutoWaveplateCalibWindow(QMainWindow):
         self._angles: list[float] = []
         self._powers: list[float] = []
 
-    # UI
     def _build_ui(self) -> None:
         central = QWidget(self); self.setCentralWidget(central)
         main = QHBoxLayout(central)
 
-        # Left controls
         left = QVBoxLayout()
 
         self.motor_id_edit = QLineEdit("83837725")
@@ -238,7 +226,6 @@ class AutoWaveplateCalibWindow(QMainWindow):
         left.addStretch(1)
         main.addLayout(left, 1)
 
-        # Right: plot + log
         right = QVBoxLayout()
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas

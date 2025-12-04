@@ -11,16 +11,11 @@ from PyQt5.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
     QComboBox, QGroupBox, QFileDialog, QLineEdit
 )
-from PyQt5.QtCore import Qt
 from matplotlib.figure import Figure
-        # backend
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from dlab.boot import ROOT, get_config
 
-# ----------------------------
-# Waveplate Calibration Widget
-# ----------------------------
 
 NUM_WAVEPLATES = 7
 COLORS = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown','tab:cyan', 'tab:pink']
@@ -96,19 +91,15 @@ class WaveplateCalibWidget(QWidget):
         self.calibration_params: Dict[int, Tuple[float, float]] = {}
         # {wp_index (int): max power seen in file (W) — informational only}
         self.max_abs_power: Dict[int, float] = {}
-
         # per-WP UI
         self.wp_entries: Dict[str, Dict[str, QLineEdit]] = {}
 
         self._init_ui()
         self._load_defaults_from_yaml()
 
-    # ---------- UI ----------
-
     def _init_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # Left: controls
         options_group = QGroupBox("Calibration Options")
         options_layout = QVBoxLayout(options_group)
 
@@ -140,15 +131,12 @@ class WaveplateCalibWidget(QWidget):
 
         main_layout.addWidget(options_group, 1)
 
-        # Right: plot
         self.fig = Figure(figsize=(5, 6), dpi=100)
         rows = int(np.ceil(np.sqrt(NUM_WAVEPLATES)))
         cols = int(np.ceil(NUM_WAVEPLATES / rows))
         self.axes = [self.fig.add_subplot(rows, cols, i + 1) for i in range(NUM_WAVEPLATES)]
         self.canvas = FigureCanvas(self.fig)
         main_layout.addWidget(self.canvas, 2)
-
-    # ---------- YAML I/O ----------
 
     def _load_defaults_from_yaml(self) -> None:
         yaml_path = _wp_default_yaml()
@@ -180,11 +168,8 @@ class WaveplateCalibWidget(QWidget):
         except Exception as e:
             self.log(f"Failed to write wp_default.yaml: {e}")
 
-    # ---------- Model: normalized cos + phase-only fit ----------
-
     @staticmethod
     def _cos01(x_deg: np.ndarray | float, phase_deg: float) -> np.ndarray | float:
-        # y ∈ [0,1] with period 180° for a half-wave plate
         return 0.5 * (1.0 + np.cos(2.0 * np.pi / 90.0 * (np.asarray(x_deg) - phase_deg)))
 
     def _fit_phase_only(self, x: np.ndarray, y01: np.ndarray) -> float:
@@ -192,8 +177,6 @@ class WaveplateCalibWidget(QWidget):
             return self._cos01(xx, phase)
         popt, _ = curve_fit(f, x, y01, p0=(0.0,))
         return float(popt[0])
-
-    # ---------- Public API used by StageControl ----------
 
     def load_waveplate_calibration(self, wp_index: int) -> bool:
         p = self.default_calib.get(wp_index)
@@ -212,8 +195,6 @@ class WaveplateCalibWidget(QWidget):
             pass
         return True
 
-    # ---------- Calibration loading ----------
-
     def _open_calibration_file(self, wp_index: int, filepath: Path) -> None:
         try:
             angles, powers = _load_xy_file(filepath)
@@ -224,19 +205,15 @@ class WaveplateCalibWidget(QWidget):
             if not np.isfinite(pmax) or pmax <= 0:
                 raise ValueError("Invalid max power in calibration file")
 
-            # Normalize to 0..1
             y01 = np.clip(powers / pmax, 0.0, 1.0)
             phase = self._fit_phase_only(angles, y01)
 
-            # Persist
-            self.calibration_params[wp_index] = (1.0, phase)   # amplitude=1.0 (fraction)
+            self.calibration_params[wp_index] = (1.0, phase)
             self.max_abs_power[wp_index] = pmax
 
-            # UI
             self.wp_entries[str(wp_index)]["max"].setText("1.00")
             self.wp_entries[str(wp_index)]["offset"].setText(f"{phase:.2f}")
 
-            # Plot normalized data + fit
             ax = self.axes[wp_index - 1]
             ax.clear()
             color = COLORS[(wp_index - 1) % len(COLORS)]
@@ -252,12 +229,11 @@ class WaveplateCalibWidget(QWidget):
             if self.calibration_changed_callback:
                 self.calibration_changed_callback(wp_index, self.calibration_params[wp_index])
 
-            # Publish to REGISTRY
             try:
                 from dlab.core.device_registry import REGISTRY
                 REGISTRY.register(f"waveplate:calib:{wp_index}", (1.0, phase))
                 REGISTRY.register(f"waveplate:calib_path:{wp_index}", filepath.as_posix())
-                REGISTRY.register(f"waveplate:max:{wp_index}", pmax)  # info only
+                REGISTRY.register(f"waveplate:max:{wp_index}", pmax)  
             except Exception:
                 pass
 
@@ -282,7 +258,6 @@ class WaveplateCalibWidget(QWidget):
         self._save_defaults_to_yaml()
         self._open_calibration_file(wp_index, p)
 
-    # ---------- Logging ----------
 
     def log(self, message: str):
         msg = f"[WaveplateCalib] {message}"

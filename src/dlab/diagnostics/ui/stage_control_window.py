@@ -26,10 +26,10 @@ def _wp_index_from_stage_number(stage_number: int) -> int:
     return stage_number + 1
 
 def _reg_key_powermode(wp_index: int) -> str:
-    return f"waveplate:powermode:{wp_index}"  # bool
+    return f"waveplate:powermode:{wp_index}"  
 
 def _reg_key_calib(wp_index: int) -> str:
-    return f"waveplate:calib:{wp_index}"      # (1.0, phase_deg)
+    return f"waveplate:calib:{wp_index}"    
 
 def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) -> float:
     y = float(np.clip(power_fraction, 0.0, 1.0))
@@ -37,7 +37,6 @@ def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) 
 
 def load_default_ids() -> dict[int, str]:
     cfg = get_config() or {}
-    # We now have 7 waveplates (0..6) + 3 translation stages (7..9) = 10 total.
     defaults = {i: "00000000" for i in range(10)}
     try:
         y = (cfg.get("stages", {}) or {}).get("default_ids", {}) or {}
@@ -62,7 +61,6 @@ class StageRow(QWidget):
 
         self._poll = QTimer(self); self._poll.setInterval(200); self._poll.timeout.connect(self._update_position)
 
-        # phase only; amplitude fixed = 1.0 (fraction)
         self.amplitude = 1.0
         self.offset = 0.0
 
@@ -232,7 +230,6 @@ class StageRow(QWidget):
                 wp_idx = _wp_index_from_stage_number(self.stage_number)
                 phase = float(self.offset)
 
-                # prefer user-set max_value; fallback to info value from file
                 mv = REGISTRY.get(f"waveplate:max_value:{wp_idx}")
                 if mv is None:
                     mv = REGISTRY.get(f"waveplate:max:{wp_idx}")
@@ -248,7 +245,6 @@ class StageRow(QWidget):
                 self._poll.start()
                 return
 
-            # default: direct angle/position
             value = float(t)
             if self.is_waveplate:
                 value = value % 360.0

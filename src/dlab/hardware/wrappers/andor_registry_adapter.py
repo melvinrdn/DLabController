@@ -3,20 +3,12 @@ from typing import Tuple, Dict, Optional
 import numpy as np
 
 class AndorRegistryCamera:
-    """
-    DeviceRegistry adapter:
-      - name
-      - set_exposure_us(int)
-      - grab_frame_for_scan(...) -> (frame_u16, meta)
-      - optionally pushes frames to a live UI via Qt signal
-    """
     def __init__(self, controller, name: str = "AndorCam_1", live_window: Optional[object] = None):
         self.controller = controller
         self.name = name
-        self.live_window = live_window  # <-- add this
+        self.live_window = live_window
 
     def set_exposure_us(self, exposure_us: int) -> None:
-        # AndorController semble accepter les µs directement:
         if hasattr(self.controller, "set_exposure"):
             self.controller.set_exposure(int(exposure_us))
         elif hasattr(self.controller, "setExposure"):
@@ -51,7 +43,6 @@ class AndorRegistryCamera:
             "Background": "1" if background else "0",
         }
 
-        # NEW: push the grabbed frame to the AndorLive UI
         try:
             if self.live_window is not None and hasattr(self.live_window, "external_image_signal"):
                 self.live_window.external_image_signal.emit(out)

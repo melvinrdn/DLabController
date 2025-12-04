@@ -1,4 +1,3 @@
-# src/dlab/core/device_registry.py
 from __future__ import annotations
 from threading import RLock
 from typing import Any, Iterable

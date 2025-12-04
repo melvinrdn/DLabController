@@ -70,11 +70,9 @@ class DlabControllerWindow(QMainWindow):
         self.scan_button.clicked.connect(self.open_scan_window)
         view_layout.addWidget(self.scan_button)
 
-        # ---- New: Phase lock window ----
         self.phase_lock_button = QPushButton("Open Phase Lock Window")
         self.phase_lock_button.clicked.connect(self.open_phase_lock_window)
         view_layout.addWidget(self.phase_lock_button)
-        # ---------------------------------
 
         self.camera_controls = {}
         default_indices = {"DahengCam_1": 1, "DahengCam_2": 2, "DahengCam_3": 3}

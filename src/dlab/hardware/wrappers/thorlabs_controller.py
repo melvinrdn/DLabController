@@ -9,10 +9,6 @@ class ThorlabsNotActivatedError(RuntimeError):
 
 
 class ThorlabsController:
-    """
-    Minimal, thin wrapper over thorlabs_apt.Motor.
-    Same public surface as your original: activate/home/move_to/get_position/identify/disable.
-    """
 
     def __init__(self, motor_id: int) -> None:
         self.motor_id: int = motor_id
