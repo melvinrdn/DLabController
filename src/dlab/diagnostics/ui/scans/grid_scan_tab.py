@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import datetime, time
+import datetime
+import time
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
 
-import sip
 import numpy as np
 from PIL import Image, PngImagePlugin
 
-from PyQt5.QtCore import QTimer, QObject, pyqtSignal, QThread, Qt
+from PyQt5.QtCore import QTimer, QObject, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox, QPushButton,
     QDoubleSpinBox, QTextEdit, QProgressBar, QMessageBox, QTableWidget,
@@ -17,10 +16,7 @@ from PyQt5.QtWidgets import (
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
-from dlab.diagnostics.ui.scans.grid_scan_live_view import AndorGridScanLiveView
-from dlab.hardware.wrappers.slm_controller import SLMController
 from dlab.hardware.wrappers.phase_settings import PhaseSettings
-from PyQt5.QtWidgets import QMessageBox
 
 import logging
 logger = logging.getLogger("dlab.scans.grid_scan_tab")
@@ -28,48 +24,55 @@ logger = logging.getLogger("dlab.scans.grid_scan_tab")
 from dlab.hardware.wrappers.waveplate_calib import NUM_WAVEPLATES
 
 
-def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) -> float:
+POWER_MODE_SYNC_INTERVAL_MS = 400
+SPECTRUM_MEASUREMENT_DELAY_S = 0.01
+
+
+def power_to_angle(power_fraction, _amp_unused, phase_deg):
     y = float(np.clip(power_fraction, 0.0, 1.0))
     return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
 
 
-def angle_to_power(angle_deg: float, phase_deg: float) -> float:
+def angle_to_power(angle_deg, phase_deg):
     y = 0.5 * (1.0 + float(np.cos(2.0 * np.pi / 90.0 * (float(angle_deg) - float(phase_deg)))))
     return float(np.clip(y, 0.0, 1.0))
 
 
-def _wp_index_from_stage_key(stage_key: str) -> Optional[int]:
+def _wp_index_from_stage_key(stage_key):
     try:
         if not stage_key.startswith("stage:"):
             return None
         n = int(stage_key.split(":")[1])
         if 1 <= n <= NUM_WAVEPLATES:
             return n
-    except Exception:
+    except (ValueError, IndexError):
         pass
     return None
 
 
-def _reg_key_powermode(wp_index: int) -> str:
+def _reg_key_powermode(wp_index):
     return f"waveplate:powermode:{wp_index}"
 
-def _reg_key_calib(wp_index: int) -> str:
+
+def _reg_key_calib(wp_index):
     return f"waveplate:calib:{wp_index}"
 
-def _reg_key_calib_path(wwp: int) -> str:
-    return f"waveplate:calib_path:{wwp}"
 
-def _reg_key_maxvalue(wp: int) -> str:
-    return f"waveplate:max_value:{wp}"
+def _reg_key_calib_path(wp_index):
+    return f"waveplate:calib_path:{wp_index}"
 
 
-def _data_root() -> Path:
+def _reg_key_maxvalue(wp_index):
+    return f"waveplate:max_value:{wp_index}"
+
+
+def _data_root():
     cfg = get_config() or {}
     base = cfg.get("paths", {}).get("data_root", "C:/data")
     return (ROOT / base).resolve()
 
 
-def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta: dict) -> Path:
+def _save_png_with_meta(folder, filename, frame_u16, meta):
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / filename
     img = Image.fromarray(frame_u16, mode="I;16")
@@ -80,27 +83,41 @@ def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta
     return path
 
 
+def _detector_display_name(det_key, dev, meta):
+    if meta and str(meta.get("DeviceName", "")).strip():
+        return str(meta["DeviceName"]).strip()
+    for attr in ("name", "camera_name", "model_name"):
+        v = getattr(dev, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    suffix = det_key.split(":")[-1]
+    base, *rest = suffix.split("_")
+    if base.lower().endswith("cam"):
+        vendor = base[:-3]
+        camel = (vendor[:1].upper() + vendor[1:]) + "Cam"
+    else:
+        camel = base[:1].upper() + base[1:]
+    return camel + (("_" + "_".join(rest)) if rest else "")
+
+
 class GridScanWorker(QObject):
     progress = pyqtSignal(int, int)
     log = pyqtSignal(str)
     finished = pyqtSignal(str)
-    andor_frame = pyqtSignal(object, object, str)
-    spec_updated = pyqtSignal(object, object)
-    pm_updated = pyqtSignal(float, float)
 
     def __init__(
         self,
-        axes: List[Tuple[str, List[float]]],
-        camera_params: Dict[str, Tuple],
-        settle_s: float,
-        scan_name: str,
-        comment: str,
-        mcp_voltage: str,
-        background: bool = False,
-        existing_scan_log: Optional[str] = None,
-        axes_meta: Optional[Dict[str, dict]] = None,
-        parent: QObject | None = None,
-    ) -> None:
+        axes,
+        camera_params,
+        settle_s,
+        scan_name,
+        comment,
+        mcp_voltage,
+        background=False,
+        existing_scan_log=None,
+        axes_meta=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.axes = axes
         self.camera_params = camera_params
@@ -112,14 +129,16 @@ class GridScanWorker(QObject):
         self.existing_scan_log = existing_scan_log
         self.abort = False
         self.axes_meta = axes_meta or {}
+        self.data_root = _data_root()
+        self.timestamp = datetime.datetime.now()
 
-    def _emit(self, msg: str) -> None:
+    def _emit(self, msg):
         self.log.emit(msg)
         logger.info(msg)
 
     def _cartesian_indices(self):
         lengths = [len(pos) for _, pos in self.axes]
-        def rec(level: int, idxs: list[int]):
+        def rec(level, idxs):
             if level == len(lengths):
                 yield list(idxs)
                 return
@@ -129,47 +148,255 @@ class GridScanWorker(QObject):
                 idxs.pop()
         yield from rec(0, [])
 
+    def _write_scan_log_header(self, scan_log, axes, comment):
+        header_cols = []
+        for i, (ax, _) in enumerate(axes, 1):
+            header_cols += [f"Stage_{i}", f"pos_{i}", f"power_{i}"]
+        header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime_or_Period",
+                        "Averages_or_None", "MCP_Voltage"]
 
-    def run(self) -> None:
-        def _write_scan_log_header(scan_log: Path, axes: List[Tuple[str, List[float]]], comment: str) -> None:
-            header_cols = []
-            for i, (ax, _) in enumerate(axes, 1):
-                header_cols += [f"Stage_{i}", f"pos_{i}", f"power_{i}"]
-            header_cols += ["DetectorKey", "ImageFile", "Exposure_or_IntTime_or_Period",
-                            "Averages_or_None", "MCP_Voltage"]
+        with open(scan_log, "w", encoding="utf-8") as f:
+            f.write("\t".join(header_cols) + "\n")
+            f.write(f"# {comment}\n")
+            for ax, _ in axes:
+                wp = _wp_index_from_stage_key(ax)
+                meta = self.axes_meta.get(ax, {})
+                pm_on = bool(meta.get("pm", False))
+                if wp is not None and pm_on:
+                    calib_path = meta.get("calib_path",
+                        REGISTRY.get(_reg_key_calib_path(wp)) or "unknown")
+                    mv = meta.get("max_value_W",
+                        REGISTRY.get(_reg_key_maxvalue(wp)))
+                    mv_txt = "none" if mv is None else f"{float(mv):.6g} W"
+                    f.write("# PowerMode ON for {ax} (WP{wp}) | calib={calib} | max_value={mv}\n"
+                            .format(ax=ax, wp=wp, calib=calib_path, mv=mv_txt))
+                    f.write("#   Start fraction={sf:.6f} | Start angle={sa:.3f} deg | "
+                            "Rotation={de:.3f} deg | Step={st:.3f} deg\n"
+                            .format(
+                                sf=float(meta.get("start_fraction", float("nan"))),
+                                sa=float(meta.get("start_angle_deg", float("nan"))),
+                                de=float(meta.get("delta_deg", float("nan"))),
+                                st=float(meta.get("step_deg", float("nan")))
+                            ))
+                else:
+                    f.write("# PowerMode OFF for {ax} | Start={st:.6g} | End={en:.6g} | Step={sp:.6g}\n"
+                            .format(
+                                ax=ax,
+                                st=float(meta.get("start", float("nan"))),
+                                en=float(meta.get("end", float("nan"))),
+                                sp=float(meta.get("step", float("nan")))
+                            ))
 
-            with open(scan_log, "w", encoding="utf-8") as f:
-                f.write("\t".join(header_cols) + "\n")
-                f.write(f"# {comment}\n")
-                for ax, _ in axes:
-                    wp = _wp_index_from_stage_key(ax)
-                    meta = self.axes_meta.get(ax, {})
-                    pm_on = bool(meta.get("pm", False))
-                    if wp is not None and pm_on:
-                        calib_path = meta.get("calib_path",
-                            REGISTRY.get(_reg_key_calib_path(wp)) or "unknown")
-                        mv = meta.get("max_value_W",
-                            REGISTRY.get(_reg_key_maxvalue(wp)))
-                        mv_txt = "none" if mv is None else f"{float(mv):.6g} W"
-                        f.write("# PowerMode ON for {ax} (WP{wp}) | calib={calib} | max_value={mv}\n"
-                                .format(ax=ax, wp=wp, calib=calib_path, mv=mv_txt))
-                        f.write("#   Start fraction={sf:.6f} | Start angle={sa:.3f} deg | "
-                                "Rotation={de:.3f} deg | Step={st:.3f} deg\n"
-                                .format(
-                                    sf=float(meta.get("start_fraction", float("nan"))),
-                                    sa=float(meta.get("start_angle_deg", float("nan"))),
-                                    de=float(meta.get("delta_deg", float("nan"))),
-                                    st=float(meta.get("step_deg", float("nan")))
-                                ))
-                    else:
-                        f.write("# PowerMode OFF for {ax} | Start={st:.6g} | End={en:.6g} | Step={sp:.6g}\n"
-                                .format(
-                                    ax=ax,
-                                    st=float(meta.get("start", float("nan"))),
-                                    en=float(meta.get("end", float("nan"))),
-                                    sp=float(meta.get("step", float("nan")))
-                                ))
+    def _save_image(self, det_key, dev, frame_u16, exposure_us, tag, meta):
+        det_name = _detector_display_name(det_key, dev, meta)
+        det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / det_name
+        ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        fn = f"{det_name}_{tag}_{ts_ms}.png"
+        _save_png_with_meta(det_day, fn, frame_u16,
+                            {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
+        return fn
 
+    def _save_spectrum(self, det_key, dev, wl_nm, counts, int_ms, averages):
+        det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / "Avaspec"
+        safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
+        ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        tag = "Background" if self.background else "Spectrum"
+        fn = f"{safe_name}_{tag}_{ts_ms}.txt"
+        header = {
+            "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "IntegrationTime_ms": int_ms,
+            "Averages": averages,
+            "Comment": self.comment,
+            "CalibrationApplied": bool(getattr(dev, "has_calibration", lambda: False)())
+        }
+        det_day.mkdir(parents=True, exist_ok=True)
+        path = det_day / fn
+        lines = [f"# {k}: {v}" for k, v in header.items()]
+        lines.append("Wavelength_nm;Counts")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+            for xv, yv in zip(wl_nm, counts):
+                f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
+        return fn
+
+    def _capture_camera(self, det_key, dev, params):
+        exposure_or_int = int(params[0]) if len(params) >= 1 else 0
+        averages = int(params[1]) if len(params) >= 2 else 1
+        
+        try:
+            frame_u16, meta = dev.grab_frame_for_scan(
+                averages=int(averages),
+                background=self.background,
+                dead_pixel_cleanup=True,
+                exposure_us=int(exposure_or_int),
+            )
+        except TypeError:
+            frame_u16, meta = dev.grab_frame_for_scan(
+                averages=int(averages),
+                background=self.background,
+                dead_pixel_cleanup=True,
+            )
+        
+        exp_meta = int((meta or {}).get("Exposure_us", exposure_or_int))
+        tag = "Background" if self.background else "Image"
+        data_fn = self._save_image(det_key, dev, frame_u16, exp_meta, tag, meta=None)
+        saved_label = f"exp {exp_meta} µs"
+        
+        return data_fn, saved_label
+
+    def _capture_spectrometer(self, det_key, dev, params):
+        exposure_or_int = float(params[0]) if len(params) >= 1 else 0.0
+        averages = int(params[1]) if len(params) >= 2 else 1
+        
+        if hasattr(dev, "get_wavelengths"):
+            wl = np.asarray(dev.get_wavelengths(), dtype=float)
+        else:
+            wl = np.asarray(getattr(dev, "wavelength", None), dtype=float)
+
+        if wl is None or wl.size == 0:
+            raise ValueError(f"{det_key}: wavelength array empty")
+
+        if hasattr(dev, "grab_spectrum_for_scan"):
+            counts, meta = dev.grab_spectrum_for_scan(
+                int_ms=float(exposure_or_int),
+                averages=int(averages)
+            )
+            counts = np.asarray(counts, dtype=float)
+            int_ms = float((meta or {}).get("Integration_ms", float(exposure_or_int)))
+        else:
+            buf = []
+            for _ in range(int(averages)):
+                _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
+                buf.append(np.asarray(_data, dtype=float))
+                time.sleep(SPECTRUM_MEASUREMENT_DELAY_S)
+            counts = np.mean(np.stack(buf, axis=0), axis=0)
+            int_ms = float(exposure_or_int)
+
+        if counts.size != wl.size:
+            raise ValueError(f"{det_key}: spectrum length mismatch")
+
+        data_fn = f"{int_ms:.1f}ms_spectrum"
+        saved_label = f"int {int_ms:.0f} ms"
+        
+        return data_fn, saved_label
+
+    def _capture_powermeter(self, det_key, dev, params):
+        period_ms = float(params[0]) if len(params) >= 1 else 100.0
+        averages = int(params[1]) if len(params) >= 2 else 1
+        wavelength_nm = float(params[2]) if len(params) >= 3 else None
+
+        if wavelength_nm is not None and hasattr(dev, "set_wavelength"):
+            try:
+                dev.set_wavelength(float(wavelength_nm))
+            except Exception as e:
+                logger.warning(f"Failed to set wavelength: {e}")
+
+        vals = []
+        n_avg = max(1, int(averages))
+        for i in range(n_avg):
+            v = float(dev.read_power())
+            vals.append(v)
+            if i + 1 < n_avg:
+                time.sleep(period_ms / 1000.0)
+
+        power = float(np.mean(vals)) if vals else float("nan")
+        data_fn = f"{power:.9f}"
+        saved_label = f"P={power:.3e} W"
+        
+        return data_fn, saved_label
+
+    def _format_position_log(self, log_combo):
+        return ", ".join([
+            f"{ax}: pos={float(pv):.6f}" +
+            ("" if (powv == "") else f", power={float(powv):.6f}")
+            for ax, pv, powv in log_combo
+        ])
+
+    def _move_slm_axis(self, ax, pos):
+        parts = ax.split(":")
+        if len(parts) != 3:
+            raise ValueError(f"Invalid SLM axis format '{ax}'. Expected slm:ClassName:FieldName")
+
+        _, class_name, field_name = parts
+
+        active_classes = REGISTRY.get("slm:red:active_classes") or []
+        widgets = REGISTRY.get("slm:red:widgets") or []
+
+        if class_name not in active_classes:
+            raise ValueError(
+                f"SLM class '{class_name}' is not active on the red SLM.\n"
+                f"Active classes: {active_classes}"
+            )
+
+        phase_widget = None
+        for w in widgets:
+            if getattr(w, "name_", lambda: "")() == class_name:
+                phase_widget = w
+                break
+
+        if phase_widget is None:
+            raise ValueError(f"SLM widget for '{class_name}' not found in registry.")
+
+        if not hasattr(phase_widget, field_name):
+            candidate_fields = [
+                name for name in dir(phase_widget)
+                if name.startswith("le_") or name.startswith("cb_")
+            ]
+            raise ValueError(
+                f"Field '{field_name}' does not exist in SLM class '{class_name}'.\n"
+                f"Available fields: {candidate_fields}"
+            )
+
+        widget = getattr(phase_widget, field_name)
+        widget.setText(str(pos))
+
+        slm_window = REGISTRY.get("slm:red:window")
+        if slm_window is None:
+            raise RuntimeError("SLM window not registered. Cannot compose multi-layer patterns.")
+
+        levels = slm_window.compose_levels()
+
+        slm_red = REGISTRY.get("slm:red:controller")
+        if slm_red is None:
+            raise RuntimeError(
+                "Red SLM is not active. Open the SLM window and publish a pattern first."
+            )
+
+        screen_num = self.axes_meta[ax].get("screen", 3)
+        slm_red.publish(levels, screen_num=screen_num)
+        self._emit(f"SLM {class_name}:{field_name} = {pos}")
+
+    def _prepare_move_targets(self, ui_combo):
+        move_targets = []
+        log_combo = []
+
+        for ax, pos in ui_combo:
+            wp = _wp_index_from_stage_key(ax)
+            meta = self.axes_meta.get(ax, {})
+            pm_on = bool(meta.get("pm", False))
+
+            if wp is not None and pm_on:
+                angle = float(pos)
+                amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
+                if amp_off[1] is None:
+                    raise ValueError(f"{ax}: Power Mode ON but no calibration phase")
+                phase = float(amp_off[1])
+                frac = angle_to_power(angle, phase)
+                mv = REGISTRY.get(_reg_key_maxvalue(wp))
+                if mv is None:
+                    power_val = frac
+                else:
+                    power_val = frac * float(mv)
+
+                move_targets.append((ax, angle))
+                log_combo.append((ax, angle, power_val))
+            else:
+                move_targets.append((ax, float(pos)))
+                log_combo.append((ax, float(pos), ""))
+
+        return move_targets, log_combo
+
+    def _initialize_stages(self):
         stages = {}
         for stage_key, _ in self.axes:
             if stage_key.startswith("slm:"):
@@ -177,25 +404,23 @@ class GridScanWorker(QObject):
             else:
                 stg = REGISTRY.get(stage_key)
                 if stg is None:
-                    self._emit(f"Stage '{stage_key}' not found."); self.finished.emit(""); return
+                    raise ValueError(f"Stage '{stage_key}' not found")
                 stages[stage_key] = stg
+        return stages
 
+    def _initialize_detectors(self):
         detectors = {}
         for det_key, params in self.camera_params.items():
             dev = REGISTRY.get(det_key)
             if dev is None:
-                self._emit(f"Detector '{det_key}' not found.")
-                self.finished.emit("")
-                return
+                raise ValueError(f"Detector '{det_key}' not found")
 
             is_camera = hasattr(dev, "grab_frame_for_scan")
             is_spectro = hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan")
             is_pow = hasattr(dev, "fetch_power")
 
             if not (is_camera or is_spectro or is_pow):
-                self._emit(f"Detector '{det_key}' doesn't expose a scan API.")
-                self.finished.emit("")
-                return
+                raise ValueError(f"Detector '{det_key}' doesn't expose a scan API")
 
             try:
                 if is_camera:
@@ -206,93 +431,50 @@ class GridScanWorker(QObject):
                         dev.setExposureUS(exposure)
                     elif hasattr(dev, "set_exposure"):
                         dev.set_exposure(exposure)
-
                 elif is_pow:
                     if len(params) >= 2 and hasattr(dev, "set_avg"):
                         try:
                             dev.set_avg(int(params[1]))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"Failed to set avg on {det_key}: {e}")
                     if len(params) >= 3 and hasattr(dev, "set_wavelength"):
                         try:
                             dev.set_wavelength(float(params[2]))
-                        except Exception:
-                            pass
-
+                        except Exception as e:
+                            logger.warning(f"Failed to set wavelength on {det_key}: {e}")
             except Exception as e:
                 self._emit(f"Warning: failed to preset on '{det_key}': {e}")
 
             detectors[det_key] = dev
+        return detectors
 
-        now = datetime.datetime.now()
-        root = _data_root()
-
-        scan_dir = root / f"{now:%Y-%m-%d}" / "Scans" / self.scan_name
+    def _create_scan_log(self):
+        scan_dir = self.data_root / f"{self.timestamp:%Y-%m-%d}" / "Scans" / self.scan_name
         scan_dir.mkdir(parents=True, exist_ok=True)
 
         if self.existing_scan_log:
-            scan_log = Path(self.existing_scan_log)
-        else:
-            date_str = f"{now:%Y-%m-%d}"
-            idx = 1
-            while True:
-                candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
-                if not candidate.exists():
-                    break
-                idx += 1
-            scan_log = candidate
-            _write_scan_log_header(scan_log, self.axes, self.comment)
-            
-        def _detector_display_name(det_key: str, dev, meta: dict | None) -> str:
-            if meta and str(meta.get("DeviceName", "")).strip():
-                return str(meta["DeviceName"]).strip()
-            for attr in ("name", "camera_name", "model_name"):
-                v = getattr(dev, attr, None)
-                if isinstance(v, str) and v.strip():
-                    return v.strip()
-            suffix = det_key.split(":")[-1]
-            base, *rest = suffix.split("_")
-            if base.lower().endswith("cam"):
-                vendor = base[:-3]
-                camel = (vendor[:1].upper() + vendor[1:]) + "Cam"
-            else:
-                camel = base[:1].upper() + base[1:]
-            return camel + (("_" + "_".join(rest)) if rest else "")
+            return Path(self.existing_scan_log)
 
-        def _save_image(det_key: str, dev, frame_u16: np.ndarray, exposure_us: int,
-                        tag: str, meta: dict | None) -> str:
-            det_name = _detector_display_name(det_key, dev, meta)
-            det_day = root / f"{now:%Y-%m-%d}" / det_name
-            ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            fn = f"{det_name}_{tag}_{ts_ms}.png"
-            _save_png_with_meta(det_day, fn, frame_u16,
-                                {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
-            return fn
+        date_str = f"{self.timestamp:%Y-%m-%d}"
+        idx = 1
+        while True:
+            candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
+            if not candidate.exists():
+                break
+            idx += 1
+        
+        self._write_scan_log_header(candidate, self.axes, self.comment)
+        return candidate
 
-        def _save_spectrum(det_key: str, dev, wl_nm: np.ndarray, counts: np.ndarray,
-                        int_ms: float, averages: int) -> str:
-            det_day = root / f"{now:%Y-%m-%d}" / "Avaspec"
-            safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
-            ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            tag = "Background" if self.background else "Spectrum"
-            fn = f"{safe_name}_{tag}_{ts_ms}.txt"
-            header = {
-                "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "IntegrationTime_ms": int_ms,
-                "Averages": averages,
-                "Comment": self.comment,
-                "CalibrationApplied": bool(getattr(dev, "has_calibration", lambda: False)())
-            }
-            det_day.mkdir(parents=True, exist_ok=True)
-            path = det_day / fn
-            lines = [f"# {k}: {v}" for k, v in header.items()]
-            lines.append("Wavelength_nm;Counts")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines) + "\n")
-                for xv, yv in zip(wl_nm, counts):
-                    f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
-            return fn
-
+    def run(self):
+        try:
+            stages = self._initialize_stages()
+            detectors = self._initialize_detectors()
+            scan_log = self._create_scan_log()
+        except ValueError as e:
+            self._emit(str(e))
+            self.finished.emit("")
+            return
 
         lengths = [len(pos) for _, pos in self.axes]
         total_points = 1
@@ -302,11 +484,7 @@ class GridScanWorker(QObject):
         done = 0
 
         try:
-            # ================================
-            #      MAIN SCAN LOOP
-            # ================================
             for idxs in self._cartesian_indices():
-
                 if self.abort:
                     self._emit("Scan aborted.")
                     self.finished.emit("")
@@ -315,129 +493,31 @@ class GridScanWorker(QObject):
                 ui_combo = [(self.axes[k][0], self.axes[k][1][idxs[k]])
                             for k in range(len(self.axes))]
 
-                move_targets: List[Tuple[str, float]] = []
-                log_combo: List[Tuple[str, float, str | float]] = []
-
-                for ax, pos in ui_combo:
-                    wp = _wp_index_from_stage_key(ax)
-                    meta = self.axes_meta.get(ax, {})
-                    pm_on = bool(meta.get("pm", False))
-
-                    if wp is not None and pm_on:
-                        angle = float(pos)
-                        amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
-                        if amp_off[1] is None:
-                            self._emit(f"{ax}: Power Mode ON but no calibration phase; aborting.")
-                            self.finished.emit("")
-                            return
-                        phase = float(amp_off[1])
-                        frac = angle_to_power(angle, phase)
-                        mv = REGISTRY.get(_reg_key_maxvalue(wp))
-                        if mv is None:
-                            power_val = frac
-                        else:
-                            power_val = frac * float(mv)
-
-                        move_targets.append((ax, angle))
-                        log_combo.append((ax, angle, power_val))
-                        continue
-
-                    move_targets.append((ax, float(pos)))
-                    log_combo.append((ax, float(pos), ""))
+                try:
+                    move_targets, log_combo = self._prepare_move_targets(ui_combo)
+                except ValueError as e:
+                    self._emit(str(e))
+                    self.finished.emit("")
+                    return
 
                 move_ok = True
                 for ax, move_val in move_targets:
-                    # SLM virtual axis
-                    if ax.startswith("slm:"):
-                        try:
-                            parts = ax.split(":")
-                            if len(parts) != 3:
-                                raise ValueError(f"Invalid SLM axis format '{ax}'. Expected slm:ClassName:FieldName")
-
-                            _, class_name, field_name = parts
-
-                            # read what SLM window registered
-                            active_classes = REGISTRY.get("slm:red:active_classes") or []
-                            widgets = REGISTRY.get("slm:red:widgets") or []
-
-                            if class_name not in active_classes:
-                                raise ValueError(
-                                    f"SLM class '{class_name}' is not active on the red SLM.\n"
-                                    f"Active classes: {active_classes}"
-                                )
-
-                            # find widget matching this class
-                            phase_widget = None
-                            for w in widgets:
-                                if getattr(w, "name_", lambda: "")() == class_name:
-                                    phase_widget = w
-                                    break
-
-                            if phase_widget is None:
-                                raise ValueError(f"SLM widget for '{class_name}' not found in registry.")
-
-                            # check field exists
-                            if not hasattr(phase_widget, field_name):
-                                # list allowed fields for debug
-                                candidate_fields = [
-                                    name for name in dir(phase_widget)
-                                    if name.startswith("le_") or name.startswith("cb_")
-                                ]
-                                raise ValueError(
-                                    f"Field '{field_name}' does not exist in SLM class '{class_name}'.\n"
-                                    f"Available fields: {candidate_fields}"
-                                )
-
-                            # set field value
-                            widget = getattr(phase_widget, field_name)
-                            widget.setText(str(pos))
-
-                            # compute levels
-                            # recompute FULL screen composition (not only this widget)
-                            slm_window = REGISTRY.get("slm:red:window")
-                            if slm_window is None:
-                                raise RuntimeError("SLM window not registered. Cannot compose multi-layer patterns.")
-
-                            levels = slm_window.compose_levels()
-
-                            # get the already running SLM Red
-                            slm_red = REGISTRY.get("slm:red:controller")
-                            if slm_red is None:
-                                raise RuntimeError(
-                                    "Red SLM is not active. Open the SLM window and publish a pattern first."
-                                )
-
-
-                            screen_num = self.axes_meta[ax].get("screen", 3)
-                            slm_red.publish(levels, screen_num=screen_num)
-                            self._emit(f"SLM {class_name}:{field_name} = {pos}")
-                            continue
-
-                        except Exception as e:
-                            self._emit(f"SLM update {ax} -> {pos} failed: {e}")
-                            move_ok = False
-                            break
-
-
-
-                    else:
-
-                        try:
+                    try:
+                        if ax.startswith("slm:"):
+                            self._move_slm_axis(ax, move_val)
+                        else:
                             stages[ax].move_to(float(move_val), blocking=True)
-                        except Exception as e:
-                            self._emit(f"Move {ax} -> {move_val:.6f} failed: {e}")
-                            move_ok = False
-                            break
+                    except Exception as e:
+                        self._emit(f"Move {ax} -> {move_val:.6f} failed: {e}")
+                        move_ok = False
+                        break
+                
                 if not move_ok:
                     continue
 
                 time.sleep(float(self.settle_s))
 
-                # ================================
-                #   DETECTOR CAPTURE LOOP
-                # ================================
                 for det_key, dev in detectors.items():
-
                     if self.abort:
                         self._emit("Scan aborted.")
                         self.finished.emit("")
@@ -446,116 +526,13 @@ class GridScanWorker(QObject):
                     params = self.camera_params.get(det_key, (0, 1))
 
                     try:
-                        # ==================================================
-                        #                 CAMERA BRANCH (FIXED)
-                        # ==================================================
                         if hasattr(dev, "grab_frame_for_scan"):
-
-                            exposure_or_int = int(params[0]) if len(params) >= 1 else 0
-                            averages = int(params[1]) if len(params) >= 2 else 1
-                            try:
-                                frame_u16, meta = dev.grab_frame_for_scan(
-                                    averages=int(averages),
-                                    background=self.background,
-                                    dead_pixel_cleanup=True,
-                                    exposure_us=int(exposure_or_int),
-                                )
-                            except TypeError:
-                                frame_u16, meta = dev.grab_frame_for_scan(
-                                    averages=int(averages),
-                                    background=self.background,
-                                    dead_pixel_cleanup=True,
-                                )
-                            exp_meta = int((meta or {}).get("Exposure_us", exposure_or_int))
-                            tag = "Background" if self.background else "Image"
-
-                            data_fn = _save_image(det_key, dev, frame_u16, exp_meta, tag, meta=None)
-
-                            if det_key.startswith("camera:andor:"):
-                                self.andor_frame.emit(list(idxs), frame_u16, det_key)
-
-                            saved_label = f"exp {exp_meta} µs"
-
-                        # ==================================================
-                        #                SPECTROMETER BRANCH
-                        # ==================================================
+                            data_fn, saved_label = self._capture_camera(det_key, dev, params)
                         elif hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"):
-
-                            exposure_or_int = float(params[0]) if len(params) >= 1 else 0.0
-                            averages = int(params[1]) if len(params) >= 2 else 1
-                            if hasattr(dev, "get_wavelengths"):
-                                wl = np.asarray(dev.get_wavelengths(), dtype=float)
-                            else:
-                                wl = np.asarray(getattr(dev, "wavelength", None), dtype=float)
-
-                            if wl is None or wl.size == 0:
-                                self._emit(f"{det_key}: wavelength array empty.")
-                                continue
-
-                            if hasattr(dev, "grab_spectrum_for_scan"):
-                                counts, meta = dev.grab_spectrum_for_scan(
-                                    int_ms=float(exposure_or_int),
-                                    averages=int(averages)
-                                )
-                                counts = np.asarray(counts, dtype=float)
-                                int_ms = float((meta or {}).get(
-                                    "Integration_ms", float(exposure_or_int)))
-                            else:
-                                _buf = []
-                                for _ in range(int(averages)):
-                                    _ts, _data = dev.measure_spectrum(
-                                        float(exposure_or_int), 1)
-                                    _buf.append(np.asarray(_data, dtype=float))
-                                    time.sleep(0.01)
-                                counts = np.mean(np.stack(_buf, axis=0), axis=0)
-                                int_ms = float(exposure_or_int)
-
-                            if counts.size != wl.size:
-                                self._emit(f"{det_key}: spectrum length mismatch.")
-                                continue
-
-                            data_fn = f"{int_ms:.1f}ms_spectrum"
-                            saved_label = f"int {int_ms:.0f} ms"
-
-                            try:
-                                self.spec_updated.emit(wl, counts)
-                            except Exception:
-                                pass
-
-                        # ==================================================
-                        #                POWER METER BRANCH
-                        # ==================================================
+                            data_fn, saved_label = self._capture_spectrometer(det_key, dev, params)
                         else:
-                            period_ms = float(params[0]) if len(params) >= 1 else 100.0
-                            averages = int(params[1]) if len(params) >= 2 else 1
-                            wavelength_nm = float(params[2]) if len(params) >= 3 else None
+                            data_fn, saved_label = self._capture_powermeter(det_key, dev, params)
 
-                            if wavelength_nm is not None and hasattr(dev, "set_wavelength"):
-                                try:
-                                    dev.set_wavelength(float(wl))
-                                except Exception:
-                                    pass
-
-                            vals = []
-                            n_avg = max(1, int(averages))
-                            for i in range(n_avg):
-                                v = float(dev.read_power())
-                                vals.append(v)
-                                if i + 1 < n_avg:
-                                    time.sleep(period_ms / 1000.0)
-
-                            power = float(np.mean(vals)) if vals else float("nan")
-                            try:
-                                self.pm_updated.emit(time.time(), float(power))
-                            except Exception:
-                                pass
-
-                            data_fn = f"{power:.9f}"
-                            saved_label = f"P={power:.3e} W"
-
-                        # =============================
-                        #     LOG ENTRY
-                        # =============================
                         row = []
                         for ax, pos_val, power_val in log_combo:
                             row += [
@@ -567,36 +544,21 @@ class GridScanWorker(QObject):
                         row += [
                             det_key,
                             data_fn,
-                            str(params[
-                                0] if len(params) >= 1 else ""),
-                            str(params[
-                                1] if len(params) >= 2 else ""),
+                            str(params[0] if len(params) >= 1 else ""),
+                            str(params[1] if len(params) >= 2 else ""),
                             str(self.mcp_voltage)
                         ]
 
                         with open(scan_log, "a", encoding="utf-8") as f:
                             f.write("\t".join(row) + "\n")
 
-                        self._emit(
-                            f"Saved {data_fn} @ " +
-                            ", ".join([
-                                f"{ax}: pos={float(pv):.6f}" +
-                                ("" if (powv == "") else f", power={float(powv):.6f}")
-                                for ax, pv, powv in log_combo
-                            ]) +
-                            f" on {det_key} ({saved_label}, avg {int(params[1] if len(params)>=2 else 1)})"
-                        )
+                        pos_log = self._format_position_log(log_combo)
+                        avg = int(params[1] if len(params) >= 2 else 1)
+                        self._emit(f"Saved {data_fn} @ {pos_log} on {det_key} ({saved_label}, avg {avg})")
 
                     except Exception as e:
-                        self._emit(
-                            f"Capture failed @ " +
-                            ", ".join([
-                                f"{ax}: pos={float(pv):.6f}" +
-                                ("" if (powv == "") else f", power={float(powv):.6f}")
-                                for ax, pv, powv in log_combo
-                            ]) +
-                            f" on {det_key}: {e}"
-                        )
+                        pos_log = self._format_position_log(log_combo)
+                        self._emit(f"Capture failed @ {pos_log} on {det_key}: {e}")
 
                     done += 1
                     self.progress.emit(done, total_images)
@@ -609,28 +571,25 @@ class GridScanWorker(QObject):
         self.finished.emit(scan_log.as_posix())
 
 
-
 class GridScanTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._thread = None
         self._worker = None
-        self._live_view = None
-        self._spec_live = None
         self._doing_background = False
         self._cached_params = None
         self._last_scan_log_path = None
         self._build_ui()
         self._refresh_devices()
         self._pm_sync = QTimer(self)
-        self._pm_sync.setInterval(400)
+        self._pm_sync.setInterval(POWER_MODE_SYNC_INTERVAL_MS)
         self._pm_sync.timeout.connect(self._sync_power_mode_from_registry)
         self._pm_sync.start()
 
     def _build_ui(self):
         main = QVBoxLayout(self)
 
-        axes_box = QGroupBox("Axes (including SLM)")
+        axes_box = QGroupBox("Axes")
         axes_l = QVBoxLayout(axes_box)
 
         picker = QHBoxLayout()
@@ -721,9 +680,6 @@ class GridScanTab(QWidget):
         self.abort_btn = QPushButton("Abort")
         self.abort_btn.setEnabled(False)
         self.abort_btn.clicked.connect(self._abort)
-        self.live_btn = QPushButton("Live Matrix View")
-        self.live_btn.clicked.connect(self._open_live_view)
-        ctl.addWidget(self.live_btn)
         self.prog = QProgressBar()
         self.prog.setMinimum(0)
         self.prog.setValue(0)
@@ -756,9 +712,6 @@ class GridScanTab(QWidget):
                 continue
             val = REGISTRY.get(_reg_key_powermode(wp))
             if isinstance(val, bool) and val != w.isChecked():
-                if val:
-                    e = (self.axes_tbl.item(r, 3) or QTableWidgetItem("")).text().strip()
-                    s = (self.axes_tbl.item(r, 4) or QTableWidgetItem("")).text().strip()
                 w.blockSignals(True)
                 w.setChecked(val)
                 w.blockSignals(False)
@@ -790,7 +743,7 @@ class GridScanTab(QWidget):
                 y.setText(t1)
             else:
                 self.axes_tbl.setItem(r2, c, QTableWidgetItem(t1))
-                
+
     def _add_axis_row(self):
         ax = self.stage_picker.currentText().strip()
         if not ax:
@@ -801,9 +754,6 @@ class GridScanTab(QWidget):
         self.axes_tbl.insertRow(r)
         self.axes_tbl.setItem(r, 0, QTableWidgetItem(ax))
 
-        # --------------------------------------------------
-        # SLM AXIS HANDLING
-        # --------------------------------------------------
         if ax.startswith("slm:"):
             parts = ax.split(":")
             if len(parts) < 2:
@@ -812,7 +762,6 @@ class GridScanTab(QWidget):
 
             class_name = parts[1]
 
-            # Validate SLM class
             try:
                 phase_ref = PhaseSettings.new_type(None, class_name)
             except Exception:
@@ -824,35 +773,31 @@ class GridScanTab(QWidget):
                 )
                 return
 
-            # Column setup
-            self.axes_tbl.setItem(r, 1, QTableWidgetItem(""))     # param name
-            self.axes_tbl.setItem(r, 2, QTableWidgetItem("0.0"))  # start
-            self.axes_tbl.setItem(r, 3, QTableWidgetItem("1.0"))  # end
-            self.axes_tbl.setItem(r, 4, QTableWidgetItem("0.1"))  # step
+            self.axes_tbl.setItem(r, 1, QTableWidgetItem(""))
+            self.axes_tbl.setItem(r, 2, QTableWidgetItem("0.0"))
+            self.axes_tbl.setItem(r, 3, QTableWidgetItem("1.0"))
+            self.axes_tbl.setItem(r, 4, QTableWidgetItem("0.1"))
 
-            # Disable WP-related columns
             self.axes_tbl.setItem(r, 5, QTableWidgetItem("1"))
-            pm = QCheckBox(); pm.setEnabled(False)
+            pm = QCheckBox()
+            pm.setEnabled(False)
             self.axes_tbl.setCellWidget(r, 6, pm)
 
             self.axes_tbl.setItem(r, 7, QTableWidgetItem(""))
-            gm = QCheckBox(); gm.setEnabled(False)
+            gm = QCheckBox()
+            gm.setEnabled(False)
             self.axes_tbl.setCellWidget(r, 8, gm)
 
-            # --------------------------------------------
-            # AUTO UPDATE FUNCTION FOR PARAM VALIDATION
-            # --------------------------------------------
             def on_item_changed(item):
                 if item.row() != r:
                     return
-                if item.column() != 1:   # Only respond to column Start (param field)
+                if item.column() != 1:
                     return
 
                 param = item.text().strip()
                 if not param:
                     return
 
-                # Validate param exists
                 if not hasattr(phase_ref, param):
                     valid = sorted([k for k in dir(phase_ref) if k.startswith("le_")])
                     QMessageBox.critical(
@@ -863,18 +808,12 @@ class GridScanTab(QWidget):
                     )
                     return
 
-                # Update stage key
                 new_name = f"slm:{class_name}:{param}"
                 self.axes_tbl.item(r, 0).setText(new_name)
 
-            # Connect global signal ONCE
             self.axes_tbl.itemChanged.connect(on_item_changed)
-
             return
 
-        # --------------------------------------------------
-        # NORMAL STAGE (non-SLM)
-        # --------------------------------------------------
         self.axes_tbl.setItem(r, 1, QTableWidgetItem(""))
         self.axes_tbl.setItem(r, 2, QTableWidgetItem("0.0"))
         self.axes_tbl.setItem(r, 3, QTableWidgetItem("1.0"))
@@ -888,13 +827,12 @@ class GridScanTab(QWidget):
         gm = QCheckBox()
         self.axes_tbl.setCellWidget(r, 8, gm)
 
-
-    def _remove_axis_row(self) -> None:
+    def _remove_axis_row(self):
         rows = sorted({idx.row() for idx in self.axes_tbl.selectedIndexes()}, reverse=True)
         for r in rows:
             self.axes_tbl.removeRow(r)
 
-    def _add_cam_row(self) -> None:
+    def _add_cam_row(self):
         cam_key = self.cam_picker.currentText().strip()
         if not cam_key:
             QMessageBox.warning(self, "Pick a camera", "Select a camera to add.")
@@ -973,32 +911,14 @@ class GridScanTab(QWidget):
                 pm = bool(w.isChecked()) if w else False
 
             if pm and wp is not None:
-                f_start = max(0.0, min(1.0, start))
-                f_end   = max(0.0, min(1.0, end))
-                if step <= 0:
-                    raise ValueError(f"{ax}: Step must be > 0.")
-
+                sf = max(0.0, min(1.0, start))
                 amp_off = REGISTRY.get(_reg_key_calib(wp)) or (None, None)
                 if amp_off[1] is None:
                     raise ValueError(f"{ax}: Power mode ON but no calibration.")
                 phase = float(amp_off[1])
-
-
-                def frac_to_angle(frac):
-                    return power_to_angle(float(frac), 1.0, phase)
-                
-                if f_end >= f_start:
-                    n = int((f_end - f_start) // step)
-                    fracs = [f_start + i * step for i in range(n + 1)]
-                    if fracs[-1] < f_end:
-                        fracs.append(f_end)
-                else:
-                    n = int((f_start - f_end) // step)
-                    fracs = [f_start - i * step for i in range(n + 1)]
-                    if fracs[-1] > f_end:
-                        fracs.append(f_end)
-
-                pos = [frac_to_angle(f) for f in fracs]
+                start_angle = power_to_angle(sf, 1.0, phase)
+                end_angle_abs = start_angle + end
+                pos = self._positions(start_angle, end_angle_abs, step)
                 axes.append((ax, pos))
 
                 max_item = self.axes_tbl.item(r, 7)
@@ -1012,12 +932,12 @@ class GridScanTab(QWidget):
 
                 axes_meta[ax] = {
                     "pm": True,
-                    "fraction_start": float(f_start),
-                    "fraction_end": float(f_end),
-                    "fraction_step": float(step),
+                    "start_fraction": float(sf),
+                    "start_angle_deg": float(start_angle),
+                    "delta_deg": float(end),
+                    "step_deg": float(step),
                     "max_value_W": float(mv),
                 }
-
             else:
                 pos = self._positions(start, end, step)
                 axes.append((ax, pos))
@@ -1059,50 +979,6 @@ class GridScanTab(QWidget):
             "comment": comment,
             "mcp_voltage": mcp,
         }
-
-    def _open_live_view(self):
-        # If already open
-        if self._live_view is not None:
-            try:
-                self._live_view.raise_()
-                self._live_view.activateWindow()
-                return
-            except Exception:
-                self._live_view = None
-
-        # Pick Andor camera
-        andor_keys = [k for k in REGISTRY.keys("camera:andor:")]
-        if not andor_keys:
-            QMessageBox.warning(self, "Andor not found", "No Andor camera registered.")
-            return
-
-        cam_key = andor_keys[0]
-        dev = REGISTRY.get(cam_key)
-        if dev is None:
-            QMessageBox.warning(self, "Andor not active", f"Device '{cam_key}' not registered.")
-            return
-
-        # Create live view
-        self._live_view = AndorGridScanLiveView(parent=self)
-        self._live_view.show()
-
-        # Configure axes + cameras BEFORE frames arrive
-        axes = self._cached_params["axes"] if self._cached_params else []
-        self._live_view.preconfigure(axes, [cam_key])
-        self._live_view.prepare_for_run()
-
-        # Ensure panels match the actual camera key
-        for p in self._live_view.panels:
-            p.camera_combo.setCurrentText(cam_key)
-
-        # Immediate connection if worker exists
-        if self._worker:
-            self._worker.andor_frame.connect(self._live_view.on_andor_frame)
-
-        # For later scans
-        self.worker_connect_pending = True
-
-
 
     def _start(self):
         try:
@@ -1154,8 +1030,6 @@ class GridScanTab(QWidget):
 
         self._thread.start()
 
-
-
     def _abort(self):
         if self._worker:
             self._worker.abort = True
@@ -1184,7 +1058,6 @@ class GridScanTab(QWidget):
         self._worker = None
 
         if not self._doing_background and self._last_scan_log_path is not None:
-
             reply = QMessageBox.question(
                 self,
                 "Run Background Scan?",
@@ -1197,16 +1070,10 @@ class GridScanTab(QWidget):
             if reply == QMessageBox.Yes:
                 self._doing_background = True
                 self._log("Launching background scan…")
-                self._launch(
-                    background=True,
-                    existing=self._last_scan_log_path
-                )
+                self._launch(background=True, existing=self._last_scan_log_path)
                 return
 
         self._doing_background = False
-
-
-
 
     def _log(self, msg):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
