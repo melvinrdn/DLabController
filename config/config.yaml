@@ -53,6 +53,13 @@ andor:
   crosshair:
     x: 114.56372885154052
     y: 144.92521008403355
+  preprocess:
+    enabled: true
+    angle: -97.0
+    x0: 180
+    x1: 500
+    y0: 210
+    y1: 340
 crosshair2:
   daheng_1:
     x_mm: 3.613642122187133
