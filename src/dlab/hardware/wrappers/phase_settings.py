@@ -145,14 +145,12 @@ class TypeLens(BaseTypeWidget):
         layout.addWidget(group)
         grid = QGridLayout(group)
 
-        # Mode selection
         grid.addWidget(QLabel("Mode:"), 0, 0)
         self.cb_mode = QComboBox()
         self.cb_mode.addItems(["Bending Strength", "Focal Length"])
         grid.addWidget(self.cb_mode, 0, 1)
         self.cb_mode.currentTextChanged.connect(self.toggle_mode)
 
-        # Create parameter fields
         labels = ['Bending Strength (1/f) [1/m]:', 'Focal Length [m]:', 'Wavelength [nm]:',
                   'Calibration Slope [mm * m]:', 'Zero Reference [1/f]:', 'Focus Shift [mm]:']
         self.le_ben = QLineEdit("0")
@@ -172,8 +170,8 @@ class TypeLens(BaseTypeWidget):
             grid.addWidget(QLabel(text), i + 1, 0)
             grid.addWidget(le, i + 1, 1)
 
-        self.toggle_mode()  # set initial mode
-
+        self.toggle_mode()
+        
     def toggle_mode(self):
         mode = self.cb_mode.currentText()
         if mode == "Bending Strength":
@@ -227,7 +225,7 @@ class TypeLens(BaseTypeWidget):
     def phase(self):
         try:
             bending_strength = float(self.le_ben.text())
-            wavelength = float(self.le_wavelength.text()) * 1e-9  # convert to meters
+            wavelength = float(self.le_wavelength.text()) * 1e-9  
         except ValueError:
             print("Invalid input for bending strength or wavelength.")
             return np.zeros(slm_size)
@@ -241,10 +239,8 @@ class TypeLens(BaseTypeWidget):
         X, Y = np.meshgrid(x, y)
         R_squared = X ** 2 + Y ** 2
 
-        # Thin lens phase formula (preserves sign)
         phase_profile = (-np.pi * R_squared) / (wavelength * focal_length)
 
-        # Normalize to bit depth (e.g., 8-bit or 16-bit)
         phase_profile = np.mod(phase_profile, 2 * np.pi)  # wrap phase to [0, 2pi]
         phase_profile = phase_profile / (2 * np.pi) * bit_depth
 
@@ -325,7 +321,7 @@ def _sum_of_2d_modes(modes: list[np.ndarray], coefs: np.ndarray):
         out += c * Z
     return out
 
-# --- replacement TypeZernike (no prysm) ---
+
 class TypeZernike(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -441,46 +437,6 @@ class TypeZernike(BaseTypeWidget):
             self.btn_modify.setEnabled(True)
             self.btn_update.setEnabled(True)
 
-
-class TypeTilt(BaseTypeWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'Tilt'
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Tilt Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        grid.addWidget(QLabel("Tilt X (rad/m):"), 0, 0)
-        self.le_tx = QLineEdit("0.0")
-        grid.addWidget(self.le_tx, 0, 1)
-
-        grid.addWidget(QLabel("Tilt Y (rad/m):"), 1, 0)
-        self.le_ty = QLineEdit("0.0")
-        grid.addWidget(self.le_ty, 1, 1)
-
-    def phase(self):
-        try:
-            tx = float(self.le_tx.text())
-            ty = float(self.le_ty.text())
-        except ValueError:
-            return np.zeros(slm_size)
-
-        x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
-        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
-        X, Y = np.meshgrid(x, y)
-
-        ramp = tx * X + ty * Y
-        wrapped = np.mod(ramp, 2*np.pi)
-        return wrapped * (bit_depth / (2*np.pi))
-
-    def save_(self):
-        return {'tilt_x': self.le_tx.text(), 'tilt_y': self.le_ty.text()}
-
-    def load_(self, settings):
-        self.le_tx.setText(settings.get('tilt_x', '0.0'))
-        self.le_ty.setText(settings.get('tilt_y', '0.0'))
-
 class TypeVortex(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -553,47 +509,6 @@ class TypeVortex(BaseTypeWidget):
     def load_(self, settings):
         self.vortices = settings.get('vortices', [])
         self.update_vortex_display()
-
-
-class TypeGrating(BaseTypeWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'Grating'
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Grating Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        grid.addWidget(QLabel("Spatial Frequency (lines/mm):"), 0, 0)
-        self.le_freq = QLineEdit("0")
-        grid.addWidget(self.le_freq, 0, 1)
-
-        grid.addWidget(QLabel("Orientation Angle (degrees):"), 1, 0)
-        self.le_angle = QLineEdit("0")
-        grid.addWidget(self.le_angle, 1, 1)
-
-    def phase(self):
-        try:
-            freq = float(self.le_freq.text() or "1000")
-            angle = float(self.le_angle.text() or "0")
-        except ValueError:
-            freq = 1000
-            angle = 0
-        period = 1 / (freq * 1e-3)
-        angle_rad = np.radians(angle)
-        x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
-        y = np.linspace(-chip_height / 2, chip_height / 2, slm_size[0])
-        X, Y = np.meshgrid(x, y)
-        grating_pattern = np.sin(2 * np.pi * (X * np.cos(angle_rad) + Y * np.sin(angle_rad)) / period)
-        return (grating_pattern + 1) * (bit_depth / 2)
-
-    def save_(self):
-        return {'freq': self.le_freq.text(), 'angle': self.le_angle.text()}
-
-    def load_(self, settings):
-        self.le_freq.setText(settings.get('freq', '1000'))
-        self.le_angle.setText(settings.get('angle', '0'))
-
 
 class TypeBinary(BaseTypeWidget):
     def __init__(self, parent=None):
@@ -716,302 +631,7 @@ class TypePhaseJumps(BaseTypeWidget):
     def load_(self, settings):
         self.phase_jumps = settings.get('phase_jumps', [])
         self.update_jump_display()
-
-
-class TypeSquare(BaseTypeWidget):
-    """Multiple square phase pattern. Add squares on top of each other."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'Square'
-        self.squares = []  # Each square: (cx, cy, width, height, phase_value)
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Square Phase Pattern Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        grid.addWidget(QLabel("Center X (m):"), 0, 0)
-        self.le_cx = QLineEdit("0")
-        grid.addWidget(self.le_cx, 0, 1)
-
-        grid.addWidget(QLabel("Center Y (m):"), 1, 0)
-        self.le_cy = QLineEdit("0")
-        grid.addWidget(self.le_cy, 1, 1)
-
-        grid.addWidget(QLabel("Width (m):"), 2, 0)
-        self.le_width = QLineEdit("1")
-        grid.addWidget(self.le_width, 2, 1)
-
-        grid.addWidget(QLabel("Height (m):"), 3, 0)
-        self.le_height = QLineEdit("1")
-        grid.addWidget(self.le_height, 3, 1)
-
-        grid.addWidget(QLabel("Phase value (π units):"), 4, 0)
-        self.le_phase = QLineEdit("1")
-        grid.addWidget(self.le_phase, 4, 1)
-
-        btn_add = QPushButton("Add Square")
-        btn_add.clicked.connect(self.add_square)
-        grid.addWidget(btn_add, 5, 0)
-
-        btn_remove = QPushButton("Remove Last Square")
-        btn_remove.clicked.connect(self.remove_last_square)
-        grid.addWidget(btn_remove, 5, 1)
-
-        self.lbl_squares = QLabel("No squares added")
-        self.lbl_squares.setWordWrap(True)
-        layout.addWidget(self.lbl_squares)
-
-    def add_square(self):
-        try:
-            cx = float(self.le_cx.text())
-            cy = float(self.le_cy.text())
-            width = float(self.le_width.text())
-            height = float(self.le_height.text())
-            phase_value = float(self.le_phase.text()) * np.pi
-            self.squares.append((cx, cy, width, height, phase_value))
-            self.update_square_display()
-            self.le_cx.clear()
-            self.le_cy.clear()
-            self.le_width.clear()
-            self.le_height.clear()
-            self.le_phase.clear()
-        except ValueError:
-            print("Invalid square parameters.")
-
-    def remove_last_square(self):
-        if self.squares:
-            self.squares.pop()
-            self.update_square_display()
-
-    def update_square_display(self):
-        if not self.squares:
-            self.lbl_squares.setText("No squares added")
-        else:
-            text = "\n".join(
-                [f"Square {i+1}: Center=({cx:.2f}, {cy:.2f}), Size=({w:.2f}×{h:.2f}), Phase={phase/np.pi:.2f}π"
-                 for i, (cx, cy, w, h, phase) in enumerate(self.squares)]
-            )
-            self.lbl_squares.setText(text)
-
-    def phase(self):
-        # Create a coordinate grid based on global chip dimensions and slm_size.
-        x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
-        y = np.linspace(-chip_height / 2, chip_height / 2, slm_size[0])
-        X, Y = np.meshgrid(x, y)
-        phase_pattern = np.zeros(slm_size)
-        for (cx, cy, width, height, phase_value) in self.squares:
-            mask = (np.abs(X - cx) <= width / 2) & (np.abs(Y - cy) <= height / 2)
-            phase_pattern[mask] += phase_value
-        return (phase_pattern % (2 * np.pi)) * (bit_depth / (2 * np.pi))
-
-    def save_(self):
-        return {'squares': self.squares}
-
-    def load_(self, settings):
-        self.squares = settings.get('squares', [])
-        self.update_square_display()
-
-class TypeAxicon(BaseTypeWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'Axicon'
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Axicon Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        grid.addWidget(QLabel("Cone angle (°):"), 0, 0)
-        self.le_angle = QLineEdit("0.01")
-        grid.addWidget(self.le_angle, 0, 1)
-
-        grid.addWidget(QLabel("Wavelength (nm):"), 1, 0)
-        self.le_wl = QLineEdit("1030")
-        grid.addWidget(self.le_wl, 1, 1)
-
-    def phase(self):
-        try:
-            alpha = np.radians(float(self.le_angle.text()))
-            wl = float(self.le_wl.text()) * 1e-9
-        except ValueError:
-            return np.zeros(slm_size)
-
-        # grille physique
-        x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
-        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
-        X, Y = np.meshgrid(x, y)
-        R = np.sqrt(X**2 + Y**2)
-
-        # phase conique : φ = (2π/λ) * R * sin(alpha)
-        ramp = (2*np.pi/wl) * R * np.sin(alpha)
-        wrapped = np.mod(ramp, 2*np.pi)
-        return wrapped * (bit_depth/(2*np.pi))
-
-    def save_(self):
-        return {'angle': self.le_angle.text(), 'wavelength': self.le_wl.text()}
-
-    def load_(self, settings):
-        self.le_angle.setText(settings.get('angle', '1.0'))
-        self.le_wl.setText(settings.get('wavelength', '500'))
-
-
-class TypeCheckerboard(BaseTypeWidget):
-    """Checkerboard phase pattern with two phase values."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'Checkerboard'
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Checkerboard Pattern Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        grid.addWidget(QLabel("Number of columns:"), 0, 0)
-        self.le_cols = QLineEdit("8")
-        grid.addWidget(self.le_cols, 0, 1)
-
-        grid.addWidget(QLabel("Number of rows:"), 1, 0)
-        self.le_rows = QLineEdit("8")
-        grid.addWidget(self.le_rows, 1, 1)
-
-        grid.addWidget(QLabel("Phase A (π units):"), 2, 0)
-        self.le_phaseA = QLineEdit("0")
-        grid.addWidget(self.le_phaseA, 2, 1)
-
-        grid.addWidget(QLabel("Phase B (π units):"), 3, 0)
-        self.le_phaseB = QLineEdit("1")
-        grid.addWidget(self.le_phaseB, 3, 1)
-
-    def phase(self):
-        try:
-            ncols = int(self.le_cols.text())
-            nrows = int(self.le_rows.text())
-            phaseA = float(self.le_phaseA.text()) * np.pi
-            phaseB = float(self.le_phaseB.text()) * np.pi
-        except ValueError:
-            return np.zeros(slm_size)
-        x = np.linspace(-chip_width / 2, chip_width / 2, slm_size[1])
-        y = np.linspace(-chip_height / 2, chip_height / 2, slm_size[0])
-        X, Y = np.meshgrid(x, y)
-        square_width = chip_width / ncols
-        square_height = chip_height / nrows
-        col_indices = np.floor((X + chip_width / 2) / square_width).astype(int)
-        row_indices = np.floor((Y + chip_height / 2) / square_height).astype(int)
-        checker = (col_indices + row_indices) % 2
-        phase_pattern = np.where(checker == 0, phaseA, phaseB)
-        return (phase_pattern % (2 * np.pi)) * (bit_depth / (2 * np.pi))
-
-    def save_(self):
-        return {
-            'cols': self.le_cols.text(),
-            'rows': self.le_rows.text(),
-            'phaseA': self.le_phaseA.text(),
-            'phaseB': self.le_phaseB.text()
-        }
-
-    def load_(self, settings):
-        self.le_cols.setText(settings.get('cols', '8'))
-        self.le_rows.setText(settings.get('rows', '8'))
-        self.le_phaseA.setText(settings.get('phaseA', '0'))
-        self.le_phaseB.setText(settings.get('phaseB', '1'))
-        
-class TypeTwoFoci(BaseTypeWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.name = 'TwoFoci'
-
-        layout = QVBoxLayout(self)
-        group = QGroupBox("Two Foci Settings")
-        layout.addWidget(group)
-        grid = QGridLayout(group)
-
-        row = 0
-        grid.addWidget(QLabel("Wavelength [nm]:"), row, 0)
-        self.le_wl = QLineEdit("1030"); grid.addWidget(self.le_wl, row, 1); row += 1
-
-        grid.addWidget(QLabel("Focal length f_focus [m]:"), row, 0)
-        self.le_f = QLineEdit("0.175"); grid.addWidget(self.le_f, row, 1); row += 1
-
-        grid.addWidget(QLabel("Separation between beams D [µm]:"), row, 0)
-        self.le_sep = QLineEdit("50"); grid.addWidget(self.le_sep, row, 1); row += 1
-
-        grid.addWidget(QLabel("Relative phase ΔΦ [π units]:"), row, 0)
-        self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
-
-        grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
-        self.le_pitch = QLineEdit("128"); grid.addWidget(self.le_pitch, row, 1); row += 1
-
-        grid.addWidget(QLabel("Angle (deg):"), row, 0)
-        self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
-        
-        self.cb_noA = QCheckBox("No tilt A")
-        self.cb_noB = QCheckBox("No tilt B")
-        grid.addWidget(self.cb_noA, row, 0, 1, 2); row += 1
-        grid.addWidget(self.cb_noB, row, 0, 1, 2); row += 1
-
-
-    def phase(self):
-        try:
-            wl = float(self.le_wl.text()) * 1e-9
-            f_focus = float(self.le_f.text())
-            D = float(self.le_sep.text()) * 1e-6      
-            dphi = float(self.le_dphi_pi.text()) * np.pi  
-            pitch = float(self.le_pitch.text()) * 1e-6
-            angle_deg = float(self.le_angle.text())
-        except ValueError:
-            print("TwoFoci: invalid numeric input.")
-            return np.zeros(slm_size)
-
-        x = np.linspace(-chip_width/2,  chip_width/2,  slm_size[1])
-        y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
-        X, Y = np.meshgrid(x, y, indexing='xy')
-
-        k0 = 2*np.pi/wl
-        theta = D / (2.0 * f_focus)  
-        k_t = k0 * theta
-
-        ang = np.deg2rad(angle_deg)
-        U = X*np.cos(ang) + Y*np.sin(ang)
-
-        phi_A = +k_t * U
-        phi_B = -k_t * U + dphi
-        
-        if self.cb_noA.isChecked():
-            phi_A = 0.0
-        if self.cb_noB.isChecked():
-            phi_B = 0.0
-
-        xmin, ymin = x[0], y[0]
-        iX = np.floor((X - xmin) / pitch).astype(int)
-        iY = np.floor((Y - ymin) / pitch).astype(int)
-        checker = (iX + iY) & 1
-
-        phase = np.where(checker == 0, phi_A, phi_B)
-
-        wrapped = np.mod(phase, 2*np.pi)
-        return wrapped * (bit_depth / (2*np.pi))
-
-
-    def save_(self):
-        return {
-            'wl_nm': self.le_wl.text(),
-            'f_focus_m': self.le_f.text(),
-            'sep_um': self.le_sep.text(),
-            'dphi_pi': self.le_dphi_pi.text(),
-            'pitch_um': self.le_pitch.text(),
-            'angle_deg': self.le_angle.text(),
-            'noA': self.cb_noA.isChecked(),
-            'noB': self.cb_noB.isChecked(),
-        }
-
-    def load_(self, s):
-        self.le_wl.setText(s.get('wl_nm', '1030'))
-        self.le_f.setText(s.get('f_focus_m', '0.175'))
-        self.le_sep.setText(s.get('sep_um', '65'))
-        self.le_dphi_pi.setText(s.get('dphi_pi', '0.0'))
-        self.le_pitch.setText(s.get('pitch_um', '64'))
-        self.le_angle.setText(s.get('angle_deg', '0.0'))
-        self.cb_noA.setChecked(s.get('noA', False) )
-        self.cb_noB.setChecked(s.get('noB', False) )
+   
 
 class TypeTwoFociStochastic(BaseTypeWidget):
     def __init__(self, parent=None):

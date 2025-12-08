@@ -24,8 +24,6 @@ class PowermeterController:
         self.power_meter: Optional[ThorlabsPM100] = None
         self._log = logging.getLogger("dlab.hardware.wrappers.PowermeterController")
 
-    # ---- lifecycle ---------------------------------------------------------
-
     def activate(self) -> None:
         """Open VISA resource and initialize ThorlabsPM100."""
         try:
@@ -48,10 +46,7 @@ class PowermeterController:
             self.instrument = None
             self.power_meter = None
 
-    # ---- getters / setters -------------------------------------------------
-
     def get_config(self) -> Dict[str, Any]:
-        """Return a snapshot of key settings as plain Python values."""
         if self.power_meter is None:
             raise PowermeterControllerError("Device not active")
 
@@ -79,7 +74,6 @@ class PowermeterController:
     def read_power(self) -> float:
         """
         Trigger a measurement and return power in Watts (blocking).
-        ThorlabsPM100 exposes `read` as a property returning a float.
         """
         if self.power_meter is None:
             raise PowermeterControllerError("Device not active")
@@ -90,8 +84,7 @@ class PowermeterController:
 
     def fetch_power(self) -> float:
         """
-        Return the last measured power in Watts, if supported by the device.
-        ThorlabsPM100 exposes `fetch` as a property on supported models.
+        Return the last measured power in Watts.
         """
         if self.power_meter is None:
             raise PowermeterControllerError("Device not active")
@@ -103,7 +96,6 @@ class PowermeterController:
     def set_auto_range(self, auto_range: int | bool) -> None:
         """
         Enable/disable autoranging.
-        Accepts 1/0 or True/False.
         """
         if self.power_meter is None:
             raise PowermeterControllerError("Device not active")
@@ -136,7 +128,6 @@ class PowermeterController:
     def set_bandwidth(self, bandwidth: str) -> None:
         """
         Set bandwidth: "high" or "low".
-        Maps to the low-pass filter state behind the scenes.
         """
         if self.power_meter is None:
             raise PowermeterControllerError("Device not active")

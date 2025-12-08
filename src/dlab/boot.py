@@ -27,7 +27,6 @@ def setup_logging(log_dir: Path, level: str = "INFO") -> None:
     logging.getLogger().info("Logging to %s", logfile)
 
 def add_dll_dirs(cfg: Dict[str, Any]) -> None:
-    """Add vendor DLL folders to search path (Windows 3.8+)."""
     if os.name != "nt":
         return
     for key in ("drivers_andor", "drivers_avaspec", "drivers_slm"):
@@ -39,7 +38,6 @@ def add_dll_dirs(cfg: Dict[str, Any]) -> None:
             os.add_dll_directory(str(p))
 
 def bootstrap(config_path: Path) -> Dict[str, Any]:
-    """Charge la config, configure logs + DLL paths, et mémorise la config globale."""
     global _CFG
     cfg = load_config(config_path)
     logs_dir = Path(cfg.get("paths", {}).get("logs_dir", "logs"))
@@ -49,9 +47,7 @@ def bootstrap(config_path: Path) -> Dict[str, Any]:
     return cfg
 
 def get_config() -> Dict[str, Any]:
-    """Retourne la config globale (après appel à bootstrap)."""
     if _CFG is None:
-        # fallback: tente de charger config par défaut si bootstrap pas encore appelé
         default = ROOT / "config" / "config.yaml"
         return load_config(default) if default.exists() else {}
     return _CFG

@@ -14,7 +14,6 @@ DEFAULT_BEAM_RADIUS_ON_SLM = 3.5e-3
 class SLMController:
     """
     Minimal controller for a Spatial Light Modulator.
-    You provide phase maps in device units [0..bit_depth].
     """
     def __init__(
         self,

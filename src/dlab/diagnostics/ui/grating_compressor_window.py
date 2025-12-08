@@ -16,10 +16,6 @@ from dlab.core.device_registry import REGISTRY
 
 
 class GratingCompressorWindow(QWidget):
-    """
-    Dedicated UI to control a single Zaber (Binary) translation stage in millimetres.
-    No power mode, no waveplate logic. Safe clamping using range from config.
-    """
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Grating Compressor")
@@ -39,11 +35,9 @@ class GratingCompressorWindow(QWidget):
         self._poll.setInterval(200)  # ms
         self._poll.timeout.connect(self._update_position)
 
-    # ---------------- UI ----------------
     def _build_ui(self) -> None:
         main = QVBoxLayout(self)
 
-        # Connection panel
         conn_box = QGroupBox("Connection")
         cl = QHBoxLayout(conn_box)
 
@@ -63,7 +57,6 @@ class GratingCompressorWindow(QWidget):
         cl.addWidget(self.btn_activate); cl.addWidget(self.btn_deactivate)
         main.addWidget(conn_box)
 
-        # Motion panel
         mot_box = QGroupBox("Motion (mm)")
         ml = QVBoxLayout(mot_box)
 
@@ -117,7 +110,6 @@ class GratingCompressorWindow(QWidget):
 
         main.addStretch(1)
 
-    # ------------- helpers -------------
     def _log(self, msg: str) -> None:
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log.append(f"[{t}] {msg}")
@@ -143,7 +135,6 @@ class GratingCompressorWindow(QWidget):
         self.btn_ident.setEnabled(on)
         self.btn_stop.setEnabled(on)
 
-    # ------------- slots -------------
     def _on_activate(self) -> None:
         if self.stage:
             return
@@ -189,7 +180,6 @@ class GratingCompressorWindow(QWidget):
                 try:
                     self.stage.disable()
                 finally:
-                    # unregister
                     try:
                         REGISTRY.unregister("stage:zaber:grating_compressor")
                     except Exception:
@@ -228,8 +218,7 @@ class GratingCompressorWindow(QWidget):
         if not self.stage:
             return
         try:
-            # best effort stop
-            self.stage._ensure().stop()  # direct device stop
+            self.stage._ensure().stop()
             self._log("Stop requested.")
         except Exception as e:
             self._log(f"Stop failed: {e}")
@@ -242,7 +231,7 @@ class GratingCompressorWindow(QWidget):
             QMessageBox.warning(self, "Error", "Enter a target position (mm)."); return
         try:
             val = float(t)
-            self.stage.move_to(val, blocking=False)  # clamp inside
+            self.stage.move_to(val, blocking=False)
             self._log(f"Move to {val:.3f} mm …")
             self._poll.start()
         except Exception as e:
@@ -259,7 +248,6 @@ class GratingCompressorWindow(QWidget):
         try:
             cur = self.stage.get_position() or 0.0
             tgt = cur + sign * step
-            # clamp
             if tgt < self.range_min: tgt = self.range_min
             if tgt > self.range_max: tgt = self.range_max
             self.stage.move_to(tgt, blocking=False)

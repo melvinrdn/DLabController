@@ -48,9 +48,6 @@ class NV40:
         except:
             pass
 
-    # ----------------------------------------------------------
-    # LOW LEVEL: FAST WRITE, OPTIONAL READ
-    # ----------------------------------------------------------
     def _send(self, cmd: str):
         self.ser.write((cmd + "\r").encode())
 
@@ -62,9 +59,6 @@ class NV40:
             raise ValueError(self.ERRORS[ans])
         return ans
 
-    # ----------------------------------------------------------
-    # HIGH LEVEL API
-    # ----------------------------------------------------------
     def set_remote_control(self, enable=True):
         self._send("i1" if enable else "i0")
 
@@ -73,16 +67,10 @@ class NV40:
             raise RuntimeError("Closed loop not supported.")
         self._send("ol")
 
-    # ----------------------------------------------------------
-    # NON-BLOCKING SET POSITION
-    # ----------------------------------------------------------
     def set_position(self, value: float):
         value = max(self.V_MIN, min(self.V_MAX, value))
         self._send(f"wr,{value:.3f}")
 
-    # ----------------------------------------------------------
-    # BLOCKING READ POSITION (rarely used)
-    # ----------------------------------------------------------
     def get_position(self) -> float:
         ans = self._query("rd")
         try:

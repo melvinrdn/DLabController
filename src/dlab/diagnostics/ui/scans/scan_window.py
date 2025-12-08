@@ -26,7 +26,6 @@ class ScanWindow(QMainWindow):
         self.tabs.addTab(GridScanTab(), "Grid scan")
         self.tabs.addTab(GCScanTab(), "Grating compressor scan")
         self.tabs.addTab(M2Tab(), "M2 Scan")
-        self.tabs.addTab(StabilityScanTab(), "Stability scan")
         self.tabs.addTab(TOverlapTab(), "Temporal overlap scan")
         self.tabs.addTab(TwoColorScanTab(), "Two-Color Scan")
         

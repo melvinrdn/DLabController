@@ -291,9 +291,6 @@ class AvaspecLive(QWidget):
 
         self.search_specs()
 
-    # ------------------------------------------------------------------
-    # UI helpers
-    # ------------------------------------------------------------------
     def _on_fft_toggle(self, state):
         show = state == Qt.Checked
         self.ax_fft.set_visible(show)
@@ -301,7 +298,6 @@ class AvaspecLive(QWidget):
         self.canvas.draw_idle()
 
     def _on_canvas_click(self, event):
-        # Left click in FFT axes selects ν₀
         if event.button != 1 or event.inaxes is not self.ax_fft:
             return
         if not self.chk_fft.isChecked():
@@ -361,9 +357,6 @@ class AvaspecLive(QWidget):
         t = datetime.datetime.now().strftime("%H:%M:%S")
         self.log.append(f"[{t}] {msg}")
 
-    # ------------------------------------------------------------------
-    # Spectrometer control
-    # ------------------------------------------------------------------
     def search_specs(self):
         self.cmb.clear()
         self._handles = AvaspecController.list_spectrometers()
@@ -496,9 +489,6 @@ class AvaspecLive(QWidget):
         QMessageBox.critical(self, "Acquisition error", err)
         self.stop_live()
 
-    # ------------------------------------------------------------------
-    # Display helpers
-    # ------------------------------------------------------------------
     def _apply_threshold_for_display(self, y):
         y = np.asarray(y, float)
         y_pos = np.clip(y, 0, None)
@@ -735,14 +725,10 @@ class AvaspecLive(QWidget):
         self.ax.autoscale_view(scalex=False, scaley=True)
         self._apply_zoom_window(wl)
 
-        # FFT & phase tracking (purely visual)
         self._update_fft(wl, y)
 
         self.canvas.draw_idle()
 
-    # ------------------------------------------------------------------
-    # FTL helpers
-    # ------------------------------------------------------------------
     def _get_threshold_fraction(self):
         try:
             v = float(self.ed_thresh.text())
@@ -804,9 +790,6 @@ class AvaspecLive(QWidget):
         I_t_n = I_t / (np.max(I_t) if np.max(I_t) > 0 else 1.0)
         return ftl_s, time_v, I_t_n
 
-    # ------------------------------------------------------------------
-    # Save / BG / calibration
-    # ------------------------------------------------------------------
     def save_spectrum(self):
         if self._last_wl is None or self._last_counts is None or self.ctrl is None:
             QMessageBox.warning(self, "Save", "No spectrum to save.")
@@ -916,9 +899,6 @@ class AvaspecLive(QWidget):
             self.log_msg(f"Calibration failed: {e}")
             QMessageBox.warning(self, "Calibration", f"Failed: {e}")
 
-    # ------------------------------------------------------------------
-    # Shutdown / cleanup
-    # ------------------------------------------------------------------
     def _safe_shutdown(self):
         if self.th is not None:
             try:
