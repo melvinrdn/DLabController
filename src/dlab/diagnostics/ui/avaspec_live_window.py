@@ -77,8 +77,8 @@ class AvaspecLive(QWidget):
         self.th = None
         self._handles = []
         self._line = None
+        self._fft_scatter = None
         self._fft_line = None
-        self._peak_scatter = None
         self._fft_peak_vline = None
 
         self._last_wl = None
@@ -89,14 +89,12 @@ class AvaspecLive(QWidget):
         self._min_draw_dt = 0.05  # 50 ms
         self._last_draw = 0.0
 
-        # FFT & peak tracking state
-        self._fft_freq = None
-        self._fft_peak_idx = None
-        self._fft_peak_freq = None
-        self._peak_hist_t = []
-        self._peak_hist_phi = []  # phase history
-        self._t0 = None
+        # FFT state
+        self._fft_indices = None
+        self._fft_phase = None
+        self._fft_peak_idx = 300  # Default index
         self._mpl_cid_click = None
+        self._fft_colorbar = None
 
         self._build_ui()
         self.resize(1400, 780)
@@ -166,10 +164,11 @@ class AvaspecLive(QWidget):
         # Spectrum zoom + FFT toggle
         row_vis = QHBoxLayout()
         self.chk_zoom = QCheckBox("Zoom @ λ₀")
-        self.ed_cwl = QLineEdit("")
+        self.chk_zoom.setChecked(True)  # Default ON
+        self.ed_cwl = QLineEdit("515")  # Default 515 nm
         self.ed_cwl.setPlaceholderText("λ₀ (nm)")
         self.ed_cwl.setFixedWidth(80)
-        self.ed_zoom_pm = QLineEdit("20")
+        self.ed_zoom_pm = QLineEdit("20")  # Default ±20 nm
         self.ed_zoom_pm.setFixedWidth(60)
         row_vis.addWidget(self.chk_zoom)
         row_vis.addWidget(QLabel("λ₀ (nm):"))
@@ -178,51 +177,58 @@ class AvaspecLive(QWidget):
         row_vis.addWidget(self.ed_zoom_pm)
         row_vis.addSpacing(20)
         self.chk_fft = QCheckBox("Show FFT")
+        self.chk_fft.setChecked(True)  # Default ON
         self.chk_fft.stateChanged.connect(self._on_fft_toggle)
         row_vis.addWidget(self.chk_fft)
+        row_vis.addSpacing(20)
+        self.chk_phase_color = QCheckBox("Display phase in FT")
+        self.chk_phase_color.setChecked(True)  # Default ON
+        self.chk_phase_color.stateChanged.connect(self._on_phase_color_toggle)
+        row_vis.addWidget(self.chk_phase_color)
         row_vis.addStretch(1)
         root.addLayout(row_vis)
 
-        # FFT-specific controls: zoom, manual ν0, time window, ylim
+        # FFT-specific controls: zoom, manual index, downsample, ylim
         row_fft = QHBoxLayout()
 
-        # FFT zoom
-        self.chk_fft_zoom = QCheckBox("Zoom FFT @ νc")
-        self.ed_fft_c = QLineEdit("")
-        self.ed_fft_c.setPlaceholderText("νc (1/nm)")
-        self.ed_fft_c.setFixedWidth(80)
-        self.ed_fft_pm = QLineEdit("0.01")
-        self.ed_fft_pm.setFixedWidth(60)
+        # FFT zoom using index
+        self.chk_fft_zoom = QCheckBox("Zoom FFT @ index")
+        self.chk_fft_zoom.setChecked(True)  # Default ON
+        self.ed_fft_idx = QLineEdit("300")  # Center index
+        self.ed_fft_idx.setPlaceholderText("center")
+        self.ed_fft_idx.setFixedWidth(80)
+        self.ed_fft_window = QLineEdit("150")  # Window size
+        self.ed_fft_window.setFixedWidth(60)
         row_fft.addWidget(self.chk_fft_zoom)
-        row_fft.addWidget(QLabel("νc:"))
-        row_fft.addWidget(self.ed_fft_c)
-        row_fft.addWidget(QLabel("±"))
-        row_fft.addWidget(self.ed_fft_pm)
+        row_fft.addWidget(QLabel("Center:"))
+        row_fft.addWidget(self.ed_fft_idx)
+        row_fft.addWidget(QLabel("Window:"))
+        row_fft.addWidget(self.ed_fft_window)
 
-        # Manual ν0 selection
+        # Manual index selection for marker
         row_fft.addSpacing(20)
-        self.ed_fft_peak = QLineEdit("")
-        self.ed_fft_peak.setPlaceholderText("ν₀ (1/nm)")
+        self.ed_fft_peak = QLineEdit("300")  # Default tracking index
+        self.ed_fft_peak.setPlaceholderText("index")
         self.ed_fft_peak.setFixedWidth(90)
-        self.btn_set_peak = QPushButton("Set ν₀")
-        self.btn_set_peak.clicked.connect(self._on_set_peak_freq)
-        row_fft.addWidget(QLabel("Track:"))
+        self.btn_set_peak = QPushButton("Set Index")
+        self.btn_set_peak.clicked.connect(self._on_set_peak_idx)
+        row_fft.addWidget(QLabel("Mark:"))
         row_fft.addWidget(self.ed_fft_peak)
         row_fft.addWidget(self.btn_set_peak)
 
-        # Time window for phase vs time
+        # Downsample points
         row_fft.addSpacing(20)
-        self.ed_twin = QLineEdit("30")
-        self.ed_twin.setFixedWidth(60)
-        row_fft.addWidget(QLabel("Time window (s):"))
-        row_fft.addWidget(self.ed_twin)
+        self.ed_downsample = QLineEdit("1")
+        self.ed_downsample.setFixedWidth(60)
+        row_fft.addWidget(QLabel("Point skip:"))
+        row_fft.addWidget(self.ed_downsample)
 
-        # Y-limits for phase plot
+        # Y-limits for FFT plot
         row_fft.addSpacing(20)
-        self.ed_ylim_min = QLineEdit("")
-        self.ed_ylim_min.setFixedWidth(60)
-        self.ed_ylim_max = QLineEdit("")
-        self.ed_ylim_max.setFixedWidth(60)
+        self.ed_ylim_min = QLineEdit("0")
+        self.ed_ylim_min.setFixedWidth(80)
+        self.ed_ylim_max = QLineEdit("2e5")
+        self.ed_ylim_max.setFixedWidth(80)
         row_fft.addWidget(QLabel("FFT y-lim:"))
         row_fft.addWidget(self.ed_ylim_min)
         row_fft.addWidget(QLabel(".."))
@@ -256,30 +262,25 @@ class AvaspecLive(QWidget):
         row3.addWidget(self.btn_save)
         root.addLayout(row3)
 
-        # Figure with 3 panels
-        self.fig, (self.ax, self.ax_fft, self.ax_peak) = plt.subplots(
-            1, 3, gridspec_kw={"width_ratios": [3, 2, 2]}
+        # Figure with 2 panels (removed phase vs time panel)
+        self.fig, (self.ax, self.ax_fft) = plt.subplots(
+            1, 2, gridspec_kw={"width_ratios": [2, 1]}
         )
 
         self.ax.set_xlabel("Wavelength (nm)")
         self.ax.set_ylabel("Counts")
         self.ax.grid(True)
 
-        self.ax_fft.set_xlabel("Frequency (1/nm)")
+        self.ax_fft.set_xlabel("Index")
         self.ax_fft.set_ylabel("|FFT|")
         self.ax_fft.grid(True)
-        self.ax_fft.set_visible(False)
-
-        self.ax_peak.set_xlabel("Time (s)")
-        self.ax_peak.set_ylabel("arg(FFT(ν₀)) (rad)")
-        self.ax_peak.grid(True)
-        self.ax_peak.set_visible(False)
+        self.ax_fft.set_visible(True)  # Visible by default
 
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setSizePolicy(self.canvas.sizePolicy().Expanding, self.canvas.sizePolicy().Expanding)
         root.addWidget(self.canvas, 10)
 
-        # Click handler for picking ν0 from FFT
+        # Click handler for picking index from FFT
         self._mpl_cid_click = self.canvas.mpl_connect("button_press_event", self._on_canvas_click)
 
         # Log
@@ -294,63 +295,55 @@ class AvaspecLive(QWidget):
     def _on_fft_toggle(self, state):
         show = state == Qt.Checked
         self.ax_fft.set_visible(show)
-        self.ax_peak.set_visible(show and self._fft_peak_idx is not None)
         self.canvas.draw_idle()
+
+    def _on_phase_color_toggle(self, state):
+        # Force redraw of FFT when phase coloring is toggled
+        pass
 
     def _on_canvas_click(self, event):
         if event.button != 1 or event.inaxes is not self.ax_fft:
             return
         if not self.chk_fft.isChecked():
             return
-        if self._fft_freq is None or self._fft_freq.size == 0:
+        if self._fft_indices is None or self._fft_indices.size == 0:
             return
         if event.xdata is None:
             return
+        
+        # Convert click position to index
         x = float(event.xdata)
-        idx = int(np.argmin(np.abs(self._fft_freq - x)))
-        if idx < 0 or idx >= self._fft_freq.size:
+        idx = int(np.argmin(np.abs(self._fft_indices - x)))
+        if idx < 0 or idx >= self._fft_indices.size:
             return
-        self._set_peak_idx(idx)
+        self._set_peak_idx_internal(idx)
 
-    def _on_set_peak_freq(self):
-        if self._fft_freq is None or self._fft_freq.size == 0:
-            self.log_msg("FFT not available yet.")
-            return
+    def _on_set_peak_idx(self):
         try:
-            f0 = float(self.ed_fft_peak.text())
+            idx = int(self.ed_fft_peak.text())
         except Exception:
-            self.log_msg("Invalid ν₀ value.")
+            self.log_msg("Invalid index value.")
             return
-        idx = int(np.argmin(np.abs(self._fft_freq - f0)))
-        if idx < 0 or idx >= self._fft_freq.size:
-            self.log_msg("ν₀ out of FFT range.")
+        
+        if self._fft_indices is None or idx < 0 or idx >= self._fft_indices.size:
+            self.log_msg("Index out of range.")
             return
-        self._set_peak_idx(idx)
+        
+        self._set_peak_idx_internal(idx)
 
-    def _set_peak_idx(self, idx):
+    def _set_peak_idx_internal(self, idx):
         self._fft_peak_idx = idx
-        self._fft_peak_freq = float(self._fft_freq[idx])
-        self.ed_fft_peak.setText(f"{self._fft_peak_freq:.6g}")
-
-        # reset history
-        self._peak_hist_t = []
-        self._peak_hist_phi = []
-        if self._t0 is None:
-            self._t0 = time.monotonic()
+        self.ed_fft_peak.setText(f"{idx}")
 
         # vertical marker in FFT panel
         if self._fft_peak_vline is None:
             self._fft_peak_vline = self.ax_fft.axvline(
-                self._fft_peak_freq, color="r", linestyle="--", linewidth=1.0
+                idx, color="r", linestyle="--", linewidth=2.0, alpha=0.8
             )
         else:
-            self._fft_peak_vline.set_xdata([self._fft_peak_freq, self._fft_peak_freq])
+            self._fft_peak_vline.set_xdata([idx, idx])
 
-        # show phase panel
-        if self.chk_fft.isChecked():
-            self.ax_peak.set_visible(True)
-
-        self.log_msg(f"Tracking FFT phase at ν₀ ≈ {self._fft_peak_freq:.4g} 1/nm")
+        self.log_msg(f"Marked index {idx}")
         self.canvas.draw_idle()
 
     def log_msg(self, msg):
@@ -446,9 +439,6 @@ class AvaspecLive(QWidget):
 
         self._ref_wl = None
         self._last_draw = 0.0
-        self._t0 = time.monotonic()
-        self._peak_hist_t = []
-        self._peak_hist_phi = []
 
         self.th = MeasureThread(self.ctrl, it, av)
         self.th.data_ready.connect(self._on_data, Qt.QueuedConnection)
@@ -526,26 +516,30 @@ class AvaspecLive(QWidget):
         else:
             self.ax.set_xlim(x0, x1)
 
-    def _apply_fft_zoom(self, freq):
+    def _apply_fft_zoom_by_index(self, indices):
         if not self.chk_fft_zoom.isChecked():
             return
         try:
-            fc = float(self.ed_fft_c.text())
-            pm = float(self.ed_fft_pm.text())
+            center_idx = int(self.ed_fft_idx.text())
+            window = int(self.ed_fft_window.text())
         except Exception:
             return
-        if pm <= 0:
+        if window <= 0:
             return
-        freq = np.asarray(freq, float).ravel()
-        if freq.size < 2:
+        
+        indices = np.asarray(indices, int).ravel()
+        N = indices.size
+        if N < 2:
             return
-        fmin, fmax = float(freq.min()), float(freq.max())
-        x0 = max(fmin, fc - pm)
-        x1 = min(fmax, fc + pm)
-        if x1 <= x0:
-            self.ax_fft.set_xlim(fmin, fmax)
-        else:
-            self.ax_fft.set_xlim(x0, x1)
+        
+        # Calculate index range
+        idx_min = max(0, center_idx - window // 2)
+        idx_max = min(N - 1, center_idx + window // 2)
+        
+        if idx_max <= idx_min:
+            return
+        
+        self.ax_fft.set_xlim(idx_min, idx_max)
 
     def _update_fft(self, wl, y):
         if not self.chk_fft.isChecked():
@@ -561,29 +555,103 @@ class AvaspecLive(QWidget):
             return
 
         N = wl.size
-        freq = np.fft.rfftfreq(N, d=dlam)  # 1/nm
         Y = np.fft.rfft(y)
         mag = np.abs(Y)
-        phase = np.angle(Y)  # [-pi, pi] per definition
+        phase = np.angle(Y)  # [-pi, pi]
 
-        self._fft_freq = freq
+        indices = np.arange(len(mag))
+        self._fft_indices = indices
+        self._fft_phase = phase
+
+        # Get downsampling factor
+        try:
+            skip = max(1, int(self.ed_downsample.text()))
+        except Exception:
+            skip = 1
 
         # ----- FFT amplitude panel -----
         self.ax_fft.set_visible(True)
-        if self._fft_line is None:
+        
+        # Decide whether to show phase-colored or simple line plot
+        show_phase_color = self.chk_phase_color.isChecked()
+        
+        if show_phase_color:
+            # Use scatter plot with phase coloring
+            if self._fft_line is not None:
+                self._fft_line.remove()
+                self._fft_line = None
+            
+            # Get index range for zoom if applicable
+            if self.chk_fft_zoom.isChecked():
+                try:
+                    center_idx = int(self.ed_fft_idx.text())
+                    window = int(self.ed_fft_window.text())
+                    idx_min = max(0, center_idx - window // 2)
+                    idx_max = min(len(indices) - 1, center_idx + window // 2)
+                    idx_plot = indices[idx_min:idx_max+1:skip]
+                    mag_plot = mag[idx_min:idx_max+1:skip]
+                    phase_plot = phase[idx_min:idx_max+1:skip]
+                except Exception:
+                    idx_plot = indices[::skip]
+                    mag_plot = mag[::skip]
+                    phase_plot = phase[::skip]
+            else:
+                idx_plot = indices[::skip]
+                mag_plot = mag[::skip]
+                phase_plot = phase[::skip]
+            
+            if self._fft_scatter is not None:
+                self._fft_scatter.remove()
+            
             self.ax_fft.cla()
-            self.ax_fft.set_xlabel("Frequency (1/nm)")
+            self.ax_fft.set_xlabel("Index")
             self.ax_fft.set_ylabel("|FFT|")
             self.ax_fft.grid(True)
-            (self._fft_line,) = self.ax_fft.plot(freq, mag, lw=1.0)
+            
+            self._fft_scatter = self.ax_fft.scatter(
+                idx_plot, mag_plot, 
+                c=phase_plot, 
+                cmap='hsv', 
+                s=20,
+                vmin=-np.pi, 
+                vmax=np.pi
+            )
+            
+            # Add colorbar if not present
+            if self._fft_colorbar is None:
+                self._fft_colorbar = self.fig.colorbar(
+                    self._fft_scatter, 
+                    ax=self.ax_fft,
+                    label='Phase (rad)'
+                )
         else:
-            self._fft_line.set_xdata(freq)
-            self._fft_line.set_ydata(mag)
+            # Use simple line plot
+            if self._fft_scatter is not None:
+                self._fft_scatter.remove()
+                self._fft_scatter = None
+            if self._fft_colorbar is not None:
+                self._fft_colorbar.remove()
+                self._fft_colorbar = None
+            
+            # Apply downsampling
+            idx_plot = indices[::skip]
+            mag_plot = mag[::skip]
+            
+            if self._fft_line is None:
+                self.ax_fft.cla()
+                self.ax_fft.set_xlabel("Index")
+                self.ax_fft.set_ylabel("|FFT|")
+                self.ax_fft.grid(True)
+                (self._fft_line,) = self.ax_fft.plot(idx_plot, mag_plot, lw=1.0)
+            else:
+                self._fft_line.set_xdata(idx_plot)
+                self._fft_line.set_ydata(mag_plot)
 
-        # Zoom in frequency if requested
-        self._apply_fft_zoom(freq)
+        # Zoom in index if requested (for line plot)
+        if not show_phase_color:
+            self._apply_fft_zoom_by_index(indices)
 
-        # Apply manual y-limits on FFT amplitude, if provided
+        # Apply manual y-limits on FFT amplitude
         ymin = ymax = None
         try:
             if self.ed_ylim_min.text().strip():
@@ -595,93 +663,16 @@ class AvaspecLive(QWidget):
 
         if ymin is not None and ymax is not None and ymin < ymax:
             self.ax_fft.set_ylim(ymin, ymax)
-        else:
+        elif not show_phase_color:
             self.ax_fft.relim()
             self.ax_fft.autoscale_view()
 
-        # ----- Phase vs time (right panel) -----
-        if self._fft_peak_idx is not None and 0 <= self._fft_peak_idx < freq.size:
-            self._fft_peak_freq = float(freq[self._fft_peak_idx])
-
-            # Vertical marker at ν₀ in FFT panel
-            if self._fft_peak_vline is None:
-                self._fft_peak_vline = self.ax_fft.axvline(
-                    self._fft_peak_freq, color="r", linestyle="--", linewidth=1.0
-                )
+        # Update marker position if set
+        if self._fft_peak_vline is not None and self._fft_peak_idx is not None:
+            if 0 <= self._fft_peak_idx < len(indices):
+                self._fft_peak_vline.set_xdata([self._fft_peak_idx, self._fft_peak_idx])
             else:
-                self._fft_peak_vline.set_xdata(
-                    [self._fft_peak_freq, self._fft_peak_freq]
-                )
-
-            # Time reference
-            if self._t0 is None:
-                self._t0 = time.monotonic()
-            t_rel = time.monotonic() - self._t0
-
-            # Phase at ν₀, explicitly wrapped to [-pi, pi]
-            phi_val = float(phase[self._fft_peak_idx])
-            phi_val = (phi_val + np.pi) % (2 * np.pi) - np.pi
-
-            self._peak_hist_t.append(t_rel)
-            self._peak_hist_phi.append(phi_val)
-
-            # Time window (sliding)
-            try:
-                twin = float(self.ed_twin.text())
-            except Exception:
-                twin = 30.0
-            if twin <= 0:
-                twin = 30.0
-
-            tt = np.asarray(self._peak_hist_t, float)
-            pp = np.asarray(self._peak_hist_phi, float)
-
-            if tt.size == 0:
-                return
-
-            # Keep only last 'twin' seconds
-            t_max = tt.max()
-            t_min_win = max(0.0, t_max - twin)
-            mask = tt >= t_min_win
-            tt = tt[mask]
-            pp = pp[mask]
-            self._peak_hist_t = tt.tolist()
-            self._peak_hist_phi = pp.tolist()
-
-            # Map times into [0, twin] (sliding window)
-            if tt.size:
-                if t_max > twin:
-                    t_win = tt - (t_max - twin)
-                else:
-                    t_win = tt
-            else:
-                t_win = tt
-
-            # Phase stays in [-pi, pi], no unwrapping
-            phi_plot = pp
-
-            # Plot phase vs time as points
-            self.ax_peak.set_visible(True)
-            if self._peak_scatter is None:
-                self.ax_peak.cla()
-                self.ax_peak.set_xlabel("Time (s)")
-                self.ax_peak.set_ylabel("arg(FFT(ν₀)) (rad)")
-                self.ax_peak.grid(True)
-                self._peak_scatter = self.ax_peak.plot(
-                    t_win,
-                    phi_plot,
-                    linestyle="None",
-                    marker=".",
-                    markersize=4,
-                )[0]
-            else:
-                self._peak_scatter.set_xdata(t_win)
-                self._peak_scatter.set_ydata(phi_plot)
-
-            # Fixed axes for phase plot
-            self.ax_peak.set_xlim(0.0, twin)
-            self.ax_peak.set_ylim(-np.pi, np.pi)
-
+                self._fft_peak_vline = None
 
     def _on_data(self, ts, wl, counts):
         now = time.monotonic()
@@ -949,8 +940,6 @@ class AvaspecLive(QWidget):
                 self.ax.cla()
             if getattr(self, "ax_fft", None) is not None:
                 self.ax_fft.cla()
-            if getattr(self, "ax_peak", None) is not None:
-                self.ax_peak.cla()
             if getattr(self, "canvas", None) is not None:
                 self.canvas.draw_idle()
         except Exception:

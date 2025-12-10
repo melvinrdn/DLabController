@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import (
 from dlab.diagnostics.ui.scans.m2_measurement_tab import M2Tab
 from dlab.diagnostics.ui.scans.grid_scan_tab import GridScanTab
 from dlab.diagnostics.ui.scans.grating_compressor_scan_tab import GCScanTab
-from dlab.diagnostics.ui.scans.stability_scan_tab import StabilityScanTab
 from dlab.diagnostics.ui.scans.temporal_overlap_scan_tab import TOverlapTab
 from dlab.diagnostics.ui.scans.two_color_scan_tab import TwoColorScanTab
 

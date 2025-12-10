@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime, time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 from PIL import Image, PngImagePlugin
 
@@ -10,11 +10,16 @@ from PyQt5.QtCore import QTimer, QObject, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox, QPushButton,
     QDoubleSpinBox, QTextEdit, QProgressBar, QMessageBox, QTableWidget,
-    QTableWidgetItem, QAbstractItemView, QLineEdit
+    QTableWidgetItem, QAbstractItemView, QLineEdit, QCheckBox
 )
 
 from dlab.boot import ROOT, get_config
 from dlab.core.device_registry import REGISTRY
+
+import matplotlib
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 import logging
 logger = logging.getLogger("dlab.scans.two_color_scan_tab")
@@ -37,52 +42,390 @@ def _save_png_with_meta(folder: Path, filename: str, frame_u16: np.ndarray, meta
     return path
 
 
+def _detector_display_name(det_key, dev, meta):
+    if meta and str(meta.get("DeviceName", "")).strip():
+        return str(meta["DeviceName"]).strip()
+    for attr in ("name", "camera_name", "model_name"):
+        v = getattr(dev, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    suffix = det_key.split(":")[-1]
+    base, *rest = suffix.split("_")
+    if base.lower().endswith("cam"):
+        vendor = base[:-3]
+        camel = (vendor[:1].upper() + vendor[1:]) + "Cam"
+    else:
+        camel = base[:1].upper() + base[1:]
+    return camel + (("_" + "_".join(rest)) if rest else "")
+
+
+def power_to_angle(power_fraction, _amp_unused, phase_deg):
+    y = float(np.clip(power_fraction, 0.0, 1.0))
+    return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
+
+
+def angle_to_power(angle_deg, phase_deg):
+    y = 0.5 * (1.0 + float(np.cos(2.0 * np.pi / 90.0 * (float(angle_deg) - float(phase_deg)))))
+    return float(np.clip(y, 0.0, 1.0))
+
+
+def _wp_index_from_stage_key(stage_key):
+    try:
+        if not stage_key.startswith("stage:"):
+            return None
+        n = int(stage_key.split(":")[1])
+        if 1 <= n <= 10:
+            return n
+    except (ValueError, IndexError):
+        pass
+    return None
+
+
+def _reg_key_powermode(wp_index):
+    return f"waveplate:powermode:{wp_index}"
+
+
+def _reg_key_calib(wp_index):
+    return f"waveplate:calib:{wp_index}"
+
+
+def _reg_key_maxvalue(wp_index):
+    return f"waveplate:max_value:{wp_index}"
+
+
+def calculate_max_intensity(max_power_W: float, waist_um: float, 
+                            pulse_duration_fs: float, rep_rate_kHz: float) -> float:
+    """
+    Calculate maximum peak intensity for given beam parameters.
+    
+    Args:
+        max_power_W: Maximum average power [W]
+        waist_um: Beam waist at focus [µm]
+        pulse_duration_fs: Pulse duration [fs]
+        rep_rate_kHz: Repetition rate [kHz]
+    
+    Returns:
+        I_max_peak: Maximum peak intensity [W/cm²]
+    """
+    waist_cm = waist_um * 1e-4
+    pulse_duration_s = pulse_duration_fs * 1e-15
+    rep_rate_Hz = rep_rate_kHz * 1e3
+    
+    # P_peak = P_avg / (f_rep × τ)
+    P_peak = max_power_W / (rep_rate_Hz * pulse_duration_s)
+    
+    # I_peak = 2 × P_peak / (π × w0²) for Gaussian beam
+    area_cm2 = np.pi * waist_cm**2
+    I_peak = 2.0 * P_peak / area_cm2
+    
+    return I_peak
+
+
+def intensity_to_power(I_peak_W_cm2: float, waist_um: float,
+                       pulse_duration_fs: float, rep_rate_kHz: float) -> float:
+    """
+    Calculate required average power to achieve target peak intensity.
+    
+    Args:
+        I_peak_W_cm2: Target peak intensity [W/cm²]
+        waist_um: Beam waist at focus [µm]
+        pulse_duration_fs: Pulse duration [fs]
+        rep_rate_kHz: Repetition rate [kHz]
+    
+    Returns:
+        P_avg: Required average power [W]
+    """
+    waist_cm = waist_um * 1e-4
+    pulse_duration_s = pulse_duration_fs * 1e-15
+    rep_rate_Hz = rep_rate_kHz * 1e3
+    
+    # I_peak = 2 × P_peak / (π × w0²)
+    # P_peak = I_peak × π × w0² / 2
+    area_cm2 = np.pi * waist_cm**2
+    P_peak = I_peak_W_cm2 * area_cm2 / 2.0
+    
+    # P_avg = P_peak × f_rep × τ
+    P_avg = P_peak * rep_rate_Hz * pulse_duration_s
+    
+    return P_avg
+
+
+class MonitorWindow(QWidget):
+    """Real-time monitoring window for phase error and std during scan"""
+    
+    def __init__(self, ratio_values, setpoints, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Scan Monitor - Phase Error & Std")
+        self.resize(1200, 500)
+        
+        # Store scan dimensions
+        self.ratio_values = np.array(ratio_values)
+        self.setpoints = np.array(setpoints)
+        self.n_ratios = len(ratio_values)
+        self.n_phases = len(setpoints)
+        
+        # Initialize data arrays with NaN
+        self.error_data = np.full((self.n_ratios, self.n_phases), np.nan)
+        self.std_data = np.full((self.n_ratios, self.n_phases), np.nan)
+        
+        # Build UI
+        layout = QHBoxLayout(self)
+        
+        # Create figure with 2 subplots
+        self.figure = Figure(figsize=(12, 4))
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        
+        self.ax_error = self.figure.add_subplot(121)
+        self.ax_std = self.figure.add_subplot(122)
+        
+        # Initial plot setup
+        extent = [self.setpoints[0], self.setpoints[-1], 
+                 self.ratio_values[0], self.ratio_values[-1]]
+        
+        self.im_error = self.ax_error.imshow(
+            self.error_data, aspect='auto', origin='lower',
+            extent=extent, cmap='RdYlGn_r', interpolation='nearest'
+        )
+        self.ax_error.set_xlabel('Phase setpoint [rad]')
+        self.ax_error.set_ylabel('Ratio R')
+        self.ax_error.set_title('Phase Error [rad]')
+        self.figure.colorbar(self.im_error, ax=self.ax_error)
+        
+        self.im_std = self.ax_std.imshow(
+            self.std_data, aspect='auto', origin='lower',
+            extent=extent, cmap='RdYlGn_r', interpolation='nearest'
+        )
+        self.ax_std.set_xlabel('Phase setpoint [rad]')
+        self.ax_std.set_ylabel('Ratio R')
+        self.ax_std.set_title('Phase Std [rad]')
+        self.figure.colorbar(self.im_std, ax=self.ax_std)
+        
+        self.figure.tight_layout()
+        
+        layout.addWidget(self.canvas)
+    
+    def update_data(self, ratio_idx: int, phase_idx: int, error: float, std: float):
+        """Update data point and refresh display"""
+        self.error_data[ratio_idx, phase_idx] = abs(error)
+        self.std_data[ratio_idx, phase_idx] = std
+        
+        # Update images efficiently
+        self.im_error.set_data(self.error_data)
+        self.im_std.set_data(self.std_data)
+        
+        # Auto-scale color limits based on valid (non-NaN) data
+        valid_errors = self.error_data[~np.isnan(self.error_data)]
+        valid_stds = self.std_data[~np.isnan(self.std_data)]
+        
+        if len(valid_errors) > 0:
+            self.im_error.set_clim(vmin=0, vmax=np.percentile(valid_errors, 95))
+        if len(valid_stds) > 0:
+            self.im_std.set_clim(vmin=0, vmax=np.percentile(valid_stds, 95))
+        
+        # Redraw canvas
+        self.canvas.draw_idle()
+
+
 class TwoColorScanWorker(QObject):
     progress = pyqtSignal(int, int)
     log = pyqtSignal(str)
     finished = pyqtSignal(str)
+    monitor_update = pyqtSignal(int, int, float, float)  # ratio_idx, phase_idx, error, std
 
     def __init__(
         self,
         phase_ctrl_key: str,
         setpoints: List[float],
         detector_params: Dict[str, tuple],
-        settle_s: float,
+        max_phase_error_rad: float,
+        max_phase_std_rad: float,
+        stability_check_window_s: float,
+        stability_timeout_s: float,
         phase_avg_s: float,
         scan_name: str,
         comment: str,
+        # Ratio scan parameters
+        enable_ratio_scan: bool = False,
+        wp_omega_key: str = None,
+        wp_2omega_key: str = None,
+        total_intensity_W_cm2: float = None,
+        ratio_values: List[float] = None,
+        # Laser parameters for omega
+        omega_max_power_W: float = None,
+        omega_waist_um: float = None,
+        omega_pulse_duration_fs: float = None,
+        omega_rep_rate_kHz: float = None,
+        omega_beam_split: bool = False,
+        # Laser parameters for 2omega
+        omega2_max_power_W: float = None,
+        omega2_waist_um: float = None,
+        omega2_pulse_duration_fs: float = None,
+        omega2_rep_rate_kHz: float = None,
+        # Background scan
+        background: bool = False,
+        existing_scan_log: str = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self.phase_ctrl_key = phase_ctrl_key
         self.setpoints = setpoints
         self.detector_params = detector_params
-        self.settle_s = float(settle_s)
+        self.max_phase_error_rad = float(max_phase_error_rad)
+        self.max_phase_std_rad = float(max_phase_std_rad)
+        self.stability_check_window_s = float(stability_check_window_s)
+        self.stability_timeout_s = float(stability_timeout_s)
         self.phase_avg_s = float(phase_avg_s)
         self.scan_name = scan_name
         self.comment = comment
         self.abort = False
+        
+        # Ratio scan
+        self.enable_ratio_scan = enable_ratio_scan
+        self.wp_omega_key = wp_omega_key
+        self.wp_2omega_key = wp_2omega_key
+        self.total_intensity_W_cm2 = total_intensity_W_cm2
+        self.ratio_values = ratio_values or [0.5]
+        
+        # Laser parameters
+        self.omega_max_power_W = omega_max_power_W
+        self.omega_waist_um = omega_waist_um
+        self.omega_pulse_duration_fs = omega_pulse_duration_fs
+        self.omega_rep_rate_kHz = omega_rep_rate_kHz
+        self.omega_beam_split = omega_beam_split
+        
+        self.omega2_max_power_W = omega2_max_power_W
+        self.omega2_waist_um = omega2_waist_um
+        self.omega2_pulse_duration_fs = omega2_pulse_duration_fs
+        self.omega2_rep_rate_kHz = omega2_rep_rate_kHz
+        
+        # Background
+        self.background = background
+        self.existing_scan_log = existing_scan_log
+        
+        self.data_root = _data_root()
+        self.timestamp = datetime.datetime.now()
 
     def _emit(self, msg: str) -> None:
         self.log.emit(msg)
         logger.info(msg)
 
-    def run(self) -> None:
-        phase_ctrl = REGISTRY.get(self.phase_ctrl_key)
-        if phase_ctrl is None:
-            self._emit(f"Phase controller '{self.phase_ctrl_key}' not found.")
-            self.finished.emit("")
-            return
-
-        if not hasattr(phase_ctrl, 'set_target'):
-            self._emit(f"Phase controller doesn't have required API methods.")
-            self.finished.emit("")
-            return
+    def _set_waveplate_power(self, stage_key: str, power_W: float, max_power_W: float) -> None:
+        """Set waveplate to achieve desired power output using power mode"""
+        wp_index = _wp_index_from_stage_key(stage_key)
+        if wp_index is None:
+            raise ValueError(f"Invalid waveplate key: {stage_key}")
         
-        if not phase_ctrl.is_locked():
-            self._emit(f"Phase controller is not locked. Please enable lock first.")
-            self.finished.emit("")
-            return
+        # Get calibration phase
+        amp_off = REGISTRY.get(_reg_key_calib(wp_index)) or (None, None)
+        if amp_off[1] is None:
+            raise ValueError(f"{stage_key}: No calibration phase found")
+        phase_deg = float(amp_off[1])
+        
+        # Register max power value
+        REGISTRY.register(_reg_key_maxvalue(wp_index), float(max_power_W))
+        
+        # Calculate fraction and angle
+        power_fraction = power_W / float(max_power_W)
+        power_fraction = np.clip(power_fraction, 0.0, 1.0)
+        angle = power_to_angle(power_fraction, 1.0, phase_deg)
+        
+        # Move stage
+        stage = REGISTRY.get(stage_key)
+        if stage is None:
+            raise ValueError(f"Stage not found: {stage_key}")
+        
+        stage.move_to(float(angle), blocking=True)
+        self._emit(f"  {stage_key} → {power_W:.6f} W / {max_power_W:.6f} W ({100*power_fraction:.1f}%, angle: {angle:.3f}°)")
+
+    def _wait_for_stability(self, phase_ctrl, setpoint: float) -> Tuple[float, float, float, bool]:
+        """
+        Wait for phase lock to stabilize before acquisition.
+        
+        Returns:
+            (avg_phase, std_phase, phase_error, timed_out)
+        """
+        start_time = time.time()
+        check_count = 0
+        
+        while True:
+            if self.abort:
+                return 0.0, 0.0, 0.0, True
+            
+            # Check stability
+            avg_phase, std_phase = phase_ctrl.get_phase_average(self.stability_check_window_s)
+            phase_error = abs(avg_phase - setpoint)
+            
+            check_count += 1
+            elapsed = time.time() - start_time
+            
+            # Check if stable
+            error_ok = phase_error < self.max_phase_error_rad
+            std_ok = std_phase < self.max_phase_std_rad
+            
+            if error_ok and std_ok:
+                self._emit(f"  Phase stable after {elapsed:.2f}s (error={phase_error:.4f} rad, std={std_phase:.4f} rad)")
+                return avg_phase, std_phase, phase_error, False
+            
+            # Check timeout
+            if elapsed > self.stability_timeout_s:
+                self._emit(f"  WARNING: Stability timeout after {elapsed:.2f}s (error={phase_error:.4f} rad, std={std_phase:.4f} rad)")
+                return avg_phase, std_phase, phase_error, True
+            
+            # Log progress every few checks
+            if check_count % 3 == 0:
+                self._emit(f"  Waiting for stability... ({elapsed:.1f}s) error={phase_error:.4f}, std={std_phase:.4f}")
+            
+            # Small sleep between checks
+            time.sleep(0.1)
+
+    def run(self) -> None:
+        # Phase controller only needed if not background
+        phase_ctrl = None
+        if not self.background:
+            phase_ctrl = REGISTRY.get(self.phase_ctrl_key)
+            if phase_ctrl is None:
+                self._emit(f"Phase controller '{self.phase_ctrl_key}' not found.")
+                self.finished.emit("")
+                return
+
+            if not hasattr(phase_ctrl, 'set_target'):
+                self._emit(f"Phase controller doesn't have required API methods.")
+                self.finished.emit("")
+                return
+            
+            if not phase_ctrl.is_locked():
+                self._emit(f"Phase controller is not locked. Please enable lock first.")
+                self.finished.emit("")
+                return
+
+        # Validate ratio scan setup if enabled
+        if self.enable_ratio_scan:
+            if not self.wp_omega_key or not self.wp_2omega_key:
+                self._emit("Ratio scan enabled but waveplates not specified.")
+                self.finished.emit("")
+                return
+            if self.total_intensity_W_cm2 is None or self.total_intensity_W_cm2 <= 0:
+                self._emit("Ratio scan enabled but total intensity invalid.")
+                self.finished.emit("")
+                return
+            
+            # All parameters are required
+            required = [
+                (self.omega_max_power_W, "Omega max power"),
+                (self.omega_waist_um, "Omega waist"),
+                (self.omega_pulse_duration_fs, "Omega pulse duration"),
+                (self.omega_rep_rate_kHz, "Omega rep rate"),
+                (self.omega2_max_power_W, "2-Omega max power"),
+                (self.omega2_waist_um, "2-Omega waist"),
+                (self.omega2_pulse_duration_fs, "2-Omega pulse duration"),
+                (self.omega2_rep_rate_kHz, "2-Omega rep rate"),
+            ]
+            
+            for val, name in required:
+                if val is None or val <= 0:
+                    self._emit(f"{name} is required and must be positive.")
+                    self.finished.emit("")
+                    return
 
         detectors = {}
         for det_key, params in self.detector_params.items():
@@ -115,196 +458,404 @@ class TwoColorScanWorker(QObject):
 
             detectors[det_key] = dev
 
-        now = datetime.datetime.now()
-        root = _data_root()
-
-        scan_dir = root / f"{now:%Y-%m-%d}" / "TwoColorScans" / self.scan_name
+        scan_dir = self.data_root / f"{self.timestamp:%Y-%m-%d}" / "TwoColorScans" / self.scan_name
         scan_dir.mkdir(parents=True, exist_ok=True)
 
-        date_str = f"{now:%Y-%m-%d}"
-        idx = 1
-        while True:
-            candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
-            if not candidate.exists():
-                break
-            idx += 1
-        scan_log = candidate
+        # Use existing log for background, or create new one
+        if self.existing_scan_log:
+            scan_log = Path(self.existing_scan_log)
+        else:
+            date_str = f"{self.timestamp:%Y-%m-%d}"
+            idx = 1
+            while True:
+                candidate = scan_dir / f"{self.scan_name}_log_{date_str}_{idx}.log"
+                if not candidate.exists():
+                    break
+                idx += 1
+            scan_log = candidate
 
-        with open(scan_log, "w", encoding="utf-8") as f:
-            header = ["Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad", 
-                     "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
-            f.write("\t".join(header) + "\n")
-            f.write(f"# {self.comment}\n")
-            f.write(f"# Phase controller: {self.phase_ctrl_key}\n")
-            f.write(f"# Settle time: {self.settle_s} s\n")
-            f.write(f"# Phase averaging: {self.phase_avg_s} s\n")
+            with open(scan_log, "w", encoding="utf-8") as f:
+                if self.enable_ratio_scan:
+                    header = ["Ratio_R", "Power_omega_W", "Power_2omega_W", 
+                             "I_omega_peak_W_cm2", "I_2omega_peak_W_cm2",
+                             "Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad", 
+                             "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
+                else:
+                    header = ["Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad", 
+                             "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
+                f.write("\t".join(header) + "\n")
+                f.write(f"# {self.comment}\n")
+                f.write(f"# Phase stability criteria:\n")
+                f.write(f"#   Max error: {self.max_phase_error_rad} rad\n")
+                f.write(f"#   Max std: {self.max_phase_std_rad} rad\n")
+                f.write(f"#   Check window: {self.stability_check_window_s} s\n")
+                f.write(f"#   Timeout: {self.stability_timeout_s} s\n")
+                f.write(f"# Phase averaging: {self.phase_avg_s} s\n")
+                if self.enable_ratio_scan:
+                    f.write(f"# Ratio scan enabled: R = I_2omega / (I_omega + I_2omega)\n")
+                    f.write(f"# Total peak intensity: {self.total_intensity_W_cm2:.6e} W/cm²\n")
+                    f.write(f"# Waveplate omega: {self.wp_omega_key}\n")
+                    f.write(f"#   Max power: {self.omega_max_power_W} W\n")
+                    f.write(f"#   Waist: {self.omega_waist_um} µm\n")
+                    f.write(f"#   Pulse duration: {self.omega_pulse_duration_fs} fs\n")
+                    f.write(f"#   Rep rate: {self.omega_rep_rate_kHz} kHz\n")
+                    if self.omega_beam_split:
+                        f.write(f"#   Beam split: YES (intensity divided by 2)\n")
+                    I_max_omega = calculate_max_intensity(
+                        self.omega_max_power_W, self.omega_waist_um,
+                        self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                    )
+                    if self.omega_beam_split:
+                        I_max_omega /= 2.0
+                    f.write(f"#   Max intensity: {I_max_omega:.6e} W/cm²\n")
+                    f.write(f"# Waveplate 2omega: {self.wp_2omega_key}\n")
+                    f.write(f"#   Max power: {self.omega2_max_power_W} W\n")
+                    f.write(f"#   Waist: {self.omega2_waist_um} µm\n")
+                    f.write(f"#   Pulse duration: {self.omega2_pulse_duration_fs} fs\n")
+                    f.write(f"#   Rep rate: {self.omega2_rep_rate_kHz} kHz\n")
+                    I_max_2omega = calculate_max_intensity(
+                        self.omega2_max_power_W, self.omega2_waist_um,
+                        self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
+                    )
+                    f.write(f"#   Max intensity: {I_max_2omega:.6e} W/cm²\n")
 
-        total_points = len(self.setpoints) * len(detectors)
+        # Calculate total points
+        n_ratios = len(self.ratio_values) if self.enable_ratio_scan else 1
+        n_phases = len(self.setpoints) if not self.background else 1
+        total_points = n_ratios * n_phases * len(detectors)
         done = 0
 
         try:
-            for sp in self.setpoints:
+            # Outer loop: ratio values (if enabled)
+            ratio_loop = self.ratio_values if self.enable_ratio_scan else [None]
+            
+            for ratio_idx, ratio_R in enumerate(ratio_loop):
                 if self.abort:
                     self._emit("Scan aborted.")
                     self.finished.emit("")
                     return
-
-                phase_ctrl.set_target(float(sp))
-                self._emit(f"Moving to setpoint: {sp:.4f} rad")
-
-                time.sleep(self.settle_s)
-
-                avg_phase, std_phase = phase_ctrl.get_phase_average(self.phase_avg_s)
-                phase_error = avg_phase - sp
-
-                for det_key, dev in detectors.items():
+                
+                # Set waveplate powers for this ratio
+                power_omega = None
+                power_2omega = None
+                I_omega_peak = None
+                I_2omega_peak = None
+                
+                if self.enable_ratio_scan:
+                    # R = I_2omega / (I_omega + I_2omega)
+                    # I_total = I_omega + I_2omega
+                    # => I_2omega = R × I_total
+                    # => I_omega = (1 - R) × I_total
+                    I_2omega_peak = ratio_R * self.total_intensity_W_cm2
+                    I_omega_peak = (1.0 - ratio_R) * self.total_intensity_W_cm2
+                    
+                    # If beam split is enabled, actual intensity at focus is halved
+                    # So we just note this - no compensation
+                    I_omega_actual = I_omega_peak / 2.0 if self.omega_beam_split else I_omega_peak
+                    
+                    # Convert intensities to powers (using nominal intensity, not split)
+                    power_omega = intensity_to_power(
+                        I_omega_peak, self.omega_waist_um,
+                        self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                    )
+                    power_2omega = intensity_to_power(
+                        I_2omega_peak, self.omega2_waist_um,
+                        self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
+                    )
+                    
+                    # Check if within max power limits
+                    if power_omega > self.omega_max_power_W:
+                        self._emit(f"Warning: Required omega power ({power_omega:.6f} W) exceeds max ({self.omega_max_power_W} W)")
+                        power_omega = self.omega_max_power_W
+                        I_omega_peak = calculate_max_intensity(
+                            power_omega, self.omega_waist_um,
+                            self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                        )
+                        I_omega_actual = I_omega_peak / 2.0 if self.omega_beam_split else I_omega_peak
+                    
+                    if power_2omega > self.omega2_max_power_W:
+                        self._emit(f"Warning: Required 2-omega power ({power_2omega:.6f} W) exceeds max ({self.omega2_max_power_W} W)")
+                        power_2omega = self.omega2_max_power_W
+                        I_2omega_peak = calculate_max_intensity(
+                            power_2omega, self.omega2_waist_um,
+                            self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
+                        )
+                    
+                    self._emit(f"\n=== Setting ratio R = {ratio_R:.4f} ===")
+                    self._emit(f"  Total peak intensity: {self.total_intensity_W_cm2:.6e} W/cm²")
+                    if self.omega_beam_split:
+                        self._emit(f"  I_omega:  {I_omega_peak:.6e} W/cm² → {I_omega_actual:.6e} W/cm² at sample [beam split]")
+                    else:
+                        self._emit(f"  I_omega:  {I_omega_peak:.6e} W/cm² ({100*(1-ratio_R):.1f}%)")
+                    self._emit(f"  I_2omega: {I_2omega_peak:.6e} W/cm² ({100*ratio_R:.1f}%)")
+                    self._emit(f"  P_omega:  {power_omega:.6f} W")
+                    self._emit(f"  P_2omega: {power_2omega:.6f} W")
+                    
+                    try:
+                        self._set_waveplate_power(self.wp_omega_key, power_omega, self.omega_max_power_W)
+                        self._set_waveplate_power(self.wp_2omega_key, power_2omega, self.omega2_max_power_W)
+                    except Exception as e:
+                        self._emit(f"Failed to set waveplate powers: {e}")
+                        self.finished.emit("")
+                        return
+                
+                # Inner loop: phase setpoints (or single point for background)
+                phase_loop = [None] if self.background else self.setpoints
+                
+                for phase_idx, sp in enumerate(phase_loop):
                     if self.abort:
                         self._emit("Scan aborted.")
                         self.finished.emit("")
                         return
 
-                    params = self.detector_params.get(det_key, (0, 1))
-
-                    try:
-                        if hasattr(dev, "grab_frame_for_scan"):
-                            exposure_or_int = int(params[0]) if len(params) >= 1 else 0
-                            averages = int(params[1]) if len(params) >= 2 else 1
-                            
-                            try:
-                                frame_u16, meta = dev.grab_frame_for_scan(
-                                    averages=int(averages),
-                                    background=False,
-                                    dead_pixel_cleanup=True,
-                                    exposure_us=int(exposure_or_int),
-                                )
-                            except TypeError:
-                                frame_u16, meta = dev.grab_frame_for_scan(
-                                    averages=int(averages),
-                                    background=False,
-                                    dead_pixel_cleanup=True,
-                                )
-                            
-                            exp_meta = int((meta or {}).get("Exposure_us", exposure_or_int))
-                            
-                            det_name = det_key.split(":")[-1]
-                            det_day = root / f"{now:%Y-%m-%d}" / det_name
-                            ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                            fn = f"{det_name}_sp{sp:.4f}_{ts_ms}.png"
-                            
-                            meta_dict = {
-                                "Exposure_us": exp_meta, 
-                                "Setpoint_rad": sp,
-                                "MeasuredPhase_rad": avg_phase,
-                                "PhaseStd_rad": std_phase,
-                                "Comment": self.comment
-                            }
-                            _save_png_with_meta(det_day, fn, frame_u16, meta_dict)
-                            
-                            data_fn = fn
-                            saved_label = f"exp {exp_meta} µs"
-
-                        elif hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"):
-                            exposure_or_int = float(params[0]) if len(params) >= 1 else 0.0
-                            averages = int(params[1]) if len(params) >= 2 else 1
-                            
-                            if hasattr(dev, "get_wavelengths"):
-                                wl = np.asarray(dev.get_wavelengths(), dtype=float)
-                            else:
-                                wl = np.asarray(getattr(dev, "wavelength", None), dtype=float)
-
-                            if wl is None or wl.size == 0:
-                                self._emit(f"{det_key}: wavelength array empty.")
-                                continue
-
-                            if hasattr(dev, "grab_spectrum_for_scan"):
-                                counts, meta = dev.grab_spectrum_for_scan(
-                                    int_ms=float(exposure_or_int),
-                                    averages=int(averages)
-                                )
-                                counts = np.asarray(counts, dtype=float)
-                                int_ms = float((meta or {}).get("Integration_ms", float(exposure_or_int)))
-                            else:
-                                _buf = []
-                                for _ in range(int(averages)):
-                                    _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
-                                    _buf.append(np.asarray(_data, dtype=float))
-                                    time.sleep(0.01)
-                                counts = np.mean(np.stack(_buf, axis=0), axis=0)
-                                int_ms = float(exposure_or_int)
-
-                            det_day = root / f"{now:%Y-%m-%d}" / "Avaspec"
-                            safe_name = det_key.split(":")[-1].replace(" ", "")
-                            ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-                            fn = f"{safe_name}_sp{sp:.4f}_{ts_ms}.txt"
-                            
-                            header = {
-                                "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "IntegrationTime_ms": int_ms,
-                                "Averages": averages,
-                                "Setpoint_rad": sp,
-                                "MeasuredPhase_rad": avg_phase,
-                                "PhaseStd_rad": std_phase,
-                                "Comment": self.comment,
-                            }
-                            det_day.mkdir(parents=True, exist_ok=True)
-                            path = det_day / fn
-                            lines = [f"# {k}: {v}" for k, v in header.items()]
-                            lines.append("Wavelength_nm;Counts")
-                            with open(path, "w", encoding="utf-8") as f:
-                                f.write("\n".join(lines) + "\n")
-                                for xv, yv in zip(wl, counts):
-                                    f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
-                            
-                            data_fn = fn
-                            saved_label = f"int {int_ms:.0f} ms"
-
+                    avg_phase = std_phase = phase_error = None
+                    timed_out = False
+                    
+                    if not self.background:
+                        phase_ctrl.set_target(float(sp))
+                        if self.enable_ratio_scan:
+                            self._emit(f"R={ratio_R:.3f}, Phase setpoint: {sp:.4f} rad")
                         else:
-                            period_ms = float(params[0]) if len(params) >= 1 else 100.0
-                            averages = int(params[1]) if len(params) >= 2 else 1
+                            self._emit(f"Phase setpoint: {sp:.4f} rad")
 
-                            vals = []
-                            n_avg = max(1, int(averages))
-                            for i in range(n_avg):
-                                if hasattr(dev, "read_power"):
-                                    v = float(dev.read_power())
+                        # Wait for stability
+                        avg_phase, std_phase, phase_error, timed_out = self._wait_for_stability(phase_ctrl, sp)
+                        
+                        if self.abort:
+                            self._emit("Scan aborted.")
+                            self.finished.emit("")
+                            return
+                        
+                        # Do final averaging for acquisition
+                        avg_phase, std_phase = phase_ctrl.get_phase_average(self.phase_avg_s)
+                        phase_error = avg_phase - sp
+                        
+                        # Emit monitor update signal
+                        if self.enable_ratio_scan:
+                            self.monitor_update.emit(ratio_idx, phase_idx, phase_error, std_phase)
+                    else:
+                        if self.enable_ratio_scan:
+                            self._emit(f"Background @ R={ratio_R:.3f}")
+                        else:
+                            self._emit(f"Capturing background")
+
+                    for det_key, dev in detectors.items():
+                        if self.abort:
+                            self._emit("Scan aborted.")
+                            self.finished.emit("")
+                            return
+
+                        params = self.detector_params.get(det_key, (0, 1))
+
+                        try:
+                            if hasattr(dev, "grab_frame_for_scan"):
+                                exposure_or_int = int(params[0]) if len(params) >= 1 else 0
+                                averages = int(params[1]) if len(params) >= 2 else 1
+                                
+                                try:
+                                    frame_u16, meta = dev.grab_frame_for_scan(
+                                        averages=int(averages),
+                                        background=self.background,
+                                        dead_pixel_cleanup=True,
+                                        exposure_us=int(exposure_or_int),
+                                    )
+                                except TypeError:
+                                    frame_u16, meta = dev.grab_frame_for_scan(
+                                        averages=int(averages),
+                                        background=self.background,
+                                        dead_pixel_cleanup=True,
+                                    )
+                                
+                                exp_meta = int((meta or {}).get("Exposure_us", exposure_or_int))
+                                
+                                # Save with grid_scan style naming
+                                det_name = _detector_display_name(det_key, dev, meta)
+                                det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / det_name
+                                ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                
+                                tag = "Background" if self.background else "Image"
+                                fn = f"{det_name}_{tag}_{ts_ms}.png"
+                                
+                                meta_dict = {
+                                    "Exposure_us": exp_meta,
+                                    "Comment": self.comment
+                                }
+                                
+                                if self.enable_ratio_scan:
+                                    meta_dict.update({
+                                        "Ratio_R": ratio_R,
+                                        "Power_omega_W": power_omega,
+                                        "Power_2omega_W": power_2omega,
+                                        "I_omega_peak_W_cm2": I_omega_peak,
+                                        "I_2omega_peak_W_cm2": I_2omega_peak,
+                                    })
+                                
+                                if not self.background:
+                                    meta_dict.update({
+                                        "Setpoint_rad": sp,
+                                        "MeasuredPhase_rad": avg_phase,
+                                        "PhaseStd_rad": std_phase,
+                                    })
+                                
+                                _save_png_with_meta(det_day, fn, frame_u16, meta_dict)
+                                data_fn = fn
+                                saved_label = f"exp {exp_meta} µs"
+
+                            elif hasattr(dev, "measure_spectrum") or hasattr(dev, "grab_spectrum_for_scan"):
+                                exposure_or_int = float(params[0]) if len(params) >= 1 else 0.0
+                                averages = int(params[1]) if len(params) >= 2 else 1
+                                
+                                if hasattr(dev, "get_wavelengths"):
+                                    wl = np.asarray(dev.get_wavelengths(), dtype=float)
                                 else:
-                                    v = float(dev.fetch_power())
-                                vals.append(v)
-                                if i + 1 < n_avg:
-                                    time.sleep(period_ms / 1000.0)
+                                    wl = np.asarray(getattr(dev, "wavelength", None), dtype=float)
 
-                            power = float(np.mean(vals)) if vals else float("nan")
-                            data_fn = f"{power:.9f}"
-                            saved_label = f"P={power:.3e} W"
+                                if wl is None or wl.size == 0:
+                                    self._emit(f"{det_key}: wavelength array empty.")
+                                    continue
 
-                        row = [
-                            f"{float(sp):.9f}",
-                            f"{float(avg_phase):.9f}",
-                            f"{float(std_phase):.9f}",
-                            f"{float(phase_error):.9f}",
-                            det_key,
-                            data_fn,
-                            str(params[0] if len(params) >= 1 else ""),
-                            str(params[1] if len(params) >= 2 else ""),
-                        ]
+                                if hasattr(dev, "grab_spectrum_for_scan"):
+                                    counts, meta = dev.grab_spectrum_for_scan(
+                                        int_ms=float(exposure_or_int),
+                                        averages=int(averages)
+                                    )
+                                    counts = np.asarray(counts, dtype=float)
+                                    int_ms = float((meta or {}).get("Integration_ms", float(exposure_or_int)))
+                                else:
+                                    _buf = []
+                                    for _ in range(int(averages)):
+                                        _ts, _data = dev.measure_spectrum(float(exposure_or_int), 1)
+                                        _buf.append(np.asarray(_data, dtype=float))
+                                        time.sleep(0.01)
+                                    counts = np.mean(np.stack(_buf, axis=0), axis=0)
+                                    int_ms = float(exposure_or_int)
 
-                        with open(scan_log, "a", encoding="utf-8") as f:
-                            f.write("\t".join(row) + "\n")
+                                # Save with grid_scan style naming
+                                det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / "Avaspec"
+                                safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
+                                ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                                
+                                tag = "Background" if self.background else "Spectrum"
+                                fn = f"{safe_name}_{tag}_{ts_ms}.txt"
+                                
+                                file_header = {
+                                    "Timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    "IntegrationTime_ms": int_ms,
+                                    "Averages": averages,
+                                    "Comment": self.comment,
+                                }
+                                
+                                if self.enable_ratio_scan:
+                                    file_header.update({
+                                        "Ratio_R": ratio_R,
+                                        "Power_omega_W": power_omega,
+                                        "Power_2omega_W": power_2omega,
+                                        "I_omega_peak_W_cm2": I_omega_peak,
+                                        "I_2omega_peak_W_cm2": I_2omega_peak,
+                                    })
+                                
+                                if not self.background:
+                                    file_header.update({
+                                        "Setpoint_rad": sp,
+                                        "MeasuredPhase_rad": avg_phase,
+                                        "PhaseStd_rad": std_phase,
+                                    })
+                                
+                                det_day.mkdir(parents=True, exist_ok=True)
+                                path = det_day / fn
+                                lines = [f"# {k}: {v}" for k, v in file_header.items()]
+                                lines.append("Wavelength_nm;Counts")
+                                with open(path, "w", encoding="utf-8") as f:
+                                    f.write("\n".join(lines) + "\n")
+                                    for xv, yv in zip(wl, counts):
+                                        f.write(f"{float(xv):.6f};{float(yv):.6f}\n")
+                                
+                                data_fn = fn
+                                saved_label = f"int {int_ms:.0f} ms"
 
-                        self._emit(
-                            f"Saved {data_fn} @ SP={sp:.4f} rad, "
-                            f"Phase={avg_phase:.4f}±{std_phase:.4f} rad, Error={phase_error:.4f} rad "
-                            f"({saved_label})"
-                        )
+                            else:
+                                period_ms = float(params[0]) if len(params) >= 1 else 100.0
+                                averages = int(params[1]) if len(params) >= 2 else 1
 
-                    except Exception as e:
-                        self._emit(f"Capture failed @ SP={sp:.4f} rad on {det_key}: {e}")
+                                vals = []
+                                n_avg = max(1, int(averages))
+                                for i in range(n_avg):
+                                    if hasattr(dev, "read_power"):
+                                        v = float(dev.read_power())
+                                    else:
+                                        v = float(dev.fetch_power())
+                                    vals.append(v)
+                                    if i + 1 < n_avg:
+                                        time.sleep(period_ms / 1000.0)
 
-                    done += 1
-                    self.progress.emit(done, total_points)
+                                power = float(np.mean(vals)) if vals else float("nan")
+                                data_fn = f"{power:.9f}"
+                                saved_label = f"P={power:.3e} W"
+
+                            if self.enable_ratio_scan:
+                                row = [
+                                    f"{float(ratio_R):.9f}",
+                                    f"{float(power_omega):.9f}",
+                                    f"{float(power_2omega):.9f}",
+                                    f"{float(I_omega_peak):.9e}",
+                                    f"{float(I_2omega_peak):.9e}",
+                                ]
+                            else:
+                                row = []
+                            
+                            if not self.background:
+                                row += [
+                                    f"{float(sp):.9f}",
+                                    f"{float(avg_phase):.9f}",
+                                    f"{float(std_phase):.9f}",
+                                    f"{float(phase_error):.9f}",
+                                ]
+                            else:
+                                row += ["", "", "", ""]
+                            
+                            row += [
+                                det_key,
+                                data_fn,
+                                str(params[0] if len(params) >= 1 else ""),
+                                str(params[1] if len(params) >= 2 else ""),
+                            ]
+
+                            with open(scan_log, "a", encoding="utf-8") as f:
+                                f.write("\t".join(row) + "\n")
+
+                            if self.background:
+                                if self.enable_ratio_scan:
+                                    self._emit(f"Saved {data_fn} @ R={ratio_R:.3f} BACKGROUND ({saved_label})")
+                                else:
+                                    self._emit(f"Saved {data_fn} BACKGROUND ({saved_label})")
+                            else:
+                                if self.enable_ratio_scan:
+                                    self._emit(
+                                        f"Saved {data_fn} @ R={ratio_R:.3f}, SP={sp:.4f} rad, "
+                                        f"Phase={avg_phase:.4f}±{std_phase:.4f} rad ({saved_label})"
+                                    )
+                                else:
+                                    self._emit(
+                                        f"Saved {data_fn} @ SP={sp:.4f} rad, "
+                                        f"Phase={avg_phase:.4f}±{std_phase:.4f} rad ({saved_label})"
+                                    )
+
+                        except Exception as e:
+                            if self.background:
+                                self._emit(f"Capture failed (background) on {det_key}: {e}")
+                            else:
+                                if self.enable_ratio_scan:
+                                    self._emit(f"Capture failed @ R={ratio_R:.3f}, SP={sp:.4f} rad on {det_key}: {e}")
+                                else:
+                                    self._emit(f"Capture failed @ SP={sp:.4f} rad on {det_key}: {e}")
+
+                        done += 1
+                        self.progress.emit(done, total_points)
 
         except Exception as e:
             self._emit(f"Fatal error: {e}")
+            import traceback
+            self._emit(traceback.format_exc())
             self.finished.emit("")
             return
 
@@ -316,12 +867,17 @@ class TwoColorScanTab(QWidget):
         super().__init__(parent)
         self._thread = None
         self._worker = None
+        self._monitor_window = None
+        self._doing_background = False
+        self._cached_params = None
+        self._last_scan_log_path = None
         self._build_ui()
         self._refresh_devices()
 
     def _build_ui(self):
         main = QVBoxLayout(self)
 
+        # Phase controller
         ctrl_box = QGroupBox("Phase Lock Controller")
         ctrl_l = QHBoxLayout(ctrl_box)
         self.phase_ctrl_picker = QComboBox()
@@ -329,7 +885,118 @@ class TwoColorScanTab(QWidget):
         ctrl_l.addWidget(self.phase_ctrl_picker, 1)
         main.addWidget(ctrl_box)
 
-        sp_box = QGroupBox("Setpoints")
+        # Ratio scan settings
+        ratio_box = QGroupBox("Ratio Scan (Optional)")
+        ratio_l = QVBoxLayout(ratio_box)
+        
+        enable_row = QHBoxLayout()
+        self.enable_ratio_cb = QCheckBox("Enable ratio scan: R = I_2ω / (I_ω + I_2ω)")
+        self.enable_ratio_cb.toggled.connect(self._on_ratio_toggle)
+        enable_row.addWidget(self.enable_ratio_cb)
+        enable_row.addStretch()
+        ratio_l.addLayout(enable_row)
+        
+        # Waveplate selection
+        wp_row = QHBoxLayout()
+        self.wp_omega_picker = QComboBox()
+        self.wp_2omega_picker = QComboBox()
+        wp_row.addWidget(QLabel("Waveplate ω:"))
+        wp_row.addWidget(self.wp_omega_picker, 1)
+        wp_row.addWidget(QLabel("Waveplate 2ω:"))
+        wp_row.addWidget(self.wp_2omega_picker, 1)
+        ratio_l.addLayout(wp_row)
+        
+        # Total intensity
+        intensity_row = QHBoxLayout()
+        self.total_intensity_le = QLineEdit("1e14")
+        self.intensity_max_label = QLabel("I_tot_max: -- W/cm²")
+        self.intensity_max_label.setStyleSheet("QLabel { color: blue; font-weight: bold; }")
+        intensity_row.addWidget(QLabel("Total peak intensity I_tot (W/cm²):"))
+        intensity_row.addWidget(self.total_intensity_le)
+        intensity_row.addWidget(self.intensity_max_label)
+        intensity_row.addStretch()
+        ratio_l.addLayout(intensity_row)
+        
+        # Omega parameters
+        omega_box = QGroupBox("Omega (ω) beam parameters")
+        omega_l = QVBoxLayout(omega_box)
+        
+        omega_row1 = QHBoxLayout()
+        self.omega_max_power_le = QLineEdit("")
+        self.omega_max_power_le.textChanged.connect(self._update_max_intensity)
+        self.omega_waist_le = QLineEdit("20")
+        self.omega_waist_le.textChanged.connect(self._update_max_intensity)
+        omega_row1.addWidget(QLabel("Max power (W):"))
+        omega_row1.addWidget(self.omega_max_power_le)
+        omega_row1.addWidget(QLabel("Waist at focus (µm):"))
+        omega_row1.addWidget(self.omega_waist_le)
+        omega_l.addLayout(omega_row1)
+        
+        omega_row2 = QHBoxLayout()
+        self.omega_pulse_duration_le = QLineEdit("170")
+        self.omega_pulse_duration_le.textChanged.connect(self._update_max_intensity)
+        self.omega_rep_rate_le = QLineEdit("10")
+        self.omega_rep_rate_le.textChanged.connect(self._update_max_intensity)
+        omega_row2.addWidget(QLabel("Pulse duration (fs):"))
+        omega_row2.addWidget(self.omega_pulse_duration_le)
+        omega_row2.addWidget(QLabel("Rep rate (kHz):"))
+        omega_row2.addWidget(self.omega_rep_rate_le)
+        omega_l.addLayout(omega_row2)
+        
+        omega_row3 = QHBoxLayout()
+        self.omega_beam_split_cb = QCheckBox("Beam split in two (divide intensity by 2)")
+        self.omega_beam_split_cb.toggled.connect(self._update_max_intensity)
+        omega_row3.addWidget(self.omega_beam_split_cb)
+        omega_row3.addStretch()
+        omega_l.addLayout(omega_row3)
+        
+        ratio_l.addWidget(omega_box)
+        
+        # 2-Omega parameters
+        omega2_box = QGroupBox("2-Omega (2ω) beam parameters")
+        omega2_l = QVBoxLayout(omega2_box)
+        
+        omega2_row1 = QHBoxLayout()
+        self.omega2_max_power_le = QLineEdit("")
+        self.omega2_max_power_le.textChanged.connect(self._update_max_intensity)
+        self.omega2_waist_le = QLineEdit("20")
+        self.omega2_waist_le.textChanged.connect(self._update_max_intensity)
+        omega2_row1.addWidget(QLabel("Max power (W):"))
+        omega2_row1.addWidget(self.omega2_max_power_le)
+        omega2_row1.addWidget(QLabel("Waist at focus (µm):"))
+        omega2_row1.addWidget(self.omega2_waist_le)
+        omega2_l.addLayout(omega2_row1)
+        
+        omega2_row2 = QHBoxLayout()
+        self.omega2_pulse_duration_le = QLineEdit("140")
+        self.omega2_pulse_duration_le.textChanged.connect(self._update_max_intensity)
+        self.omega2_rep_rate_le = QLineEdit("10")
+        self.omega2_rep_rate_le.textChanged.connect(self._update_max_intensity)
+        omega2_row2.addWidget(QLabel("Pulse duration (fs):"))
+        omega2_row2.addWidget(self.omega2_pulse_duration_le)
+        omega2_row2.addWidget(QLabel("Rep rate (kHz):"))
+        omega2_row2.addWidget(self.omega2_rep_rate_le)
+        omega2_l.addLayout(omega2_row2)
+        
+        ratio_l.addWidget(omega2_box)
+        
+        # Ratio range
+        ratio_params = QHBoxLayout()
+        self.ratio_start = QLineEdit("0.0")
+        self.ratio_end = QLineEdit("1.0")
+        self.ratio_step = QLineEdit("0.1")
+        ratio_params.addWidget(QLabel("Ratio start:"))
+        ratio_params.addWidget(self.ratio_start)
+        ratio_params.addWidget(QLabel("end:"))
+        ratio_params.addWidget(self.ratio_end)
+        ratio_params.addWidget(QLabel("step:"))
+        ratio_params.addWidget(self.ratio_step)
+        ratio_l.addLayout(ratio_params)
+        
+        main.addWidget(ratio_box)
+
+        # Phase setpoints
+        sp_box = QGroupBox("Phase Setpoints")
         sp_l = QVBoxLayout(sp_box)
         
         sp_params = QHBoxLayout()
@@ -345,6 +1012,7 @@ class TwoColorScanTab(QWidget):
         sp_l.addLayout(sp_params)
         main.addWidget(sp_box)
 
+        # Detectors
         det_box = QGroupBox("Detectors")
         det_l = QVBoxLayout(det_box)
 
@@ -372,55 +1040,163 @@ class TwoColorScanTab(QWidget):
 
         main.addWidget(det_box)
 
-        params = QGroupBox("Scan Parameters")
-        p = QHBoxLayout(params)
-        self.settle_sb = QDoubleSpinBox()
-        self.settle_sb.setDecimals(2)
-        self.settle_sb.setRange(0.0, 60.0)
-        self.settle_sb.setValue(2.0)
+        # Scan parameters
+        params_box = QGroupBox("Scan Parameters")
+        params_l = QVBoxLayout(params_box)
         
-        self.phase_avg_sb = QDoubleSpinBox()
-        self.phase_avg_sb.setDecimals(2)
-        self.phase_avg_sb.setRange(0.1, 60.0)
-        self.phase_avg_sb.setValue(1.0)
+        # Stability parameters row 1
+        stab_row1 = QHBoxLayout()
+        self.max_phase_error_sb = QDoubleSpinBox()
+        self.max_phase_error_sb.setDecimals(4)
+        self.max_phase_error_sb.setRange(0.0001, 1.0)
+        self.max_phase_error_sb.setValue(0.1)
+        self.max_phase_error_sb.setSingleStep(0.01)
         
+        self.max_phase_std_sb = QDoubleSpinBox()
+        self.max_phase_std_sb.setDecimals(4)
+        self.max_phase_std_sb.setRange(0.0001, 1.0)
+        self.max_phase_std_sb.setValue(0.1)
+        self.max_phase_std_sb.setSingleStep(0.01)
+        
+        stab_row1.addWidget(QLabel("Max phase error (rad):"))
+        stab_row1.addWidget(self.max_phase_error_sb)
+        stab_row1.addWidget(QLabel("Max phase std (rad):"))
+        stab_row1.addWidget(self.max_phase_std_sb)
+        params_l.addLayout(stab_row1)
+        
+        # Stability parameters row 2
+        stab_row2 = QHBoxLayout()
+        self.stability_check_window_sb = QDoubleSpinBox()
+        self.stability_check_window_sb.setDecimals(2)
+        self.stability_check_window_sb.setRange(0.1, 5.0)
+        self.stability_check_window_sb.setValue(0.3)
+        self.stability_check_window_sb.setSingleStep(0.1)
+        
+        self.stability_timeout_sb = QDoubleSpinBox()
+        self.stability_timeout_sb.setDecimals(1)
+        self.stability_timeout_sb.setRange(1.0, 300.0)
+        self.stability_timeout_sb.setValue(15.0)
+        self.stability_timeout_sb.setSingleStep(1.0)
+        
+        stab_row2.addWidget(QLabel("Check window (s):"))
+        stab_row2.addWidget(self.stability_check_window_sb)
+        stab_row2.addWidget(QLabel("Timeout (s):"))
+        stab_row2.addWidget(self.stability_timeout_sb)
+        params_l.addLayout(stab_row2)
+        
+        # Phase averaging and other params
+        other_row = QHBoxLayout()
+        self.phase_avg_le = QLineEdit("1.0")
         self.scan_name = QLineEdit("")
         self.comment = QLineEdit("")
         
-        p.addWidget(QLabel("Settle (s)"))
-        p.addWidget(self.settle_sb)
-        p.addWidget(QLabel("Phase avg (s)"))
-        p.addWidget(self.phase_avg_sb)
-        p.addWidget(QLabel("Scan name"))
-        p.addWidget(self.scan_name, 1)
-        p.addWidget(QLabel("Comment"))
-        p.addWidget(self.comment, 2)
-        main.addWidget(params)
+        other_row.addWidget(QLabel("Phase avg (s):"))
+        other_row.addWidget(self.phase_avg_le)
+        other_row.addWidget(QLabel("Scan name:"))
+        other_row.addWidget(self.scan_name, 1)
+        other_row.addWidget(QLabel("Comment:"))
+        other_row.addWidget(self.comment, 2)
+        params_l.addLayout(other_row)
+        
+        main.addWidget(params_box)
 
+        # Controls
         ctl = QHBoxLayout()
+        self.estimate_btn = QPushButton("Estimate Scan Time")
+        self.estimate_btn.clicked.connect(self._estimate_time)
         self.start_btn = QPushButton("Start Scan")
         self.start_btn.clicked.connect(self._start)
+        self.monitor_btn = QPushButton("Open Monitor")
+        self.monitor_btn.clicked.connect(self._open_monitor)
+        self.monitor_btn.setEnabled(False)
         self.abort_btn = QPushButton("Abort")
         self.abort_btn.setEnabled(False)
         self.abort_btn.clicked.connect(self._abort)
         self.prog = QProgressBar()
         self.prog.setMinimum(0)
         self.prog.setValue(0)
+        ctl.addWidget(self.estimate_btn)
         ctl.addWidget(self.start_btn)
+        ctl.addWidget(self.monitor_btn)
         ctl.addWidget(self.abort_btn)
         ctl.addWidget(self.prog, 1)
         main.addLayout(ctl)
 
+        # Log
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         main.addWidget(self.log, 1)
 
+        # Refresh
         rr = QHBoxLayout()
         self.refresh_btn = QPushButton("Refresh Devices")
         self.refresh_btn.clicked.connect(self._refresh_devices)
         rr.addStretch(1)
         rr.addWidget(self.refresh_btn)
         main.addLayout(rr)
+        
+        # Initial state
+        self._on_ratio_toggle(False)
+
+    def _on_ratio_toggle(self, checked):
+        self.wp_omega_picker.setEnabled(checked)
+        self.wp_2omega_picker.setEnabled(checked)
+        self.total_intensity_le.setEnabled(checked)
+        self.omega_max_power_le.setEnabled(checked)
+        self.omega_waist_le.setEnabled(checked)
+        self.omega_pulse_duration_le.setEnabled(checked)
+        self.omega_rep_rate_le.setEnabled(checked)
+        self.omega_beam_split_cb.setEnabled(checked)
+        self.omega2_max_power_le.setEnabled(checked)
+        self.omega2_waist_le.setEnabled(checked)
+        self.omega2_pulse_duration_le.setEnabled(checked)
+        self.omega2_rep_rate_le.setEnabled(checked)
+        self.ratio_start.setEnabled(checked)
+        self.ratio_end.setEnabled(checked)
+        self.ratio_step.setEnabled(checked)
+        self._update_max_intensity()
+
+    def _update_max_intensity(self):
+        """Calculate and display maximum achievable intensity"""
+        if not self.enable_ratio_cb.isChecked():
+            self.intensity_max_label.setText("I_tot_max: -- W/cm²")
+            return
+        
+        try:
+            # Get omega parameters
+            omega_max_power_W = float(self.omega_max_power_le.text())
+            omega_waist_um = float(self.omega_waist_le.text())
+            omega_pulse_duration_fs = float(self.omega_pulse_duration_le.text())
+            omega_rep_rate_kHz = float(self.omega_rep_rate_le.text())
+            
+            # Get 2omega parameters
+            omega2_max_power_W = float(self.omega2_max_power_le.text())
+            omega2_waist_um = float(self.omega2_waist_le.text())
+            omega2_pulse_duration_fs = float(self.omega2_pulse_duration_le.text())
+            omega2_rep_rate_kHz = float(self.omega2_rep_rate_le.text())
+            
+            # Calculate max intensities
+            I_max_omega = calculate_max_intensity(
+                omega_max_power_W, omega_waist_um,
+                omega_pulse_duration_fs, omega_rep_rate_kHz
+            )
+            
+            # Apply beam split factor if enabled
+            if self.omega_beam_split_cb.isChecked():
+                I_max_omega /= 2.0
+            
+            I_max_2omega = calculate_max_intensity(
+                omega2_max_power_W, omega2_waist_um,
+                omega2_pulse_duration_fs, omega2_rep_rate_kHz
+            )
+            
+            # Total max intensity
+            I_tot_max = I_max_omega + I_max_2omega
+            
+            self.intensity_max_label.setText(f"I_tot_max: {I_tot_max:.3e} W/cm²")
+            
+        except (ValueError, ZeroDivisionError):
+            self.intensity_max_label.setText("I_tot_max: -- W/cm²")
 
     def _add_det_row(self):
         det_key = self.det_picker.currentText().strip()
@@ -448,6 +1224,14 @@ class TwoColorScanTab(QWidget):
             for k in REGISTRY.keys(prefix):
                 if ":index:" not in k:
                     self.det_picker.addItem(k)
+        
+        # Populate waveplate pickers
+        self.wp_omega_picker.clear()
+        self.wp_2omega_picker.clear()
+        for k in REGISTRY.keys("stage:"):
+            if not k.startswith("stage:serial:"):
+                self.wp_omega_picker.addItem(k)
+                self.wp_2omega_picker.addItem(k)
 
     def _positions(self, start, end, step):
         if step <= 0:
@@ -464,11 +1248,90 @@ class TwoColorScanTab(QWidget):
                 vals.append(end)
         return vals
 
-    def _start(self):
+    def _estimate_time(self):
+        """Estimate total scan time - note: doesn't account for variable stability wait times"""
+        try:
+            p = self._collect_params(validate_waveplates=False)
+        except Exception as e:
+            QMessageBox.critical(self, "Invalid parameters", str(e))
+            return
+        
+        # Calculate timing
+        n_ratios = len(p["ratio_values"]) if p["enable_ratio"] else 1
+        n_phases = len(p["setpoints"])
+        n_detectors = len(p["detector_params"])
+        
+        # Time per point - use average expected stability time
+        avg_stability_time = p["stability_timeout"] / 2.0  # Rough estimate
+        phase_avg_time = p["phase_avg"]
+        
+        # Detector acquisition time
+        detector_time = 0
+        for det_key, params in p["detector_params"].items():
+            exposure_or_int = float(params[0]) if len(params) >= 1 else 0
+            averages = int(params[1]) if len(params) >= 2 else 1
+            
+            # Camera: exposure in µs
+            if det_key.startswith("camera:"):
+                t = (exposure_or_int / 1e6) * averages
+            # Spectrometer: integration in ms
+            elif det_key.startswith("spectrometer:"):
+                t = (exposure_or_int / 1e3) * averages
+            # Powermeter: period in ms
+            elif det_key.startswith("powermeter:"):
+                t = (exposure_or_int / 1e3) * averages
+            else:
+                t = 1.0
+            
+            detector_time += t
+        
+        # Time per phase point
+        time_per_phase = avg_stability_time + phase_avg_time + detector_time
+        
+        # Total time
+        total_scan_time = n_ratios * n_phases * time_per_phase
+        
+        # Format time
+        hours = int(total_scan_time // 3600)
+        minutes = int((total_scan_time % 3600) // 60)
+        seconds = int(total_scan_time % 60)
+        
+        # Build message
+        msg = f"**Scan Configuration:**\n\n"
+        
+        if p["enable_ratio"]:
+            msg += f"• Ratio points: {n_ratios}\n"
+            msg += f"• Phase points per ratio: {n_phases}\n"
+        else:
+            msg += f"• Phase points: {n_phases}\n"
+        
+        msg += f"• Detectors: {n_detectors}\n"
+        msg += f"• Total acquisitions: {n_ratios * n_phases * n_detectors}\n\n"
+        
+        msg += f"**Timing per point (estimated):**\n\n"
+        msg += f"• Avg stability wait: ~{avg_stability_time:.2f} s\n"
+        msg += f"• Phase averaging: {phase_avg_time:.2f} s\n"
+        msg += f"• Detector acquisition: {detector_time:.2f} s\n"
+        msg += f"• Total per point: ~{time_per_phase:.2f} s\n"
+        
+        msg += f"\n**Estimated total time: "
+        if hours > 0:
+            msg += f"{hours}h {minutes}min {seconds}s**"
+        elif minutes > 0:
+            msg += f"{minutes}min {seconds}s**"
+        else:
+            msg += f"{seconds}s**"
+        
+        msg += f"\n\nNote: Actual time may vary based on phase lock stability."
+        
+        QMessageBox.information(self, "Scan Time Estimate", msg)
+        self._log(f"Estimated scan time: {hours}h {minutes}min {seconds}s (approximate)")
+
+    def _collect_params(self, validate_waveplates=True):
+        """Collect all scan parameters and validate"""
         phase_ctrl_key = self.phase_ctrl_picker.currentText().strip()
         if not phase_ctrl_key:
-            QMessageBox.critical(self, "Error", "Select a phase lock controller.")
-            return
+            raise ValueError("Select a phase lock controller.")
 
         try:
             start = float(self.sp_start.text())
@@ -476,40 +1339,317 @@ class TwoColorScanTab(QWidget):
             step = float(self.sp_step.text())
             setpoints = self._positions(start, end, step)
         except ValueError as e:
-            QMessageBox.critical(self, "Error", f"Invalid setpoint parameters: {e}")
-            return
+            raise ValueError(f"Invalid setpoint parameters: {e}")
 
         if self.det_tbl.rowCount() == 0:
-            QMessageBox.critical(self, "Error", "Add at least one detector.")
-            return
+            raise ValueError("Add at least one detector.")
 
         detector_params = {}
         for r in range(self.det_tbl.rowCount()):
             det = (self.det_tbl.item(r, 0) or QTableWidgetItem("")).text().strip()
             if not det:
-                QMessageBox.critical(self, "Error", f"Empty detector key at row {r+1}.")
-                return
+                raise ValueError(f"Empty detector key at row {r+1}.")
             p1 = (self.det_tbl.item(r, 1) or QTableWidgetItem("0")).text()
             p2 = (self.det_tbl.item(r, 2) or QTableWidgetItem("1")).text()
             detector_params[det] = (int(float(p1)), int(float(p2)))
 
-        settle = float(self.settle_sb.value())
-        phase_avg = float(self.phase_avg_sb.value())
+        max_phase_error = float(self.max_phase_error_sb.value())
+        max_phase_std = float(self.max_phase_std_sb.value())
+        stability_check_window = float(self.stability_check_window_sb.value())
+        stability_timeout = float(self.stability_timeout_sb.value())
+        
+        try:
+            phase_avg = float(self.phase_avg_le.text())
+            if phase_avg <= 0:
+                raise ValueError("Phase averaging time must be positive")
+        except ValueError:
+            raise ValueError("Invalid phase averaging time")
+        
         name = self.scan_name.text().strip()
         if not name:
-            QMessageBox.critical(self, "Error", "Enter a scan name.")
-            return
+            raise ValueError("Enter a scan name.")
         comment = self.comment.text()
+
+        # Ratio scan parameters
+        enable_ratio = self.enable_ratio_cb.isChecked()
+        wp_omega_key = None
+        wp_2omega_key = None
+        total_intensity_W_cm2 = None
+        ratio_values = None
+        omega_max_power_W = None
+        omega_waist_um = None
+        omega_pulse_duration_fs = None
+        omega_rep_rate_kHz = None
+        omega_beam_split = False
+        omega2_max_power_W = None
+        omega2_waist_um = None
+        omega2_pulse_duration_fs = None
+        omega2_rep_rate_kHz = None
+
+        if enable_ratio:
+            wp_omega_key = self.wp_omega_picker.currentText().strip()
+            wp_2omega_key = self.wp_2omega_picker.currentText().strip()
+            
+            if validate_waveplates:
+                if not wp_omega_key or not wp_2omega_key:
+                    raise ValueError("Select both waveplates for ratio scan.")
+                
+                if wp_omega_key == wp_2omega_key:
+                    raise ValueError("Waveplates must be different.")
+            
+            wp_omega_idx = None
+            wp_2omega_idx = None
+            if wp_omega_key:
+                wp_omega_idx = _wp_index_from_stage_key(wp_omega_key)
+            if wp_2omega_key:
+                wp_2omega_idx = _wp_index_from_stage_key(wp_2omega_key)
+            
+            if validate_waveplates:
+                if wp_omega_idx is None or wp_2omega_idx is None:
+                    raise ValueError("Selected stages are not valid waveplates.")
+            
+            if validate_waveplates:
+                calib_omega = REGISTRY.get(_reg_key_calib(wp_omega_idx))
+                if not calib_omega or not isinstance(calib_omega, (tuple, list)) or len(calib_omega) < 2:
+                    raise ValueError(
+                        f"Omega waveplate ({wp_omega_key}) has no calibration.\n"
+                        f"Please calibrate it in the 'Waveplate Calibration' tab."
+                    )
+                
+                calib_2omega = REGISTRY.get(_reg_key_calib(wp_2omega_idx))
+                if not calib_2omega or not isinstance(calib_2omega, (tuple, list)) or len(calib_2omega) < 2:
+                    raise ValueError(
+                        f"2-Omega waveplate ({wp_2omega_key}) has no calibration.\n"
+                        f"Please calibrate it in the 'Waveplate Calibration' tab."
+                    )
+                
+                pm_omega = REGISTRY.get(_reg_key_powermode(wp_omega_idx))
+                if not isinstance(pm_omega, bool) or not pm_omega:
+                    raise ValueError(
+                        f"Omega waveplate ({wp_omega_key}) power mode is OFF.\n"
+                        f"Please enable 'Power Mode' in the Stage Control window."
+                    )
+                
+                pm_2omega = REGISTRY.get(_reg_key_powermode(wp_2omega_idx))
+                if not isinstance(pm_2omega, bool) or not pm_2omega:
+                    raise ValueError(
+                        f"2-Omega waveplate ({wp_2omega_key}) power mode is OFF.\n"
+                        f"Please enable 'Power Mode' in the Stage Control window."
+                    )
+            
+            try:
+                total_intensity_W_cm2 = float(self.total_intensity_le.text())
+                if validate_waveplates and total_intensity_W_cm2 <= 0:
+                    raise ValueError("Total intensity must be positive")
+            except ValueError:
+                if validate_waveplates:
+                    raise ValueError("Invalid total intensity value.")
+                total_intensity_W_cm2 = None
+            
+            try:
+                omega_max_power_W = float(self.omega_max_power_le.text())
+                if validate_waveplates and omega_max_power_W <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("Omega max power is required and must be positive.")
+                omega_max_power_W = None
+            
+            try:
+                omega_waist_um = float(self.omega_waist_le.text())
+                if validate_waveplates and omega_waist_um <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("Omega waist is required and must be positive.")
+                omega_waist_um = None
+            
+            try:
+                omega_pulse_duration_fs = float(self.omega_pulse_duration_le.text())
+                if validate_waveplates and omega_pulse_duration_fs <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("Omega pulse duration is required and must be positive.")
+                omega_pulse_duration_fs = None
+            
+            try:
+                omega_rep_rate_kHz = float(self.omega_rep_rate_le.text())
+                if validate_waveplates and omega_rep_rate_kHz <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("Omega rep rate is required and must be positive.")
+                omega_rep_rate_kHz = None
+            
+            try:
+                omega2_max_power_W = float(self.omega2_max_power_le.text())
+                if validate_waveplates and omega2_max_power_W <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("2-Omega max power is required and must be positive.")
+                omega2_max_power_W = None
+            
+            try:
+                omega2_waist_um = float(self.omega2_waist_le.text())
+                if validate_waveplates and omega2_waist_um <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("2-Omega waist is required and must be positive.")
+                omega2_waist_um = None
+            
+            try:
+                omega2_pulse_duration_fs = float(self.omega2_pulse_duration_le.text())
+                if validate_waveplates and omega2_pulse_duration_fs <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("2-Omega pulse duration is required and must be positive.")
+                omega2_pulse_duration_fs = None
+            
+            try:
+                omega2_rep_rate_kHz = float(self.omega2_rep_rate_le.text())
+                if validate_waveplates and omega2_rep_rate_kHz <= 0:
+                    raise ValueError()
+            except (ValueError, AttributeError):
+                if validate_waveplates:
+                    raise ValueError("2-Omega rep rate is required and must be positive.")
+                omega2_rep_rate_kHz = None
+            
+            try:
+                r_start = float(self.ratio_start.text())
+                r_end = float(self.ratio_end.text())
+                r_step = float(self.ratio_step.text())
+                ratio_values = self._positions(r_start, r_end, r_step)
+                
+                if validate_waveplates and any(r < 0 or r > 1 for r in ratio_values):
+                    raise ValueError("Ratio values must be between 0 and 1.")
+            except ValueError as e:
+                if validate_waveplates:
+                    raise ValueError(f"Invalid ratio parameters: {e}")
+                ratio_values = [0.5]
+            
+            # Get beam split option
+            omega_beam_split = self.omega_beam_split_cb.isChecked()
+
+            # Validate total intensity against max
+            if validate_waveplates and all([
+                omega_max_power_W, omega_waist_um, omega_pulse_duration_fs, omega_rep_rate_kHz,
+                omega2_max_power_W, omega2_waist_um, omega2_pulse_duration_fs, omega2_rep_rate_kHz
+            ]):
+                try:
+                    I_max_omega = calculate_max_intensity(
+                        omega_max_power_W, omega_waist_um,
+                        omega_pulse_duration_fs, omega_rep_rate_kHz
+                    )
+                    
+                    # Apply beam split factor
+                    if omega_beam_split:
+                        I_max_omega /= 2.0
+                    
+                    I_max_2omega = calculate_max_intensity(
+                        omega2_max_power_W, omega2_waist_um,
+                        omega2_pulse_duration_fs, omega2_rep_rate_kHz
+                    )
+                    I_tot_max = I_max_omega + I_max_2omega
+                    
+                    if total_intensity_W_cm2 > I_tot_max:
+                        raise ValueError(
+                            f"Total intensity ({total_intensity_W_cm2:.3e} W/cm²) exceeds "
+                            f"maximum achievable intensity ({I_tot_max:.3e} W/cm²).\n"
+                            f"Increase max powers or reduce I_tot."
+                        )
+                except ZeroDivisionError:
+                    raise ValueError("Invalid beam parameters (check waist, pulse duration, rep rate).")
+
+        return {
+            "phase_ctrl_key": phase_ctrl_key,
+            "setpoints": setpoints,
+            "detector_params": detector_params,
+            "max_phase_error": max_phase_error,
+            "max_phase_std": max_phase_std,
+            "stability_check_window": stability_check_window,
+            "stability_timeout": stability_timeout,
+            "phase_avg": phase_avg,
+            "scan_name": name,
+            "comment": comment,
+            "enable_ratio": enable_ratio,
+            "wp_omega_key": wp_omega_key,
+            "wp_2omega_key": wp_2omega_key,
+            "total_intensity_W_cm2": total_intensity_W_cm2,
+            "ratio_values": ratio_values,
+            "omega_max_power_W": omega_max_power_W,
+            "omega_waist_um": omega_waist_um,
+            "omega_pulse_duration_fs": omega_pulse_duration_fs,
+            "omega_rep_rate_kHz": omega_rep_rate_kHz,
+            "omega_beam_split": omega_beam_split,
+            "omega2_max_power_W": omega2_max_power_W,
+            "omega2_waist_um": omega2_waist_um,
+            "omega2_pulse_duration_fs": omega2_pulse_duration_fs,
+            "omega2_rep_rate_kHz": omega2_rep_rate_kHz,
+        }
+
+    def _start(self):
+        try:
+            p = self._collect_params(validate_waveplates=True)
+        except Exception as e:
+            QMessageBox.critical(self, "Invalid parameters", str(e))
+            return
+        
+        self._cached_params = p
+        self._doing_background = False
+        self._last_scan_log_path = None
+        self._launch(False, None)
+        self._log("Scan started...")
+
+    def _open_monitor(self):
+        """Open or bring to front the monitor window"""
+        if self._monitor_window is not None:
+            self._monitor_window.show()
+            self._monitor_window.raise_()
+            self._monitor_window.activateWindow()
+
+    def _launch(self, background, existing):
+        p = self._cached_params
+        if not p:
+            return
+
+        # Create monitor window for ratio scans (not for background)
+        if p["enable_ratio"] and not background:
+            self._monitor_window = MonitorWindow(p["ratio_values"], p["setpoints"], self)
+            self._monitor_window.show()
+            self.monitor_btn.setEnabled(True)
 
         self._thread = QThread(self)
         self._worker = TwoColorScanWorker(
-            phase_ctrl_key=phase_ctrl_key,
-            setpoints=setpoints,
-            detector_params=detector_params,
-            settle_s=settle,
-            phase_avg_s=phase_avg,
-            scan_name=name,
-            comment=comment,
+            phase_ctrl_key=p["phase_ctrl_key"],
+            setpoints=p["setpoints"],
+            detector_params=p["detector_params"],
+            max_phase_error_rad=p["max_phase_error"],
+            max_phase_std_rad=p["max_phase_std"],
+            stability_check_window_s=p["stability_check_window"],
+            stability_timeout_s=p["stability_timeout"],
+            phase_avg_s=p["phase_avg"],
+            scan_name=p["scan_name"],
+            comment=p["comment"],
+            enable_ratio_scan=p["enable_ratio"],
+            wp_omega_key=p["wp_omega_key"],
+            wp_2omega_key=p["wp_2omega_key"],
+            total_intensity_W_cm2=p["total_intensity_W_cm2"],
+            ratio_values=p["ratio_values"],
+            omega_max_power_W=p["omega_max_power_W"],
+            omega_waist_um=p["omega_waist_um"],
+            omega_pulse_duration_fs=p["omega_pulse_duration_fs"],
+            omega_rep_rate_kHz=p["omega_rep_rate_kHz"],
+            omega_beam_split=p["omega_beam_split"],
+            omega2_max_power_W=p["omega2_max_power_W"],
+            omega2_waist_um=p["omega2_waist_um"],
+            omega2_pulse_duration_fs=p["omega2_pulse_duration_fs"],
+            omega2_rep_rate_kHz=p["omega2_rep_rate_kHz"],
+            background=background,
+            existing_scan_log=existing,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -517,18 +1657,23 @@ class TwoColorScanTab(QWidget):
         self._worker.log.connect(self._log)
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._finished)
+        
+        # Connect monitor updates
+        if self._monitor_window is not None:
+            self._worker.monitor_update.connect(self._monitor_window.update_data)
 
         self._thread.finished.connect(self._thread.deleteLater)
 
         self.start_btn.setEnabled(False)
         self.abort_btn.setEnabled(True)
 
-        total = len(setpoints) * len(detector_params)
+        n_ratios = len(p["ratio_values"]) if p["enable_ratio"] else 1
+        n_phases = len(p["setpoints"]) if not background else 1
+        total = n_ratios * n_phases * len(p["detector_params"])
         self.prog.setMaximum(total)
         self.prog.setValue(0)
 
         self._thread.start()
-        self._log("Two-color scan started...")
 
     def _abort(self):
         if self._worker:
@@ -541,12 +1686,15 @@ class TwoColorScanTab(QWidget):
 
     def _finished(self, log_path):
         if log_path:
+            self._last_scan_log_path = log_path
             self._log(f"Scan finished: {log_path}")
         else:
             self._log("Scan finished with errors.")
+            self._last_scan_log_path = None
 
         self.abort_btn.setEnabled(False)
         self.start_btn.setEnabled(True)
+        self.monitor_btn.setEnabled(False)
 
         if self._thread and self._thread.isRunning():
             self._thread.quit()
@@ -554,7 +1702,32 @@ class TwoColorScanTab(QWidget):
         self._thread = None
         self._worker = None
 
+        # Ask for background scan
+        if not self._doing_background and self._last_scan_log_path is not None:
+            reply = QMessageBox.question(
+                self,
+                "Run Background Scan?",
+                "The scan finished.\n\nDo you want to run the BACKGROUND scan now?\n"
+                "If yes, cut the gas and wait 3-5min before continuing.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                self._doing_background = True
+                self._log("Launching background scan...")
+                self._launch(background=True, existing=self._last_scan_log_path)
+                return
+
+        self._doing_background = False
+
     def _log(self, msg):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        scrollbar = self.log.verticalScrollBar()
+        was_at_bottom = scrollbar.value() >= scrollbar.maximum() - 10
+        
         self.log.append(f"[{ts}] {msg}")
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+        
+        if was_at_bottom:
+            scrollbar.setValue(scrollbar.maximum())

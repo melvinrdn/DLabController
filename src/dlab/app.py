@@ -9,12 +9,8 @@ from PyQt5.QtWidgets import (
     QPushButton, QGroupBox, QTextEdit, QSpinBox
 )
 
-from dlab.boot import ROOT, bootstrap, get_config
+from dlab.boot import ROOT, bootstrap
 from dlab.hardware.wrappers.pressure_sensor import PressureMonitorWidget
-from dlab.diagnostics.utils import GUI_LOG_DATE_FORMAT
-
-CFG = bootstrap(ROOT / "config" / "config.yaml")
-
 
 class DlabControllerWindow(QMainWindow):
     def __init__(self):
@@ -118,7 +114,7 @@ class DlabControllerWindow(QMainWindow):
         self.setup_pressure_log()
 
     def append_log(self, message: str):
-        now = datetime.datetime.now().strftime(GUI_LOG_DATE_FORMAT)
+        now = datetime.datetime.now().strftime("%H:%M:%S")
         self.log_text.append(f"[{now}] {message}")
 
     def setup_pressure_log(self):
@@ -258,6 +254,7 @@ class DlabControllerWindow(QMainWindow):
 
 
 def main():
+    CFG = bootstrap(ROOT / "config" / "config.yaml")
     app = QApplication(sys.argv)
     window = DlabControllerWindow()
     window.show()
