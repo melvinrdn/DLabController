@@ -670,6 +670,13 @@ class TypeTwoFociStochastic(BaseTypeWidget):
 
         grid.addWidget(QLabel("A_rel_B (B vs DumpB):"), row, 0)
         self.le_ArelB = QLineEdit("0.0"); grid.addWidget(self.le_ArelB, row, 1); row += 1
+        
+        grid.addWidget(QLabel("Dump angle factor A:"), row, 0)
+        self.le_dumpA = QLineEdit("10"); grid.addWidget(self.le_dumpA, row, 1); row += 1
+
+        grid.addWidget(QLabel("Dump angle factor B:"), row, 0)
+        self.le_dumpB = QLineEdit("10"); grid.addWidget(self.le_dumpB, row, 1); row += 1
+
 
         self.cb_noA = QCheckBox("No tilt A")
         self.cb_noB = QCheckBox("No tilt B")
@@ -687,6 +694,9 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             Arel = float(self.le_Arel.text())
             ArelA = float(self.le_ArelA.text())
             ArelB = float(self.le_ArelB.text())
+            dumpA = float(self.le_dumpA.text())
+            dumpB = float(self.le_dumpB.text())
+
         except:
             return np.zeros(slm_size)
 
@@ -702,15 +712,16 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         k0 = 2*np.pi/wl
         theta = D / (2*f_focus)
         k_t = k0 * theta
-        k_dump = 10 * k_t
+        k_dumpA = dumpA * k_t
+        k_dumpB = dumpB * k_t
 
         ang = np.deg2rad(angle_deg)
         U = X*np.cos(ang) + Y*np.sin(ang)
 
         phi_A = +k_t * U
         phi_B = -k_t * U + dphi
-        phi_dumpA = +k_dump * U
-        phi_dumpB = -k_dump * U
+        phi_dumpA = +k_dumpA * U
+        phi_dumpB = -k_dumpB * U
 
         if self.cb_noA.isChecked(): phi_A = np.zeros_like(phi_A)
         if self.cb_noB.isChecked(): phi_B = np.zeros_like(phi_B)
@@ -765,6 +776,8 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             'A_rel': self.le_Arel.text(),
             'A_rel_A': self.le_ArelA.text(),
             'A_rel_B': self.le_ArelB.text(),
+            'dumpA': self.le_dumpA.text(),
+            'dumpB': self.le_dumpB.text(),
             'noA': self.cb_noA.isChecked(),
             'noB': self.cb_noB.isChecked(),
         }
@@ -772,13 +785,15 @@ class TypeTwoFociStochastic(BaseTypeWidget):
     def load_(self, s):
         self.le_wl.setText(s.get('wl_nm','1030'))
         self.le_f.setText(s.get('f_focus_m','0.175'))
-        self.le_sep.setText(s.get('sep_um','50'))
+        self.le_sep.setText(s.get('sep_um','100'))
         self.le_dphi_pi.setText(s.get('dphi_pi','0.0'))
         self.le_pitch.setText(s.get('pitch_um','124'))
         self.le_angle.setText(s.get('angle_deg','0.0'))
-        self.le_Arel.setText(s.get('A_rel','0.5'))
+        self.le_Arel.setText(s.get('A_rel','0.55'))
         self.le_ArelA.setText(s.get('A_rel_A','0.0'))
         self.le_ArelB.setText(s.get('A_rel_B','0.0'))
+        self.le_dumpA.setText(s.get('dumpA','10'))
+        self.le_dumpB.setText(s.get('dumpB','10'))
         self.cb_noA.setChecked(s.get('noA',False))
         self.cb_noB.setChecked(s.get('noB',False))
 
