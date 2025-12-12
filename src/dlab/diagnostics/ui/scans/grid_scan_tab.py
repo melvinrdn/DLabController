@@ -82,6 +82,17 @@ def _save_png_with_meta(folder, filename, frame_u16, meta):
     img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
     return path
 
+def _save_png_with_meta_8bit(folder, filename, frame_u8, meta):
+    """Save 8-bit image for Daheng cameras"""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / filename
+    f8 = np.asarray(frame_u8, dtype=np.uint8, copy=False)
+    img = Image.fromarray(f8, mode="L")
+    pnginfo = PngImagePlugin.PngInfo()
+    for k, v in meta.items():
+        pnginfo.add_text(str(k), str(v))
+    img.save(path.as_posix(), format="PNG", pnginfo=pnginfo)
+    return path
 
 def _detector_display_name(det_key, dev, meta):
     if meta and str(meta.get("DeviceName", "")).strip():
@@ -187,12 +198,17 @@ class GridScanWorker(QObject):
                                 sp=float(meta.get("step", float("nan")))
                             ))
 
-    def _save_image(self, det_key, dev, frame_u16, exposure_us, tag, meta):
+    def _save_image(self, det_key, dev, frame, exposure_us, tag, meta, is_8bit=False):
         det_name = _detector_display_name(det_key, dev, meta)
         det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / det_name
         ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         fn = f"{det_name}_{tag}_{ts_ms}.png"
-        _save_png_with_meta(det_day, fn, frame_u16,
+        
+        if is_8bit:
+            _save_png_with_meta_8bit(det_day, fn, frame,
+                                    {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
+        else:
+            _save_png_with_meta(det_day, fn, frame,
                             {"Exposure_us": exposure_us, "Gain": "", "Comment": self.comment})
         return fn
 
@@ -223,23 +239,27 @@ class GridScanWorker(QObject):
         exposure_or_int = int(params[0]) if len(params) >= 1 else 0
         averages = int(params[1]) if len(params) >= 2 else 1
         
+        is_daheng = "daheng" in det_key.lower()
+        
         try:
-            frame_u16, meta = dev.grab_frame_for_scan(
+            frame, meta = dev.grab_frame_for_scan(
                 averages=int(averages),
                 background=self.background,
                 dead_pixel_cleanup=True,
                 exposure_us=int(exposure_or_int),
+                force_roi=True,
             )
         except TypeError:
-            frame_u16, meta = dev.grab_frame_for_scan(
+            frame, meta = dev.grab_frame_for_scan(
                 averages=int(averages),
                 background=self.background,
                 dead_pixel_cleanup=True,
+                force_roi=True,
             )
         
         exp_meta = int((meta or {}).get("Exposure_us", exposure_or_int))
         tag = "Background" if self.background else "Image"
-        data_fn = self._save_image(det_key, dev, frame_u16, exp_meta, tag, meta=None)
+        data_fn = self._save_image(det_key, dev, frame, exp_meta, tag, meta=None, is_8bit=is_daheng)
         saved_label = f"exp {exp_meta} µs"
         
         return data_fn, saved_label
