@@ -36,7 +36,7 @@ DEFAULT_PREPROCESS = {
     "y1": 340
 }
 
-PLOT_HEIGHT_RATIOS = [3, 1]
+PLOT_HEIGHT_RATIOS = [4, 1]
 SPLITTER_RATIOS = [1, 4]
 FPS_UPDATE_INTERVAL_MS = 500
 
@@ -186,6 +186,12 @@ class AndorLiveWindow(QWidget):
         self.frames_to_save_edit.setValidator(QIntValidator(1, 1000, self))
         nsave_layout.addWidget(self.frames_to_save_edit)
         param_layout.addLayout(nsave_layout)
+
+        # Autofix Colorbar Max checkbox
+        self.autofix_cbar_checkbox = QCheckBox("Autofix Colorbar Max")
+        self.autofix_cbar_checkbox.setChecked(False)
+        self.autofix_cbar_checkbox.toggled.connect(self.on_autofix_cbar)
+        param_layout.addWidget(self.autofix_cbar_checkbox)
 
         self.fix_cbar_checkbox = QCheckBox("Fix Colorbar Max")
         param_layout.addWidget(self.fix_cbar_checkbox)
@@ -543,8 +549,20 @@ class AndorLiveWindow(QWidget):
         self.current_fps = fps
         self.fps_label.setText(f"{fps:.1f}")
         
+    def on_autofix_cbar(self, checked):
+        if checked:
+            # Disable manual fix when autofix is enabled
+            if self.fix_cbar_checkbox.isChecked():
+                self.fix_cbar_checkbox.setChecked(False)
+            self.log("Autofix colorbar max enabled")
+        else:
+            self.log("Autofix colorbar max disabled")
+        
     def on_fix_cbar(self, checked):
         if checked:
+            # Disable autofix when manual fix is enabled
+            if self.autofix_cbar_checkbox.isChecked():
+                self.autofix_cbar_checkbox.setChecked(False)
             try:
                 self.fixed_cbar_max = float(self.fix_value_edit.text())
                 self.log(f"Colorbar max set to {self.fixed_cbar_max:.1f}")
@@ -708,13 +726,33 @@ class AndorLiveWindow(QWidget):
         mean_val = float(np.mean(disp))
         title_text = f"Sum: {sum_val:.0f} | Max: {max_val:.0f} | Mean: {mean_val:.1f}"
         
-        if self.image_artist is None:
+        # Check if image dimensions changed (e.g., due to crop toggle)
+        recreate_colorbar = False
+        if self.image_artist is not None:
+            old_shape = self.image_artist.get_array().shape
+            if old_shape != disp.shape:
+                recreate_colorbar = True
+        
+        if self.image_artist is None or recreate_colorbar:
             self.ax_img.clear()
+            if self.cbar is not None:
+                try:
+                    self.cbar.remove()
+                except Exception:
+                    pass
             self.image_artist = self.ax_img.imshow(disp, cmap=self.cmap, interpolation='None')
             self.ax_img.set_title(title_text)
             self.ax_img.set_xlabel("X (px)")
             self.ax_img.set_ylabel("Y (px)")
-            self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax_img, fraction=0.046, pad=0.04)
+            
+            # Adapt colorbar size based on image aspect ratio
+            img_height, img_width = disp.shape
+            aspect_ratio = img_height / img_width
+            # Use smaller fraction for wider images, larger for taller images
+            fraction = min(0.04, max(0.015, 0.03 * aspect_ratio))
+            
+            self.cbar = self.figure.colorbar(self.image_artist, ax=self.ax_img, 
+                                            fraction=fraction, pad=0.02, aspect=30)
             self.cbar.ax.set_ylabel("Intensity", rotation=270, labelpad=15)
         else:
             xlim = self.ax_img.get_xlim()
@@ -723,13 +761,20 @@ class AndorLiveWindow(QWidget):
             self.ax_img.set_xlim(xlim)
             self.ax_img.set_ylim(ylim)
             self.ax_img.set_title(title_text)
-            if self.fix_cbar_checkbox.isChecked() and self.fixed_cbar_max is not None:
-                self.image_artist.set_clim(min_val, self.fixed_cbar_max)
-            else:
-                self.fixed_cbar_max = None
-                self.image_artist.set_clim(min_val, max_val)
-            self.image_artist.set_cmap(self.cmap)
-            self.cbar.update_normal(self.image_artist)
+        
+        # Handle autofix colorbar max
+        if self.autofix_cbar_checkbox.isChecked():
+            self.fixed_cbar_max = max_val
+            self.fix_value_edit.setText(str(int(max_val)))
+            self.image_artist.set_clim(min_val, max_val)
+        elif self.fix_cbar_checkbox.isChecked() and self.fixed_cbar_max is not None:
+            self.image_artist.set_clim(min_val, self.fixed_cbar_max)
+        else:
+            self.fixed_cbar_max = None
+            self.image_artist.set_clim(min_val, max_val)
+            
+        self.image_artist.set_cmap(self.cmap)
+        self.cbar.update_normal(self.image_artist)
             
         axis = self._profile_axis_for_display()
         profile = np.sum(disp, axis=axis)
