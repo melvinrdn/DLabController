@@ -10,7 +10,8 @@ from PyQt5.QtCore import QTimer, QObject, pyqtSignal, QThread
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QComboBox, QPushButton,
     QDoubleSpinBox, QTextEdit, QProgressBar, QMessageBox, QTableWidget,
-    QTableWidgetItem, QAbstractItemView, QLineEdit, QCheckBox
+    QTableWidgetItem, QAbstractItemView, QLineEdit, QCheckBox, QRadioButton,
+    QButtonGroup, QFileDialog
 )
 
 from dlab.boot import ROOT, get_config
@@ -150,6 +151,47 @@ def intensity_to_power(I_peak_W_cm2: float, waist_um: float,
     return P_avg
 
 
+def load_slm_calibration(file_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Load SLM calibration file: ArelA vs normalized intensity fraction (0 to 1)
+    Note: The file format has intensity decreasing as ArelA increases
+    
+    Returns:
+        (ArelA_values, intensity_fraction_values) - sorted for interpolation
+    """
+    data = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    arela_val = float(parts[0])
+                    intensity_frac = float(parts[1])
+                    data.append((arela_val, intensity_frac))
+                except ValueError:
+                    continue
+    
+    if not data:
+        raise ValueError("No valid data found in calibration file")
+    
+    # Sort by intensity (ascending) for proper interpolation
+    data.sort(key=lambda x: x[1])
+    arela_vals = np.array([d[0] for d in data])
+    intensity_fracs = np.array([d[1] for d in data])
+    
+    # Validate
+    if np.any(intensity_fracs < 0) or np.any(intensity_fracs > 1):
+        raise ValueError("Intensity fraction values must be between 0 and 1")
+    
+    if np.any(arela_vals < 0) or np.any(arela_vals > 1):
+        raise ValueError("ArelA values must be between 0 and 1")
+    
+    return arela_vals, intensity_fracs
+
+
 class MonitorWindow(QWidget):
     """Real-time monitoring window for phase error and std during scan"""
     
@@ -246,6 +288,7 @@ class TwoColorScanWorker(QObject):
         comment: str,
         # Ratio scan parameters
         enable_ratio_scan: bool = False,
+        omega_control_mode: str = "waveplate",  # "waveplate" or "slm"
         wp_omega_key: str = None,
         wp_2omega_key: str = None,
         total_intensity_W_cm2: float = None,
@@ -256,6 +299,13 @@ class TwoColorScanWorker(QObject):
         omega_pulse_duration_fs: float = None,
         omega_rep_rate_kHz: float = None,
         omega_beam_split: bool = False,
+        omega_beam_split_ratio: float = 0.5,  # Fraction in B beam (A gets 1-ratio)
+        # SLM parameters for omega
+        slm_class_name: str = None,
+        slm_field_name: str = None,
+        slm_screen: int = 3,
+        slm_calib_arela: np.ndarray = None,
+        slm_calib_intensity: np.ndarray = None,
         # Laser parameters for 2omega
         omega2_max_power_W: float = None,
         omega2_waist_um: float = None,
@@ -264,6 +314,8 @@ class TwoColorScanWorker(QObject):
         # Background scan
         background: bool = False,
         existing_scan_log: str = None,
+        # Background with reference
+        background_w_ref: bool = False,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -281,6 +333,7 @@ class TwoColorScanWorker(QObject):
         
         # Ratio scan
         self.enable_ratio_scan = enable_ratio_scan
+        self.omega_control_mode = omega_control_mode
         self.wp_omega_key = wp_omega_key
         self.wp_2omega_key = wp_2omega_key
         self.total_intensity_W_cm2 = total_intensity_W_cm2
@@ -292,6 +345,14 @@ class TwoColorScanWorker(QObject):
         self.omega_pulse_duration_fs = omega_pulse_duration_fs
         self.omega_rep_rate_kHz = omega_rep_rate_kHz
         self.omega_beam_split = omega_beam_split
+        self.omega_beam_split_ratio = omega_beam_split_ratio  # Fraction in B beam (A gets 1-ratio)
+        
+        # SLM parameters
+        self.slm_class_name = slm_class_name
+        self.slm_field_name = slm_field_name
+        self.slm_screen = slm_screen
+        self.slm_calib_arela = slm_calib_arela
+        self.slm_calib_intensity = slm_calib_intensity
         
         self.omega2_max_power_W = omega2_max_power_W
         self.omega2_waist_um = omega2_waist_um
@@ -301,6 +362,7 @@ class TwoColorScanWorker(QObject):
         # Background
         self.background = background
         self.existing_scan_log = existing_scan_log
+        self.background_w_ref = background_w_ref
         
         self.data_root = _data_root()
         self.timestamp = datetime.datetime.now()
@@ -336,6 +398,64 @@ class TwoColorScanWorker(QObject):
         
         stage.move_to(float(angle), blocking=True)
         self._emit(f"  {stage_key} → {power_W:.6f} W / {max_power_W:.6f} W ({100*power_fraction:.1f}%, angle: {angle:.3f}°)")
+
+    def _set_slm_intensity(self, I_peak_W_cm2: float, I_max_W_cm2: float) -> float:
+        """
+        Set SLM ArelA to achieve desired peak intensity
+        
+        Returns:
+            Actual ArelA value set
+        """
+        # Calculate required intensity fraction
+        fraction = I_peak_W_cm2 / I_max_W_cm2
+        fraction = np.clip(fraction, 0.0, 1.0)
+        
+        # Interpolate to find ArelA: given intensity fraction, find ArelA
+        # Since intensity typically decreases with increasing ArelA, we interpolate
+        arela_val = np.interp(fraction, self.slm_calib_intensity, self.slm_calib_arela)
+        
+        # Set SLM
+        active_classes = REGISTRY.get("slm:red:active_classes") or []
+        if self.slm_class_name not in active_classes:
+            raise RuntimeError(
+                f"SLM class '{self.slm_class_name}' is not active.\n"
+                f"Active classes: {active_classes}"
+            )
+        
+        widgets = REGISTRY.get("slm:red:widgets") or []
+        phase_widget = None
+        for w in widgets:
+            if getattr(w, "name_", lambda: "")() == self.slm_class_name:
+                phase_widget = w
+                break
+        
+        if phase_widget is None:
+            raise RuntimeError(f"SLM widget for '{self.slm_class_name}' not found")
+        
+        if not hasattr(phase_widget, self.slm_field_name):
+            raise RuntimeError(
+                f"Field '{self.slm_field_name}' not found in '{self.slm_class_name}'"
+            )
+        
+        widget = getattr(phase_widget, self.slm_field_name)
+        widget.setText(str(arela_val))
+        
+        # Compose and publish
+        slm_window = REGISTRY.get("slm:red:window")
+        if slm_window is None:
+            raise RuntimeError("SLM window not found")
+        
+        levels = slm_window.compose_levels()
+        
+        slm_red = REGISTRY.get("slm:red:controller")
+        if slm_red is None:
+            raise RuntimeError("Red SLM controller not found")
+        
+        slm_red.publish(levels, screen_num=self.slm_screen)
+        
+        self._emit(f"  SLM {self.slm_class_name}:{self.slm_field_name} = {arela_val:.6f} (intensity fraction: {fraction:.4f})")
+        
+        return float(arela_val)
 
     def _wait_for_stability(self, phase_ctrl, setpoint: float) -> Tuple[float, float, float, bool]:
         """
@@ -400,32 +520,30 @@ class TwoColorScanWorker(QObject):
 
         # Validate ratio scan setup if enabled
         if self.enable_ratio_scan:
-            if not self.wp_omega_key or not self.wp_2omega_key:
-                self._emit("Ratio scan enabled but waveplates not specified.")
-                self.finished.emit("")
-                return
-            if self.total_intensity_W_cm2 is None or self.total_intensity_W_cm2 <= 0:
-                self._emit("Ratio scan enabled but total intensity invalid.")
-                self.finished.emit("")
-                return
-            
-            # All parameters are required
-            required = [
-                (self.omega_max_power_W, "Omega max power"),
-                (self.omega_waist_um, "Omega waist"),
-                (self.omega_pulse_duration_fs, "Omega pulse duration"),
-                (self.omega_rep_rate_kHz, "Omega rep rate"),
-                (self.omega2_max_power_W, "2-Omega max power"),
-                (self.omega2_waist_um, "2-Omega waist"),
-                (self.omega2_pulse_duration_fs, "2-Omega pulse duration"),
-                (self.omega2_rep_rate_kHz, "2-Omega rep rate"),
-            ]
-            
-            for val, name in required:
-                if val is None or val <= 0:
-                    self._emit(f"{name} is required and must be positive.")
+            if self.omega_control_mode == "waveplate":
+                if not self.wp_omega_key:
+                    self._emit("Omega waveplate not specified.")
                     self.finished.emit("")
                     return
+            elif self.omega_control_mode == "slm":
+                if not self.slm_class_name or not self.slm_field_name:
+                    self._emit("SLM class/field not specified.")
+                    self.finished.emit("")
+                    return
+                if self.slm_calib_arela is None or self.slm_calib_intensity is None:
+                    self._emit("SLM calibration not loaded.")
+                    self.finished.emit("")
+                    return
+            
+            if not self.wp_2omega_key:
+                self._emit("2-Omega waveplate not specified.")
+                self.finished.emit("")
+                return
+            
+            if self.total_intensity_W_cm2 is None or self.total_intensity_W_cm2 <= 0:
+                self._emit("Total intensity invalid.")
+                self.finished.emit("")
+                return
 
         detectors = {}
         for det_key, params in self.detector_params.items():
@@ -476,12 +594,18 @@ class TwoColorScanWorker(QObject):
 
             with open(scan_log, "w", encoding="utf-8") as f:
                 if self.enable_ratio_scan:
-                    header = ["Ratio_R", "Power_omega_W", "Power_2omega_W", 
-                             "I_omega_peak_W_cm2", "I_2omega_peak_W_cm2",
-                             "Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad", 
-                             "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
+                    if self.omega_control_mode == "slm":
+                        header = ["Ratio_R", "ArelA", "Power_2omega_W",
+                                 "I_omega_peak_W_cm2", "I_2omega_peak_W_cm2",
+                                 "Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad",
+                                 "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
+                    else:
+                        header = ["Ratio_R", "Power_omega_W", "Power_2omega_W",
+                                 "I_omega_peak_W_cm2", "I_2omega_peak_W_cm2",
+                                 "Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad",
+                                 "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
                 else:
-                    header = ["Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad", 
+                    header = ["Setpoint_rad", "MeasuredPhase_rad", "PhaseStd_rad", "PhaseError_rad",
                              "DetectorKey", "DataFile", "Exposure_or_IntTime", "Averages"]
                 f.write("\t".join(header) + "\n")
                 f.write(f"# {self.comment}\n")
@@ -494,20 +618,44 @@ class TwoColorScanWorker(QObject):
                 if self.enable_ratio_scan:
                     f.write(f"# Ratio scan enabled: R = I_2omega / (I_omega + I_2omega)\n")
                     f.write(f"# Total peak intensity: {self.total_intensity_W_cm2:.6e} W/cm²\n")
-                    f.write(f"# Waveplate omega: {self.wp_omega_key}\n")
-                    f.write(f"#   Max power: {self.omega_max_power_W} W\n")
-                    f.write(f"#   Waist: {self.omega_waist_um} µm\n")
-                    f.write(f"#   Pulse duration: {self.omega_pulse_duration_fs} fs\n")
-                    f.write(f"#   Rep rate: {self.omega_rep_rate_kHz} kHz\n")
-                    if self.omega_beam_split:
-                        f.write(f"#   Beam split: YES (intensity divided by 2)\n")
-                    I_max_omega = calculate_max_intensity(
-                        self.omega_max_power_W, self.omega_waist_um,
-                        self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
-                    )
-                    if self.omega_beam_split:
-                        I_max_omega /= 2.0
-                    f.write(f"#   Max intensity: {I_max_omega:.6e} W/cm²\n")
+                    
+                    if self.omega_control_mode == "slm":
+                        f.write(f"# Omega control: SLM {self.slm_class_name}:{self.slm_field_name}\n")
+                        f.write(f"#   Screen: {self.slm_screen}\n")
+                        f.write(f"#   Max power: {self.omega_max_power_W} W\n")
+                        f.write(f"#   Waist: {self.omega_waist_um} µm\n")
+                        f.write(f"#   Pulse duration: {self.omega_pulse_duration_fs} fs\n")
+                        f.write(f"#   Rep rate: {self.omega_rep_rate_kHz} kHz\n")
+                        I_max_omega = calculate_max_intensity(
+                            self.omega_max_power_W, self.omega_waist_um,
+                            self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                        )
+                        if self.omega_beam_split:
+                            # beam_split_ratio is fraction in B, so A gets (1 - ratio)
+                            I_max_omega *= (1.0 - self.omega_beam_split_ratio)
+                            f.write(f"#   Beam split: YES (B beam fraction: {self.omega_beam_split_ratio:.3f}, A gets {1.0-self.omega_beam_split_ratio:.3f})\n")
+                        # Apply max calibration intensity
+                        if self.slm_calib_intensity is not None:
+                            max_calib_intensity = float(self.slm_calib_intensity.max())
+                            I_max_omega *= max_calib_intensity
+                            f.write(f"#   Max calibration intensity: {max_calib_intensity:.4f}\n")
+                        f.write(f"#   Max intensity: {I_max_omega:.6e} W/cm²\n")
+                    else:
+                        f.write(f"# Waveplate omega: {self.wp_omega_key}\n")
+                        f.write(f"#   Max power: {self.omega_max_power_W} W\n")
+                        f.write(f"#   Waist: {self.omega_waist_um} µm\n")
+                        f.write(f"#   Pulse duration: {self.omega_pulse_duration_fs} fs\n")
+                        f.write(f"#   Rep rate: {self.omega_rep_rate_kHz} kHz\n")
+                        I_max_omega = calculate_max_intensity(
+                            self.omega_max_power_W, self.omega_waist_um,
+                            self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                        )
+                        if self.omega_beam_split:
+                            # beam_split_ratio is fraction in B, so A gets (1 - ratio)
+                            I_max_omega *= (1.0 - self.omega_beam_split_ratio)
+                            f.write(f"#   Beam split: YES (B beam fraction: {self.omega_beam_split_ratio:.3f}, A gets {1.0-self.omega_beam_split_ratio:.3f})\n")
+                        f.write(f"#   Max intensity: {I_max_omega:.6e} W/cm²\n")
+                    
                     f.write(f"# Waveplate 2omega: {self.wp_2omega_key}\n")
                     f.write(f"#   Max power: {self.omega2_max_power_W} W\n")
                     f.write(f"#   Waist: {self.omega2_waist_um} µm\n")
@@ -535,67 +683,72 @@ class TwoColorScanWorker(QObject):
                     self.finished.emit("")
                     return
                 
-                # Set waveplate powers for this ratio
+                # Set powers/intensities for this ratio
                 power_omega = None
+                arela_val = None
                 power_2omega = None
                 I_omega_peak = None
                 I_2omega_peak = None
                 
                 if self.enable_ratio_scan:
-                    # R = I_2omega / (I_omega + I_2omega)
-                    # I_total = I_omega + I_2omega
-                    # => I_2omega = R × I_total
-                    # => I_omega = (1 - R) × I_total
+                    # Calculate intensities
                     I_2omega_peak = ratio_R * self.total_intensity_W_cm2
                     I_omega_peak = (1.0 - ratio_R) * self.total_intensity_W_cm2
                     
-                    # If beam split is enabled, actual intensity at focus is halved
-                    # So we just note this - no compensation
-                    I_omega_actual = I_omega_peak / 2.0 if self.omega_beam_split else I_omega_peak
-                    
-                    # Convert intensities to powers (using nominal intensity, not split)
-                    power_omega = intensity_to_power(
-                        I_omega_peak, self.omega_waist_um,
+                    # Calculate max intensities
+                    I_max_omega = calculate_max_intensity(
+                        self.omega_max_power_W, self.omega_waist_um,
                         self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
                     )
-                    power_2omega = intensity_to_power(
-                        I_2omega_peak, self.omega2_waist_um,
+                    if self.omega_beam_split:
+                        # beam_split_ratio is fraction in B, so A gets (1 - ratio)
+                        I_max_omega *= (1.0 - self.omega_beam_split_ratio)
+                    
+                    # Apply max calibration intensity for SLM
+                    if self.omega_control_mode == "slm" and self.slm_calib_intensity is not None:
+                        I_max_omega *= float(self.slm_calib_intensity.max())
+                    
+                    I_max_2omega = calculate_max_intensity(
+                        self.omega2_max_power_W, self.omega2_waist_um,
                         self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
                     )
                     
-                    # Check if within max power limits
-                    if power_omega > self.omega_max_power_W:
-                        self._emit(f"Warning: Required omega power ({power_omega:.6f} W) exceeds max ({self.omega_max_power_W} W)")
-                        power_omega = self.omega_max_power_W
-                        I_omega_peak = calculate_max_intensity(
-                            power_omega, self.omega_waist_um,
-                            self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
-                        )
-                        I_omega_actual = I_omega_peak / 2.0 if self.omega_beam_split else I_omega_peak
+                    # Check limits
+                    if I_omega_peak > I_max_omega:
+                        self._emit(f"Warning: Required omega intensity ({I_omega_peak:.3e} W/cm²) exceeds max ({I_max_omega:.3e} W/cm²)")
+                        I_omega_peak = I_max_omega
                     
-                    if power_2omega > self.omega2_max_power_W:
-                        self._emit(f"Warning: Required 2-omega power ({power_2omega:.6f} W) exceeds max ({self.omega2_max_power_W} W)")
-                        power_2omega = self.omega2_max_power_W
-                        I_2omega_peak = calculate_max_intensity(
-                            power_2omega, self.omega2_waist_um,
-                            self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
-                        )
+                    if I_2omega_peak > I_max_2omega:
+                        self._emit(f"Warning: Required 2-omega intensity ({I_2omega_peak:.3e} W/cm²) exceeds max ({I_max_2omega:.3e} W/cm²)")
+                        I_2omega_peak = I_max_2omega
                     
                     self._emit(f"\n=== Setting ratio R = {ratio_R:.4f} ===")
                     self._emit(f"  Total peak intensity: {self.total_intensity_W_cm2:.6e} W/cm²")
-                    if self.omega_beam_split:
-                        self._emit(f"  I_omega:  {I_omega_peak:.6e} W/cm² → {I_omega_actual:.6e} W/cm² at sample [beam split]")
-                    else:
-                        self._emit(f"  I_omega:  {I_omega_peak:.6e} W/cm² ({100*(1-ratio_R):.1f}%)")
+                    self._emit(f"  I_omega:  {I_omega_peak:.6e} W/cm² ({100*(1-ratio_R):.1f}%)")
                     self._emit(f"  I_2omega: {I_2omega_peak:.6e} W/cm² ({100*ratio_R:.1f}%)")
-                    self._emit(f"  P_omega:  {power_omega:.6f} W")
-                    self._emit(f"  P_2omega: {power_2omega:.6f} W")
                     
                     try:
-                        self._set_waveplate_power(self.wp_omega_key, power_omega, self.omega_max_power_W)
+                        if self.omega_control_mode == "slm":
+                            # Set SLM
+                            arela_val = self._set_slm_intensity(I_omega_peak, I_max_omega)
+                        else:
+                            # Set waveplate
+                            power_omega = intensity_to_power(
+                                I_omega_peak, self.omega_waist_um,
+                                self.omega_pulse_duration_fs, self.omega_rep_rate_kHz
+                            )
+                            self._emit(f"  P_omega: {power_omega:.6f} W")
+                            self._set_waveplate_power(self.wp_omega_key, power_omega, self.omega_max_power_W)
+                        
+                        # Always set 2-omega waveplate
+                        power_2omega = intensity_to_power(
+                            I_2omega_peak, self.omega2_waist_um,
+                            self.omega2_pulse_duration_fs, self.omega2_rep_rate_kHz
+                        )
+                        self._emit(f"  P_2omega: {power_2omega:.6f} W")
                         self._set_waveplate_power(self.wp_2omega_key, power_2omega, self.omega2_max_power_W)
                     except Exception as e:
-                        self._emit(f"Failed to set waveplate powers: {e}")
+                        self._emit(f"Failed to set intensities: {e}")
                         self.finished.emit("")
                         return
                 
@@ -634,10 +787,11 @@ class TwoColorScanWorker(QObject):
                         if self.enable_ratio_scan:
                             self.monitor_update.emit(ratio_idx, phase_idx, phase_error, std_phase)
                     else:
+                        scan_type = "background with reference (ArelA=1)" if self.background_w_ref else "background"
                         if self.enable_ratio_scan:
-                            self._emit(f"Background @ R={ratio_R:.3f}")
+                            self._emit(f"Capturing {scan_type} @ R={ratio_R:.3f}")
                         else:
-                            self._emit(f"Capturing background")
+                            self._emit(f"Capturing {scan_type}")
 
                     for det_key, dev in detectors.items():
                         if self.abort:
@@ -673,7 +827,12 @@ class TwoColorScanWorker(QObject):
                                 det_day = self.data_root / f"{self.timestamp:%Y-%m-%d}" / det_name
                                 ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                                 
-                                tag = "Background" if self.background else "Image"
+                                if self.background and self.background_w_ref:
+                                    tag = "Background_w_ref"
+                                elif self.background:
+                                    tag = "Background"
+                                else:
+                                    tag = "Image"
                                 fn = f"{det_name}_{tag}_{ts_ms}.png"
                                 
                                 meta_dict = {
@@ -684,11 +843,14 @@ class TwoColorScanWorker(QObject):
                                 if self.enable_ratio_scan:
                                     meta_dict.update({
                                         "Ratio_R": ratio_R,
-                                        "Power_omega_W": power_omega,
-                                        "Power_2omega_W": power_2omega,
                                         "I_omega_peak_W_cm2": I_omega_peak,
                                         "I_2omega_peak_W_cm2": I_2omega_peak,
                                     })
+                                    if self.omega_control_mode == "slm":
+                                        meta_dict["ArelA"] = arela_val
+                                    else:
+                                        meta_dict["Power_omega_W"] = power_omega
+                                    meta_dict["Power_2omega_W"] = power_2omega
                                 
                                 if not self.background:
                                     meta_dict.update({
@@ -735,7 +897,12 @@ class TwoColorScanWorker(QObject):
                                 safe_name = _detector_display_name(det_key, dev, None).replace(" ", "")
                                 ts_ms = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                                 
-                                tag = "Background" if self.background else "Spectrum"
+                                if self.background and self.background_w_ref:
+                                    tag = "Background_w_ref"
+                                elif self.background:
+                                    tag = "Background"
+                                else:
+                                    tag = "Spectrum"
                                 fn = f"{safe_name}_{tag}_{ts_ms}.txt"
                                 
                                 file_header = {
@@ -748,11 +915,14 @@ class TwoColorScanWorker(QObject):
                                 if self.enable_ratio_scan:
                                     file_header.update({
                                         "Ratio_R": ratio_R,
-                                        "Power_omega_W": power_omega,
-                                        "Power_2omega_W": power_2omega,
                                         "I_omega_peak_W_cm2": I_omega_peak,
                                         "I_2omega_peak_W_cm2": I_2omega_peak,
                                     })
+                                    if self.omega_control_mode == "slm":
+                                        file_header["ArelA"] = arela_val
+                                    else:
+                                        file_header["Power_omega_W"] = power_omega
+                                    file_header["Power_2omega_W"] = power_2omega
                                 
                                 if not self.background:
                                     file_header.update({
@@ -793,13 +963,22 @@ class TwoColorScanWorker(QObject):
                                 saved_label = f"P={power:.3e} W"
 
                             if self.enable_ratio_scan:
-                                row = [
-                                    f"{float(ratio_R):.9f}",
-                                    f"{float(power_omega):.9f}",
-                                    f"{float(power_2omega):.9f}",
-                                    f"{float(I_omega_peak):.9e}",
-                                    f"{float(I_2omega_peak):.9e}",
-                                ]
+                                if self.omega_control_mode == "slm":
+                                    row = [
+                                        f"{float(ratio_R):.9f}",
+                                        f"{float(arela_val):.9f}",
+                                        f"{float(power_2omega):.9f}",
+                                        f"{float(I_omega_peak):.9e}",
+                                        f"{float(I_2omega_peak):.9e}",
+                                    ]
+                                else:
+                                    row = [
+                                        f"{float(ratio_R):.9f}",
+                                        f"{float(power_omega):.9f}",
+                                        f"{float(power_2omega):.9f}",
+                                        f"{float(I_omega_peak):.9e}",
+                                        f"{float(I_2omega_peak):.9e}",
+                                    ]
                             else:
                                 row = []
                             
@@ -824,10 +1003,11 @@ class TwoColorScanWorker(QObject):
                                 f.write("\t".join(row) + "\n")
 
                             if self.background:
+                                scan_type = "BACKGROUND_W_REF" if self.background_w_ref else "BACKGROUND"
                                 if self.enable_ratio_scan:
-                                    self._emit(f"Saved {data_fn} @ R={ratio_R:.3f} BACKGROUND ({saved_label})")
+                                    self._emit(f"Saved {data_fn} @ R={ratio_R:.3f} {scan_type} ({saved_label})")
                                 else:
-                                    self._emit(f"Saved {data_fn} BACKGROUND ({saved_label})")
+                                    self._emit(f"Saved {data_fn} {scan_type} ({saved_label})")
                             else:
                                 if self.enable_ratio_scan:
                                     self._emit(
@@ -871,6 +1051,8 @@ class TwoColorScanTab(QWidget):
         self._doing_background = False
         self._cached_params = None
         self._last_scan_log_path = None
+        self._slm_calib_arela = None
+        self._slm_calib_intensity = None
         self._build_ui()
         self._refresh_devices()
 
@@ -896,7 +1078,24 @@ class TwoColorScanTab(QWidget):
         enable_row.addStretch()
         ratio_l.addLayout(enable_row)
         
-        # Waveplate selection
+        # Omega control mode selection
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Omega control:"))
+        self.omega_mode_group = QButtonGroup()
+        self.omega_wp_radio = QRadioButton("Waveplate")
+        self.omega_slm_radio = QRadioButton("SLM")
+        self.omega_wp_radio.setChecked(True)
+        self.omega_mode_group.addButton(self.omega_wp_radio)
+        self.omega_mode_group.addButton(self.omega_slm_radio)
+        self.omega_wp_radio.toggled.connect(self._on_omega_mode_toggle)
+        mode_row.addWidget(self.omega_wp_radio)
+        mode_row.addWidget(self.omega_slm_radio)
+        mode_row.addStretch()
+        ratio_l.addLayout(mode_row)
+        
+        # Waveplate selection (for waveplate mode)
+        self.wp_group = QGroupBox("Waveplate mode")
+        wp_l = QVBoxLayout(self.wp_group)
         wp_row = QHBoxLayout()
         self.wp_omega_picker = QComboBox()
         self.wp_2omega_picker = QComboBox()
@@ -904,11 +1103,63 @@ class TwoColorScanTab(QWidget):
         wp_row.addWidget(self.wp_omega_picker, 1)
         wp_row.addWidget(QLabel("Waveplate 2ω:"))
         wp_row.addWidget(self.wp_2omega_picker, 1)
-        ratio_l.addLayout(wp_row)
+        wp_l.addLayout(wp_row)
+        ratio_l.addWidget(self.wp_group)
+        
+        # SLM selection (for SLM mode)
+        self.slm_group = QGroupBox("SLM mode")
+        slm_l = QVBoxLayout(self.slm_group)
+        
+        slm_row1 = QHBoxLayout()
+        self.slm_class_le = QLineEdit("TwoFociStochastic")
+        self.slm_field_le = QLineEdit("le_ArelA")
+        self.slm_screen_le = QLineEdit("3")
+        slm_row1.addWidget(QLabel("Class:"))
+        slm_row1.addWidget(self.slm_class_le)
+        slm_row1.addWidget(QLabel("Field:"))
+        slm_row1.addWidget(self.slm_field_le)
+        slm_row1.addWidget(QLabel("Screen:"))
+        slm_row1.addWidget(self.slm_screen_le)
+        slm_l.addLayout(slm_row1)
+        
+        slm_row2 = QHBoxLayout()
+        self.slm_calib_path_le = QLineEdit("")
+        self.slm_calib_browse_btn = QPushButton("Browse...")
+        self.slm_calib_browse_btn.clicked.connect(self._browse_slm_calib)
+        slm_row2.addWidget(QLabel("Calibration file:"))
+        slm_row2.addWidget(self.slm_calib_path_le, 1)
+        slm_row2.addWidget(self.slm_calib_browse_btn)
+        slm_l.addLayout(slm_row2)
+        
+        slm_row3 = QHBoxLayout()
+        self.slm_calib_load_btn = QPushButton("Load Calibration")
+        self.slm_calib_load_btn.clicked.connect(self._load_slm_calib)
+        self.slm_calib_status = QLabel("Status: Not loaded")
+        slm_row3.addWidget(self.slm_calib_load_btn)
+        slm_row3.addWidget(self.slm_calib_status)
+        slm_row3.addStretch()
+        slm_l.addLayout(slm_row3)
+        
+        # Background with reference option
+        slm_row4 = QHBoxLayout()
+        self.slm_background_ref_cb = QCheckBox("Take reference with beam dumped (ArelA=1) before background")
+        slm_row4.addWidget(self.slm_background_ref_cb)
+        slm_row4.addStretch()
+        slm_l.addLayout(slm_row4)
+        
+        # 2omega waveplate (always needed)
+        slm_wp2_row = QHBoxLayout()
+        slm_wp2_row.addWidget(QLabel("Waveplate 2ω:"))
+        slm_wp2_row.addWidget(self.wp_2omega_picker, 1)
+        slm_wp2_row.addStretch()
+        slm_l.addLayout(slm_wp2_row)
+        
+        ratio_l.addWidget(self.slm_group)
         
         # Total intensity
         intensity_row = QHBoxLayout()
         self.total_intensity_le = QLineEdit("1e14")
+        self.total_intensity_le.textChanged.connect(self._update_max_intensity)
         self.intensity_max_label = QLabel("I_tot_max: -- W/cm²")
         self.intensity_max_label.setStyleSheet("QLabel { color: blue; font-weight: bold; }")
         intensity_row.addWidget(QLabel("Total peak intensity I_tot (W/cm²):"))
@@ -924,7 +1175,7 @@ class TwoColorScanTab(QWidget):
         omega_row1 = QHBoxLayout()
         self.omega_max_power_le = QLineEdit("")
         self.omega_max_power_le.textChanged.connect(self._update_max_intensity)
-        self.omega_waist_le = QLineEdit("20")
+        self.omega_waist_le = QLineEdit("16")
         self.omega_waist_le.textChanged.connect(self._update_max_intensity)
         omega_row1.addWidget(QLabel("Max power (W):"))
         omega_row1.addWidget(self.omega_max_power_le)
@@ -944,9 +1195,18 @@ class TwoColorScanTab(QWidget):
         omega_l.addLayout(omega_row2)
         
         omega_row3 = QHBoxLayout()
-        self.omega_beam_split_cb = QCheckBox("Beam split in two (divide intensity by 2)")
+        self.omega_beam_split_cb = QCheckBox("Beam split (A/B configuration)")
         self.omega_beam_split_cb.toggled.connect(self._update_max_intensity)
+        self.omega_beam_split_ratio_le = QLineEdit("0.5")
+        self.omega_beam_split_ratio_le.setEnabled(False)
+        self.omega_beam_split_ratio_le.textChanged.connect(self._update_max_intensity)
+        self.omega_beam_split_cb.toggled.connect(
+            lambda checked: self.omega_beam_split_ratio_le.setEnabled(checked)
+        )
         omega_row3.addWidget(self.omega_beam_split_cb)
+        omega_row3.addWidget(QLabel("Fraction in B beam:"))
+        omega_row3.addWidget(self.omega_beam_split_ratio_le)
+        omega_row3.addWidget(QLabel("(0.5 = 50/50, 0.8 = 80% to B / 20% to A)"))
         omega_row3.addStretch()
         omega_l.addLayout(omega_row3)
         
@@ -1137,16 +1397,65 @@ class TwoColorScanTab(QWidget):
         
         # Initial state
         self._on_ratio_toggle(False)
+        self._on_omega_mode_toggle(True)
+
+    def _browse_slm_calib(self):
+        """Browse for SLM calibration file"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select SLM Calibration File", 
+            str(_data_root()), 
+            "Text files (*.txt *.dat);;All files (*.*)"
+        )
+        if path:
+            self.slm_calib_path_le.setText(path)
+
+    def _load_slm_calib(self):
+        """Load SLM calibration from file"""
+        path = self.slm_calib_path_le.text().strip()
+        if not path:
+            QMessageBox.warning(self, "No file", "Please select a calibration file first.")
+            return
+        
+        try:
+            self._slm_calib_arela, self._slm_calib_intensity = load_slm_calibration(path)
+            n_points = len(self._slm_calib_arela)
+            arela_range = f"[{self._slm_calib_arela.min():.3f}, {self._slm_calib_arela.max():.3f}]"
+            intensity_range = f"[{self._slm_calib_intensity.min():.3f}, {self._slm_calib_intensity.max():.3f}]"
+            self.slm_calib_status.setText(
+                f"Status: Loaded {n_points} points, ArelA {arela_range}, intensity {intensity_range}"
+            )
+            self.slm_calib_status.setStyleSheet("QLabel { color: green; }")
+            self._update_max_intensity()
+            self._log(f"SLM calibration loaded: {n_points} points from {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Load failed", f"Failed to load calibration:\n{str(e)}")
+            self.slm_calib_status.setText("Status: Load failed")
+            self.slm_calib_status.setStyleSheet("QLabel { color: red; }")
+
+    def _on_omega_mode_toggle(self, checked):
+        """Toggle between waveplate and SLM mode for omega"""
+        is_wp_mode = self.omega_wp_radio.isChecked()
+        self.wp_group.setEnabled(is_wp_mode)
+        self.slm_group.setEnabled(not is_wp_mode)
+        
+        # Check the background_ref checkbox by default when switching to SLM mode
+        if not is_wp_mode and self.enable_ratio_cb.isChecked():
+            self.slm_background_ref_cb.setChecked(True)
+        
+        self._update_max_intensity()
 
     def _on_ratio_toggle(self, checked):
-        self.wp_omega_picker.setEnabled(checked)
-        self.wp_2omega_picker.setEnabled(checked)
+        self.omega_wp_radio.setEnabled(checked)
+        self.omega_slm_radio.setEnabled(checked)
+        self.wp_group.setEnabled(checked and self.omega_wp_radio.isChecked())
+        self.slm_group.setEnabled(checked and self.omega_slm_radio.isChecked())
         self.total_intensity_le.setEnabled(checked)
         self.omega_max_power_le.setEnabled(checked)
         self.omega_waist_le.setEnabled(checked)
         self.omega_pulse_duration_le.setEnabled(checked)
         self.omega_rep_rate_le.setEnabled(checked)
         self.omega_beam_split_cb.setEnabled(checked)
+        self.omega_beam_split_ratio_le.setEnabled(checked and self.omega_beam_split_cb.isChecked())
         self.omega2_max_power_le.setEnabled(checked)
         self.omega2_waist_le.setEnabled(checked)
         self.omega2_pulse_duration_le.setEnabled(checked)
@@ -1175,7 +1484,7 @@ class TwoColorScanTab(QWidget):
             omega2_pulse_duration_fs = float(self.omega2_pulse_duration_le.text())
             omega2_rep_rate_kHz = float(self.omega2_rep_rate_le.text())
             
-            # Calculate max intensities
+            # Calculate max intensity for omega
             I_max_omega = calculate_max_intensity(
                 omega_max_power_W, omega_waist_um,
                 omega_pulse_duration_fs, omega_rep_rate_kHz
@@ -1183,18 +1492,53 @@ class TwoColorScanTab(QWidget):
             
             # Apply beam split factor if enabled
             if self.omega_beam_split_cb.isChecked():
-                I_max_omega /= 2.0
+                try:
+                    split_ratio = float(self.omega_beam_split_ratio_le.text())
+                    split_ratio = np.clip(split_ratio, 0.0, 1.0)
+                    # split_ratio is fraction in B, so A gets (1 - split_ratio)
+                    I_max_omega *= (1.0 - split_ratio)
+                except (ValueError, AttributeError):
+                    pass
+            
+            # For SLM mode, multiply by max calibration intensity
+            if self.omega_slm_radio.isChecked() and self._slm_calib_intensity is not None:
+                I_max_omega *= float(self._slm_calib_intensity.max())
             
             I_max_2omega = calculate_max_intensity(
                 omega2_max_power_W, omega2_waist_um,
                 omega2_pulse_duration_fs, omega2_rep_rate_kHz
             )
             
-            # Total max intensity
-            I_tot_max = I_max_omega + I_max_2omega
+            # Total max intensity is the MINIMUM of the two
+            I_tot_max = min(I_max_omega, I_max_2omega)
             
-            self.intensity_max_label.setText(f"I_tot_max: {I_tot_max:.3e} W/cm²")
-            
+            # Check if user's requested I_tot exceeds limit
+            try:
+                I_tot_requested = float(self.total_intensity_le.text())
+                
+                if I_tot_requested > I_tot_max:
+                    # Calculate achievable R range
+                    R_min = max(0.0, 1.0 - I_max_omega / I_tot_requested)
+                    R_max = min(1.0, I_max_2omega / I_tot_requested)
+                    
+                    self.intensity_max_label.setText(
+                        f"I_tot_max: {I_tot_max:.3e} W/cm² | "
+                        f"R ∈ [{R_min:.3f}, {R_max:.3f}]"
+                    )
+                    self.intensity_max_label.setStyleSheet(
+                        "QLabel { color: red; font-weight: bold; }"
+                    )
+                else:
+                    self.intensity_max_label.setText(f"I_tot_max: {I_tot_max:.3e} W/cm²")
+                    self.intensity_max_label.setStyleSheet(
+                        "QLabel { color: blue; font-weight: bold; }"
+                    )
+            except (ValueError, ZeroDivisionError):
+                self.intensity_max_label.setText(f"I_tot_max: {I_tot_max:.3e} W/cm²")
+                self.intensity_max_label.setStyleSheet(
+                    "QLabel { color: blue; font-weight: bold; }"
+                )
+        
         except (ValueError, ZeroDivisionError):
             self.intensity_max_label.setText("I_tot_max: -- W/cm²")
 
@@ -1249,9 +1593,9 @@ class TwoColorScanTab(QWidget):
         return vals
 
     def _estimate_time(self):
-        """Estimate total scan time - note: doesn't account for variable stability wait times"""
+        """Estimate total scan time"""
         try:
-            p = self._collect_params(validate_waveplates=False)
+            p = self._collect_params(validate=False)
         except Exception as e:
             QMessageBox.critical(self, "Invalid parameters", str(e))
             return
@@ -1261,8 +1605,8 @@ class TwoColorScanTab(QWidget):
         n_phases = len(p["setpoints"])
         n_detectors = len(p["detector_params"])
         
-        # Time per point - use average expected stability time
-        avg_stability_time = p["stability_timeout"] / 2.0  # Rough estimate
+        # Time per point
+        avg_stability_time = p["stability_timeout"] / 2.0
         phase_avg_time = p["phase_avg"]
         
         # Detector acquisition time
@@ -1271,13 +1615,10 @@ class TwoColorScanTab(QWidget):
             exposure_or_int = float(params[0]) if len(params) >= 1 else 0
             averages = int(params[1]) if len(params) >= 2 else 1
             
-            # Camera: exposure in µs
             if det_key.startswith("camera:"):
                 t = (exposure_or_int / 1e6) * averages
-            # Spectrometer: integration in ms
             elif det_key.startswith("spectrometer:"):
                 t = (exposure_or_int / 1e3) * averages
-            # Powermeter: period in ms
             elif det_key.startswith("powermeter:"):
                 t = (exposure_or_int / 1e3) * averages
             else:
@@ -1285,18 +1626,13 @@ class TwoColorScanTab(QWidget):
             
             detector_time += t
         
-        # Time per phase point
         time_per_phase = avg_stability_time + phase_avg_time + detector_time
-        
-        # Total time
         total_scan_time = n_ratios * n_phases * time_per_phase
         
-        # Format time
         hours = int(total_scan_time // 3600)
         minutes = int((total_scan_time % 3600) // 60)
         seconds = int(total_scan_time % 60)
         
-        # Build message
         msg = f"**Scan Configuration:**\n\n"
         
         if p["enable_ratio"]:
@@ -1327,7 +1663,7 @@ class TwoColorScanTab(QWidget):
         QMessageBox.information(self, "Scan Time Estimate", msg)
         self._log(f"Estimated scan time: {hours}h {minutes}min {seconds}s (approximate)")
 
-    def _collect_params(self, validate_waveplates=True):
+    def _collect_params(self, validate=True):
         """Collect all scan parameters and validate"""
         phase_ctrl_key = self.phase_ctrl_picker.currentText().strip()
         if not phase_ctrl_key:
@@ -1372,8 +1708,13 @@ class TwoColorScanTab(QWidget):
 
         # Ratio scan parameters
         enable_ratio = self.enable_ratio_cb.isChecked()
+        omega_control_mode = "slm" if self.omega_slm_radio.isChecked() else "waveplate"
+        
         wp_omega_key = None
         wp_2omega_key = None
+        slm_class_name = None
+        slm_field_name = None
+        slm_screen = 3
         total_intensity_W_cm2 = None
         ratio_values = None
         omega_max_power_W = None
@@ -1381,141 +1722,161 @@ class TwoColorScanTab(QWidget):
         omega_pulse_duration_fs = None
         omega_rep_rate_kHz = None
         omega_beam_split = False
+        omega_beam_split_ratio = 0.5  # Fraction in B beam (A gets 1-ratio)
         omega2_max_power_W = None
         omega2_waist_um = None
         omega2_pulse_duration_fs = None
         omega2_rep_rate_kHz = None
+        background_w_ref = False
 
         if enable_ratio:
-            wp_omega_key = self.wp_omega_picker.currentText().strip()
-            wp_2omega_key = self.wp_2omega_picker.currentText().strip()
-            
-            if validate_waveplates:
-                if not wp_omega_key or not wp_2omega_key:
-                    raise ValueError("Select both waveplates for ratio scan.")
-                
-                if wp_omega_key == wp_2omega_key:
-                    raise ValueError("Waveplates must be different.")
-            
-            wp_omega_idx = None
-            wp_2omega_idx = None
-            if wp_omega_key:
-                wp_omega_idx = _wp_index_from_stage_key(wp_omega_key)
-            if wp_2omega_key:
-                wp_2omega_idx = _wp_index_from_stage_key(wp_2omega_key)
-            
-            if validate_waveplates:
-                if wp_omega_idx is None or wp_2omega_idx is None:
-                    raise ValueError("Selected stages are not valid waveplates.")
-            
-            if validate_waveplates:
-                calib_omega = REGISTRY.get(_reg_key_calib(wp_omega_idx))
-                if not calib_omega or not isinstance(calib_omega, (tuple, list)) or len(calib_omega) < 2:
-                    raise ValueError(
-                        f"Omega waveplate ({wp_omega_key}) has no calibration.\n"
-                        f"Please calibrate it in the 'Waveplate Calibration' tab."
-                    )
-                
-                calib_2omega = REGISTRY.get(_reg_key_calib(wp_2omega_idx))
-                if not calib_2omega or not isinstance(calib_2omega, (tuple, list)) or len(calib_2omega) < 2:
-                    raise ValueError(
-                        f"2-Omega waveplate ({wp_2omega_key}) has no calibration.\n"
-                        f"Please calibrate it in the 'Waveplate Calibration' tab."
-                    )
-                
-                pm_omega = REGISTRY.get(_reg_key_powermode(wp_omega_idx))
-                if not isinstance(pm_omega, bool) or not pm_omega:
-                    raise ValueError(
-                        f"Omega waveplate ({wp_omega_key}) power mode is OFF.\n"
-                        f"Please enable 'Power Mode' in the Stage Control window."
-                    )
-                
-                pm_2omega = REGISTRY.get(_reg_key_powermode(wp_2omega_idx))
-                if not isinstance(pm_2omega, bool) or not pm_2omega:
-                    raise ValueError(
-                        f"2-Omega waveplate ({wp_2omega_key}) power mode is OFF.\n"
-                        f"Please enable 'Power Mode' in the Stage Control window."
-                    )
-            
+            # Common parameters
             try:
                 total_intensity_W_cm2 = float(self.total_intensity_le.text())
-                if validate_waveplates and total_intensity_W_cm2 <= 0:
+                if validate and total_intensity_W_cm2 <= 0:
                     raise ValueError("Total intensity must be positive")
             except ValueError:
-                if validate_waveplates:
+                if validate:
                     raise ValueError("Invalid total intensity value.")
                 total_intensity_W_cm2 = None
             
+            # Omega mode-specific validation
+            if omega_control_mode == "waveplate":
+                wp_omega_key = self.wp_omega_picker.currentText().strip()
+                if validate and not wp_omega_key:
+                    raise ValueError("Select omega waveplate.")
+                
+                # Validate waveplate calibration
+                if validate and wp_omega_key:
+                    wp_omega_idx = _wp_index_from_stage_key(wp_omega_key)
+                    if wp_omega_idx is None:
+                        raise ValueError("Invalid omega waveplate.")
+                    
+                    calib = REGISTRY.get(_reg_key_calib(wp_omega_idx))
+                    if not calib or not isinstance(calib, (tuple, list)) or len(calib) < 2:
+                        raise ValueError(
+                            f"Omega waveplate ({wp_omega_key}) not calibrated.\n"
+                            f"Please calibrate in 'Waveplate Calibration' tab."
+                        )
+                    
+                    pm = REGISTRY.get(_reg_key_powermode(wp_omega_idx))
+                    if not isinstance(pm, bool) or not pm:
+                        raise ValueError(
+                            f"Omega waveplate ({wp_omega_key}) power mode OFF.\n"
+                            f"Enable 'Power Mode' in Stage Control window."
+                        )
+            else:  # SLM mode
+                slm_class_name = self.slm_class_le.text().strip()
+                slm_field_name = self.slm_field_le.text().strip()
+                background_w_ref = self.slm_background_ref_cb.isChecked()
+                try:
+                    slm_screen = int(self.slm_screen_le.text())
+                except ValueError:
+                    slm_screen = 3
+                
+                if validate:
+                    if not slm_class_name or not slm_field_name:
+                        raise ValueError("SLM class and field names required.")
+                    
+                    if self._slm_calib_arela is None or self._slm_calib_intensity is None:
+                        raise ValueError("Load SLM calibration file first.")
+            
+            # 2-omega waveplate (always needed)
+            wp_2omega_key = self.wp_2omega_picker.currentText().strip()
+            if validate and not wp_2omega_key:
+                raise ValueError("Select 2-omega waveplate.")
+            
+            # Validate 2-omega waveplate
+            if validate and wp_2omega_key:
+                wp_2omega_idx = _wp_index_from_stage_key(wp_2omega_key)
+                if wp_2omega_idx is None:
+                    raise ValueError("Invalid 2-omega waveplate.")
+                
+                calib = REGISTRY.get(_reg_key_calib(wp_2omega_idx))
+                if not calib or not isinstance(calib, (tuple, list)) or len(calib) < 2:
+                    raise ValueError(
+                        f"2-Omega waveplate ({wp_2omega_key}) not calibrated.\n"
+                        f"Please calibrate in 'Waveplate Calibration' tab."
+                    )
+                
+                pm = REGISTRY.get(_reg_key_powermode(wp_2omega_idx))
+                if not isinstance(pm, bool) or not pm:
+                    raise ValueError(
+                        f"2-Omega waveplate ({wp_2omega_key}) power mode OFF.\n"
+                        f"Enable 'Power Mode' in Stage Control window."
+                    )
+            
+            # Laser parameters
             try:
                 omega_max_power_W = float(self.omega_max_power_le.text())
-                if validate_waveplates and omega_max_power_W <= 0:
+                if validate and omega_max_power_W <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("Omega max power is required and must be positive.")
+                if validate:
+                    raise ValueError("Omega max power required and must be positive.")
                 omega_max_power_W = None
             
             try:
                 omega_waist_um = float(self.omega_waist_le.text())
-                if validate_waveplates and omega_waist_um <= 0:
+                if validate and omega_waist_um <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("Omega waist is required and must be positive.")
+                if validate:
+                    raise ValueError("Omega waist required and must be positive.")
                 omega_waist_um = None
             
             try:
                 omega_pulse_duration_fs = float(self.omega_pulse_duration_le.text())
-                if validate_waveplates and omega_pulse_duration_fs <= 0:
+                if validate and omega_pulse_duration_fs <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("Omega pulse duration is required and must be positive.")
+                if validate:
+                    raise ValueError("Omega pulse duration required and must be positive.")
                 omega_pulse_duration_fs = None
             
             try:
                 omega_rep_rate_kHz = float(self.omega_rep_rate_le.text())
-                if validate_waveplates and omega_rep_rate_kHz <= 0:
+                if validate and omega_rep_rate_kHz <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("Omega rep rate is required and must be positive.")
+                if validate:
+                    raise ValueError("Omega rep rate required and must be positive.")
                 omega_rep_rate_kHz = None
             
             try:
                 omega2_max_power_W = float(self.omega2_max_power_le.text())
-                if validate_waveplates and omega2_max_power_W <= 0:
+                if validate and omega2_max_power_W <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("2-Omega max power is required and must be positive.")
+                if validate:
+                    raise ValueError("2-Omega max power required and must be positive.")
                 omega2_max_power_W = None
             
             try:
                 omega2_waist_um = float(self.omega2_waist_le.text())
-                if validate_waveplates and omega2_waist_um <= 0:
+                if validate and omega2_waist_um <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("2-Omega waist is required and must be positive.")
+                if validate:
+                    raise ValueError("2-Omega waist required and must be positive.")
                 omega2_waist_um = None
             
             try:
                 omega2_pulse_duration_fs = float(self.omega2_pulse_duration_le.text())
-                if validate_waveplates and omega2_pulse_duration_fs <= 0:
+                if validate and omega2_pulse_duration_fs <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("2-Omega pulse duration is required and must be positive.")
+                if validate:
+                    raise ValueError("2-Omega pulse duration required and must be positive.")
                 omega2_pulse_duration_fs = None
             
             try:
                 omega2_rep_rate_kHz = float(self.omega2_rep_rate_le.text())
-                if validate_waveplates and omega2_rep_rate_kHz <= 0:
+                if validate and omega2_rep_rate_kHz <= 0:
                     raise ValueError()
             except (ValueError, AttributeError):
-                if validate_waveplates:
-                    raise ValueError("2-Omega rep rate is required and must be positive.")
+                if validate:
+                    raise ValueError("2-Omega rep rate required and must be positive.")
                 omega2_rep_rate_kHz = None
             
             try:
@@ -1524,18 +1885,24 @@ class TwoColorScanTab(QWidget):
                 r_step = float(self.ratio_step.text())
                 ratio_values = self._positions(r_start, r_end, r_step)
                 
-                if validate_waveplates and any(r < 0 or r > 1 for r in ratio_values):
+                if validate and any(r < 0 or r > 1 for r in ratio_values):
                     raise ValueError("Ratio values must be between 0 and 1.")
             except ValueError as e:
-                if validate_waveplates:
+                if validate:
                     raise ValueError(f"Invalid ratio parameters: {e}")
                 ratio_values = [0.5]
             
-            # Get beam split option
+            # Get beam split option and ratio
             omega_beam_split = self.omega_beam_split_cb.isChecked()
+            try:
+                # Ratio is fraction in B beam (A gets 1 - ratio)
+                omega_beam_split_ratio = float(self.omega_beam_split_ratio_le.text())
+                omega_beam_split_ratio = np.clip(omega_beam_split_ratio, 0.0, 1.0)
+            except (ValueError, AttributeError):
+                omega_beam_split_ratio = 0.5
 
             # Validate total intensity against max
-            if validate_waveplates and all([
+            if validate and all([
                 omega_max_power_W, omega_waist_um, omega_pulse_duration_fs, omega_rep_rate_kHz,
                 omega2_max_power_W, omega2_waist_um, omega2_pulse_duration_fs, omega2_rep_rate_kHz
             ]):
@@ -1545,15 +1912,19 @@ class TwoColorScanTab(QWidget):
                         omega_pulse_duration_fs, omega_rep_rate_kHz
                     )
                     
-                    # Apply beam split factor
+                    # Apply beam split (ratio is fraction in B, so A gets 1 - ratio)
                     if omega_beam_split:
-                        I_max_omega /= 2.0
+                        I_max_omega *= (1.0 - omega_beam_split_ratio)
+                    
+                    # Apply SLM calibration max intensity
+                    if omega_control_mode == "slm" and self._slm_calib_intensity is not None:
+                        I_max_omega *= float(self._slm_calib_intensity.max())
                     
                     I_max_2omega = calculate_max_intensity(
                         omega2_max_power_W, omega2_waist_um,
                         omega2_pulse_duration_fs, omega2_rep_rate_kHz
                     )
-                    I_tot_max = I_max_omega + I_max_2omega
+                    I_tot_max = min(I_max_omega, I_max_2omega)
                     
                     if total_intensity_W_cm2 > I_tot_max:
                         raise ValueError(
@@ -1576,8 +1947,12 @@ class TwoColorScanTab(QWidget):
             "scan_name": name,
             "comment": comment,
             "enable_ratio": enable_ratio,
+            "omega_control_mode": omega_control_mode,
             "wp_omega_key": wp_omega_key,
             "wp_2omega_key": wp_2omega_key,
+            "slm_class_name": slm_class_name,
+            "slm_field_name": slm_field_name,
+            "slm_screen": slm_screen,
             "total_intensity_W_cm2": total_intensity_W_cm2,
             "ratio_values": ratio_values,
             "omega_max_power_W": omega_max_power_W,
@@ -1585,15 +1960,17 @@ class TwoColorScanTab(QWidget):
             "omega_pulse_duration_fs": omega_pulse_duration_fs,
             "omega_rep_rate_kHz": omega_rep_rate_kHz,
             "omega_beam_split": omega_beam_split,
+            "omega_beam_split_ratio": omega_beam_split_ratio,
             "omega2_max_power_W": omega2_max_power_W,
             "omega2_waist_um": omega2_waist_um,
             "omega2_pulse_duration_fs": omega2_pulse_duration_fs,
             "omega2_rep_rate_kHz": omega2_rep_rate_kHz,
+            "background_w_ref": background_w_ref,
         }
 
     def _start(self):
         try:
-            p = self._collect_params(validate_waveplates=True)
+            p = self._collect_params(validate=True)
         except Exception as e:
             QMessageBox.critical(self, "Invalid parameters", str(e))
             return
@@ -1601,7 +1978,7 @@ class TwoColorScanTab(QWidget):
         self._cached_params = p
         self._doing_background = False
         self._last_scan_log_path = None
-        self._launch(False, None)
+        self._launch(False, None, False)
         self._log("Scan started...")
 
     def _open_monitor(self):
@@ -1611,14 +1988,14 @@ class TwoColorScanTab(QWidget):
             self._monitor_window.raise_()
             self._monitor_window.activateWindow()
 
-    def _launch(self, background, existing):
+    def _launch(self, background, existing, background_w_ref=False):
         p = self._cached_params
         if not p:
             return
 
-        # Create monitor window for ratio scans (not for background)
+        # Create monitor window for ratio scans
         if p["enable_ratio"] and not background:
-            self._monitor_window = MonitorWindow(p["ratio_values"], p["setpoints"], self)
+            self._monitor_window = MonitorWindow(p["ratio_values"], p["setpoints"], parent=None)
             self._monitor_window.show()
             self.monitor_btn.setEnabled(True)
 
@@ -1635,6 +2012,7 @@ class TwoColorScanTab(QWidget):
             scan_name=p["scan_name"],
             comment=p["comment"],
             enable_ratio_scan=p["enable_ratio"],
+            omega_control_mode=p["omega_control_mode"],
             wp_omega_key=p["wp_omega_key"],
             wp_2omega_key=p["wp_2omega_key"],
             total_intensity_W_cm2=p["total_intensity_W_cm2"],
@@ -1644,12 +2022,19 @@ class TwoColorScanTab(QWidget):
             omega_pulse_duration_fs=p["omega_pulse_duration_fs"],
             omega_rep_rate_kHz=p["omega_rep_rate_kHz"],
             omega_beam_split=p["omega_beam_split"],
+            omega_beam_split_ratio=p["omega_beam_split_ratio"],
+            slm_class_name=p["slm_class_name"],
+            slm_field_name=p["slm_field_name"],
+            slm_screen=p["slm_screen"],
+            slm_calib_arela=self._slm_calib_arela,
+            slm_calib_intensity=self._slm_calib_intensity,
             omega2_max_power_W=p["omega2_max_power_W"],
             omega2_waist_um=p["omega2_waist_um"],
             omega2_pulse_duration_fs=p["omega2_pulse_duration_fs"],
             omega2_rep_rate_kHz=p["omega2_rep_rate_kHz"],
             background=background,
             existing_scan_log=existing,
+            background_w_ref=background_w_ref,
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -1670,6 +2055,143 @@ class TwoColorScanTab(QWidget):
         n_ratios = len(p["ratio_values"]) if p["enable_ratio"] else 1
         n_phases = len(p["setpoints"]) if not background else 1
         total = n_ratios * n_phases * len(p["detector_params"])
+        self.prog.setMaximum(total)
+        self.prog.setValue(0)
+
+        self._thread.start()
+
+    def _launch_background_w_ref(self, existing):
+        """Launch background scan with ArelA=1 (beam dumped) - single acquisition, no ratios"""
+        p = self._cached_params
+        if not p:
+            return
+        
+        # Set ArelA to 1.0 (beam fully dumped)
+        try:
+            slm_class_name = p["slm_class_name"]
+            slm_field_name = p["slm_field_name"]
+            slm_screen = p["slm_screen"]
+            
+            # Set SLM ArelA = 1.0
+            active_classes = REGISTRY.get("slm:red:active_classes") or []
+            if slm_class_name not in active_classes:
+                self._log(f"ERROR: SLM class '{slm_class_name}' is not active.")
+                return
+            
+            widgets = REGISTRY.get("slm:red:widgets") or []
+            phase_widget = None
+            for w in widgets:
+                if getattr(w, "name_", lambda: "")() == slm_class_name:
+                    phase_widget = w
+                    break
+            
+            if phase_widget is None:
+                self._log(f"ERROR: SLM widget for '{slm_class_name}' not found")
+                return
+            
+            if not hasattr(phase_widget, slm_field_name):
+                self._log(f"ERROR: Field '{slm_field_name}' not found in '{slm_class_name}'")
+                return
+            
+            widget = getattr(phase_widget, slm_field_name)
+            widget.setText("1.0")
+            
+            # Compose and publish
+            slm_window = REGISTRY.get("slm:red:window")
+            if slm_window is None:
+                self._log("ERROR: SLM window not found")
+                return
+            
+            levels = slm_window.compose_levels()
+            
+            slm_red = REGISTRY.get("slm:red:controller")
+            if slm_red is None:
+                self._log("ERROR: Red SLM controller not found")
+                return
+            
+            slm_red.publish(levels, screen_num=slm_screen)
+            
+            self._log(f"Set SLM {slm_class_name}:{slm_field_name} = 1.0 (beam fully dumped)")
+            
+            # Wait a bit for SLM to settle
+            import time
+            time.sleep(0.5)
+            
+        except Exception as e:
+            self._log(f"ERROR setting SLM to ArelA=1: {e}")
+            return
+        
+        # Set 2omega waveplate to zero power
+        try:
+            if p["wp_2omega_key"]:
+                self._log("Setting 2omega waveplate to zero power...")
+                wp_2omega_idx = _wp_index_from_stage_key(p["wp_2omega_key"])
+                if wp_2omega_idx:
+                    amp_off = REGISTRY.get(_reg_key_calib(wp_2omega_idx)) or (None, None)
+                    if amp_off[1] is not None:
+                        phase_deg = float(amp_off[1])
+                        REGISTRY.register(_reg_key_maxvalue(wp_2omega_idx), float(p["omega2_max_power_W"]))
+                        angle = power_to_angle(0.0, 1.0, phase_deg)
+                        stage = REGISTRY.get(p["wp_2omega_key"])
+                        if stage:
+                            stage.move_to(float(angle), blocking=True)
+                            self._log(f"  {p['wp_2omega_key']} → 0 W (angle: {angle:.3f}°)")
+        except Exception as e:
+            self._log(f"Warning: Could not set 2omega to zero: {e}")
+        
+        # Launch a single acquisition (no ratio scan, no phase scan)
+        # Use ratio_values=[None] to indicate single point
+        self._thread = QThread(self)
+        self._worker = TwoColorScanWorker(
+            phase_ctrl_key=p["phase_ctrl_key"],
+            setpoints=p["setpoints"],
+            detector_params=p["detector_params"],
+            max_phase_error_rad=p["max_phase_error"],
+            max_phase_std_rad=p["max_phase_std"],
+            stability_check_window_s=p["stability_check_window"],
+            stability_timeout_s=p["stability_timeout"],
+            phase_avg_s=p["phase_avg"],
+            scan_name=p["scan_name"],
+            comment=p["comment"],
+            enable_ratio_scan=False,  # Disable ratio scan for this reference
+            omega_control_mode=p["omega_control_mode"],
+            wp_omega_key=p["wp_omega_key"],
+            wp_2omega_key=p["wp_2omega_key"],
+            total_intensity_W_cm2=p["total_intensity_W_cm2"],
+            ratio_values=[0.0],  # Dummy value
+            omega_max_power_W=p["omega_max_power_W"],
+            omega_waist_um=p["omega_waist_um"],
+            omega_pulse_duration_fs=p["omega_pulse_duration_fs"],
+            omega_rep_rate_kHz=p["omega_rep_rate_kHz"],
+            omega_beam_split=p["omega_beam_split"],
+            omega_beam_split_ratio=p["omega_beam_split_ratio"],
+            slm_class_name=p["slm_class_name"],
+            slm_field_name=p["slm_field_name"],
+            slm_screen=p["slm_screen"],
+            slm_calib_arela=self._slm_calib_arela,
+            slm_calib_intensity=self._slm_calib_intensity,
+            omega2_max_power_W=p["omega2_max_power_W"],
+            omega2_waist_um=p["omega2_waist_um"],
+            omega2_pulse_duration_fs=p["omega2_pulse_duration_fs"],
+            omega2_rep_rate_kHz=p["omega2_rep_rate_kHz"],
+            background=True,
+            existing_scan_log=existing,
+            background_w_ref=True,
+        )
+        self._worker.moveToThread(self._thread)
+        self._thread.started.connect(self._worker.run)
+
+        self._worker.log.connect(self._log)
+        self._worker.progress.connect(self._on_progress)
+        self._worker.finished.connect(self._finished_background_w_ref)  # Different handler!
+
+        self._thread.finished.connect(self._thread.deleteLater)
+
+        self.start_btn.setEnabled(False)
+        self.abort_btn.setEnabled(True)
+
+        # Single point acquisition
+        total = len(p["detector_params"])
         self.prog.setMaximum(total)
         self.prog.setValue(0)
 
@@ -1702,7 +2224,24 @@ class TwoColorScanTab(QWidget):
         self._thread = None
         self._worker = None
 
-        # Ask for background scan
+        # Ask for background_w_ref scan first (SLM mode only)
+        if not self._doing_background and self._last_scan_log_path is not None:
+            p = self._cached_params
+            if p and p["omega_control_mode"] == "slm" and p["background_w_ref"]:
+                reply = QMessageBox.question(
+                    self,
+                    "Run Reference Scan?",
+                    "The scan finished.\n\nDo you want to run the REFERENCE scan now (ArelA=1, on-axis beam dumped)?\n",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+
+                if reply == QMessageBox.Yes:
+                    self._log("Launching background with reference scan (ArelA=1)...")
+                    self._launch_background_w_ref(self._last_scan_log_path)
+                    return
+        
+        # Ask for normal background scan
         if not self._doing_background and self._last_scan_log_path is not None:
             reply = QMessageBox.question(
                 self,
@@ -1716,7 +2255,7 @@ class TwoColorScanTab(QWidget):
             if reply == QMessageBox.Yes:
                 self._doing_background = True
                 self._log("Launching background scan...")
-                self._launch(background=True, existing=self._last_scan_log_path)
+                self._launch(background=True, existing=self._last_scan_log_path, background_w_ref=False)
                 return
 
         self._doing_background = False
