@@ -1175,7 +1175,7 @@ class TwoColorScanTab(QWidget):
         omega_row1 = QHBoxLayout()
         self.omega_max_power_le = QLineEdit("")
         self.omega_max_power_le.textChanged.connect(self._update_max_intensity)
-        self.omega_waist_le = QLineEdit("16")
+        self.omega_waist_le = QLineEdit("22")
         self.omega_waist_le.textChanged.connect(self._update_max_intensity)
         omega_row1.addWidget(QLabel("Max power (W):"))
         omega_row1.addWidget(self.omega_max_power_le)
@@ -1926,12 +1926,6 @@ class TwoColorScanTab(QWidget):
                     )
                     I_tot_max = min(I_max_omega, I_max_2omega)
                     
-                    if total_intensity_W_cm2 > I_tot_max:
-                        raise ValueError(
-                            f"Total intensity ({total_intensity_W_cm2:.3e} W/cm²) exceeds "
-                            f"maximum achievable intensity ({I_tot_max:.3e} W/cm²).\n"
-                            f"Increase max powers or reduce I_tot."
-                        )
                 except ZeroDivisionError:
                     raise ValueError("Invalid beam parameters (check waist, pulse duration, rep rate).")
 
@@ -2224,6 +2218,7 @@ class TwoColorScanTab(QWidget):
         self._thread = None
         self._worker = None
 
+        """
         # Ask for background_w_ref scan first (SLM mode only)
         if not self._doing_background and self._last_scan_log_path is not None:
             p = self._cached_params
@@ -2240,7 +2235,7 @@ class TwoColorScanTab(QWidget):
                     self._log("Launching background with reference scan (ArelA=1)...")
                     self._launch_background_w_ref(self._last_scan_log_path)
                     return
-        
+        """
         # Ask for normal background scan
         if not self._doing_background and self._last_scan_log_path is not None:
             reply = QMessageBox.question(
