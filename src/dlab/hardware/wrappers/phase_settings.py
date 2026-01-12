@@ -662,21 +662,20 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
 
-        grid.addWidget(QLabel("A_rel (A vs B):"), row, 0)
-        self.le_Arel = QLineEdit("0.5"); grid.addWidget(self.le_Arel, row, 1); row += 1
+        grid.addWidget(QLabel("α (intensity fraction):"), row, 0)
+        self.le_alpha = QLineEdit("0.5"); grid.addWidget(self.le_alpha, row, 1); row += 1
 
-        grid.addWidget(QLabel("A_rel_A (A vs DumpA):"), row, 0)
-        self.le_ArelA = QLineEdit("0.0"); grid.addWidget(self.le_ArelA, row, 1); row += 1
+        grid.addWidget(QLabel("α_dump_A (dump A fraction):"), row, 0)
+        self.le_alpha_dump_A = QLineEdit("0.0"); grid.addWidget(self.le_alpha_dump_A, row, 1); row += 1
 
-        grid.addWidget(QLabel("A_rel_B (B vs DumpB):"), row, 0)
-        self.le_ArelB = QLineEdit("0.0"); grid.addWidget(self.le_ArelB, row, 1); row += 1
+        grid.addWidget(QLabel("α_dump_B (dump B fraction):"), row, 0)
+        self.le_alpha_dump_B = QLineEdit("0.0"); grid.addWidget(self.le_alpha_dump_B, row, 1); row += 1
         
         grid.addWidget(QLabel("Dump angle factor A:"), row, 0)
         self.le_dumpA = QLineEdit("10"); grid.addWidget(self.le_dumpA, row, 1); row += 1
 
         grid.addWidget(QLabel("Dump angle factor B:"), row, 0)
         self.le_dumpB = QLineEdit("10"); grid.addWidget(self.le_dumpB, row, 1); row += 1
-
 
         self.cb_noA = QCheckBox("No tilt A")
         self.cb_noB = QCheckBox("No tilt B")
@@ -691,18 +690,17 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             dphi = float(self.le_dphi_pi.text()) * np.pi
             pitch = float(self.le_pitch.text()) * 1e-6
             angle_deg = float(self.le_angle.text())
-            Arel = float(self.le_Arel.text())
-            ArelA = float(self.le_ArelA.text())
-            ArelB = float(self.le_ArelB.text())
+            alpha = float(self.le_alpha.text())
+            alpha_dump_A = float(self.le_alpha_dump_A.text())
+            alpha_dump_B = float(self.le_alpha_dump_B.text())
             dumpA = float(self.le_dumpA.text())
             dumpB = float(self.le_dumpB.text())
-
         except:
             return np.zeros(slm_size)
 
         if wl <= 0 or f_focus == 0 or pitch <= 0:
             return np.zeros(slm_size)
-        if not (0 <= Arel <= 1 and 0 <= ArelA <= 1 and 0 <= ArelB <= 1):
+        if not (0 <= alpha <= 1 and 0 <= alpha_dump_A <= 1 and 0 <= alpha_dump_B <= 1):
             return np.zeros(slm_size)
 
         x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
@@ -723,13 +721,29 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         phi_dumpA = +k_dumpA * U
         phi_dumpB = -k_dumpB * U
 
-        if self.cb_noA.isChecked(): phi_A = np.zeros_like(phi_A)
-        if self.cb_noB.isChecked(): phi_B = np.zeros_like(phi_B)
+        if self.cb_noA.isChecked(): 
+            phi_A = np.zeros_like(phi_A)
+        if self.cb_noB.isChecked(): 
+            phi_B = np.zeros_like(phi_B)
+
+        xi_A_unnorm = np.sqrt(1 - alpha)
+        xi_B_unnorm = np.sqrt(alpha)
+        xi_sum = xi_A_unnorm + xi_B_unnorm
+        
+        xi_A_side = xi_B_unnorm / xi_sum
+        xi_B_side = xi_A_unnorm / xi_sum
+        
+        xi_A = xi_A_side * np.sqrt(1 - alpha_dump_A)
+        xi_A_dump = xi_A_side * np.sqrt(alpha_dump_A)
+        xi_B = xi_B_side * np.sqrt(1 - alpha_dump_B)
+        xi_B_dump = xi_B_side * np.sqrt(alpha_dump_B)
 
         xmin = x[0]
+        ymin = y[0]
         iX = np.floor((X - xmin)/pitch).astype(int)
-        iY = np.floor((Y - y[0])/pitch).astype(int)
-        ix0 = iX.min(); iy0 = iY.min()
+        iY = np.floor((Y - ymin)/pitch).astype(int)
+        ix0 = iX.min()
+        iy0 = iY.min()
         nx = iX.max() - ix0 + 1
         ny = iY.max() - iy0 + 1
 
@@ -737,25 +751,16 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         rnd = rng.random((ny, nx))
         sel = rnd[iY - iy0, iX - ix0]
 
-        fA = 1 - Arel
-        fB = Arel
-
-        fA_main = fA * (1 - ArelA)
-        fA_dump = fA * ArelA
-        fB_main = fB * (1 - ArelB)
-        fB_dump = fB * ArelB
-
-        tA = fA_main
-        tA_dump = tA + fA_dump
-        tB = tA_dump + fB_main
-        tB_dump = tB + fB_dump
+        t_A = xi_A
+        t_A_dump = t_A + xi_A_dump
+        t_B = t_A_dump + xi_B
 
         phase = np.zeros_like(X)
 
-        mask_A = sel < tA
-        mask_A_dump = (sel >= tA) & (sel < tA_dump)
-        mask_B = (sel >= tA_dump) & (sel < tB)
-        mask_B_dump = sel >= tB
+        mask_A = sel < t_A
+        mask_A_dump = (sel >= t_A) & (sel < t_A_dump)
+        mask_B = (sel >= t_A_dump) & (sel < t_B)
+        mask_B_dump = sel >= t_B
 
         phase[mask_A] = phi_A[mask_A]
         phase[mask_A_dump] = phi_dumpA[mask_A_dump]
@@ -773,9 +778,9 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             'dphi_pi': self.le_dphi_pi.text(),
             'pitch_um': self.le_pitch.text(),
             'angle_deg': self.le_angle.text(),
-            'A_rel': self.le_Arel.text(),
-            'A_rel_A': self.le_ArelA.text(),
-            'A_rel_B': self.le_ArelB.text(),
+            'alpha': self.le_alpha.text(),
+            'alpha_dump_A': self.le_alpha_dump_A.text(),
+            'alpha_dump_B': self.le_alpha_dump_B.text(),
             'dumpA': self.le_dumpA.text(),
             'dumpB': self.le_dumpB.text(),
             'noA': self.cb_noA.isChecked(),
@@ -789,9 +794,9 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         self.le_dphi_pi.setText(s.get('dphi_pi','0.0'))
         self.le_pitch.setText(s.get('pitch_um','124'))
         self.le_angle.setText(s.get('angle_deg','0.0'))
-        self.le_Arel.setText(s.get('A_rel','0.55'))
-        self.le_ArelA.setText(s.get('A_rel_A','0.0'))
-        self.le_ArelB.setText(s.get('A_rel_B','0.0'))
+        self.le_alpha.setText(s.get('alpha','0.5'))
+        self.le_alpha_dump_A.setText(s.get('alpha_dump_A','0.0'))
+        self.le_alpha_dump_B.setText(s.get('alpha_dump_B','0.0'))
         self.le_dumpA.setText(s.get('dumpA','10'))
         self.le_dumpB.setText(s.get('dumpB','10'))
         self.cb_noA.setChecked(s.get('noA',False))
