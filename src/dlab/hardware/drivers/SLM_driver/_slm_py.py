@@ -387,7 +387,6 @@ def SLM_Ctrl_ReadVI(slm_number):   #3
 
 
 def SLM_Ctrl_WriteWL(slm_number, wavelength, phase):
-    # TODO!
     
     ret = dll.SLM_Ctrl_WriteWL(slm_number, wavelength, phase)
     SLM_STATUS(ret)
@@ -397,7 +396,6 @@ def SLM_Ctrl_WriteWL(slm_number, wavelength, phase):
 
 
 def SLM_Ctrl_ReadWL(slm_number):
-    # TODO!
     
     wavelength = ct.c_uint32(0)
     phase = ct.c_uint32(0)

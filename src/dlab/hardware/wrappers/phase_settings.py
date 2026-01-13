@@ -636,7 +636,7 @@ class TypePhaseJumps(BaseTypeWidget):
 class TypeTwoFociStochastic(BaseTypeWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.name = 'TwoFociStochastic'
+        self.name = "TwoFociStochastic"
 
         layout = QVBoxLayout(self)
         group = QGroupBox("Two Foci Stochastic Settings")
@@ -657,7 +657,7 @@ class TypeTwoFociStochastic(BaseTypeWidget):
         self.le_dphi_pi = QLineEdit("0.0"); grid.addWidget(self.le_dphi_pi, row, 1); row += 1
 
         grid.addWidget(QLabel("Checker pitch p [µm]:"), row, 0)
-        self.le_pitch = QLineEdit("124"); grid.addWidget(self.le_pitch, row, 1); row += 1
+        self.le_pitch = QLineEdit("128"); grid.addWidget(self.le_pitch, row, 1); row += 1
 
         grid.addWidget(QLabel("Angle (deg):"), row, 0)
         self.le_angle = QLineEdit("0.0"); grid.addWidget(self.le_angle, row, 1); row += 1
@@ -670,7 +670,7 @@ class TypeTwoFociStochastic(BaseTypeWidget):
 
         grid.addWidget(QLabel("α_dump_B (dump B fraction):"), row, 0)
         self.le_alpha_dump_B = QLineEdit("0.0"); grid.addWidget(self.le_alpha_dump_B, row, 1); row += 1
-        
+
         grid.addWidget(QLabel("Dump angle factor A:"), row, 0)
         self.le_dumpA = QLineEdit("10"); grid.addWidget(self.le_dumpA, row, 1); row += 1
 
@@ -691,8 +691,8 @@ class TypeTwoFociStochastic(BaseTypeWidget):
             pitch = float(self.le_pitch.text()) * 1e-6
             angle_deg = float(self.le_angle.text())
             alpha = float(self.le_alpha.text())
-            alpha_dump_A = float(self.le_alpha_dump_A.text())
-            alpha_dump_B = float(self.le_alpha_dump_B.text())
+            alpha_dump_a = float(self.le_alpha_dump_A.text())
+            alpha_dump_b = float(self.le_alpha_dump_B.text())
             dumpA = float(self.le_dumpA.text())
             dumpB = float(self.le_dumpB.text())
         except:
@@ -700,108 +700,84 @@ class TypeTwoFociStochastic(BaseTypeWidget):
 
         if wl <= 0 or f_focus == 0 or pitch <= 0:
             return np.zeros(slm_size)
-        if not (0 <= alpha <= 1 and 0 <= alpha_dump_A <= 1 and 0 <= alpha_dump_B <= 1):
+        if not (0 <= alpha <= 1 and 0 <= alpha_dump_a <= 1 and 0 <= alpha_dump_b <= 1):
             return np.zeros(slm_size)
 
         x = np.linspace(-chip_width/2, chip_width/2, slm_size[1])
         y = np.linspace(-chip_height/2, chip_height/2, slm_size[0])
-        X, Y = np.meshgrid(x, y, indexing='xy')
-
-        k0 = 2*np.pi/wl
-        theta = D / (2*f_focus)
-        k_t = k0 * theta
-        k_dumpA = dumpA * k_t
-        k_dumpB = dumpB * k_t
+        X, Y = np.meshgrid(x, y, indexing="xy")
 
         ang = np.deg2rad(angle_deg)
         U = X*np.cos(ang) + Y*np.sin(ang)
 
-        phi_A = +k_t * U
-        phi_B = -k_t * U + dphi
-        phi_dumpA = +k_dumpA * U
-        phi_dumpB = -k_dumpB * U
+        k0 = 2*np.pi / wl
+        kt = k0 * D / (2*f_focus)
 
-        if self.cb_noA.isChecked(): 
-            phi_A = np.zeros_like(phi_A)
-        if self.cb_noB.isChecked(): 
-            phi_B = np.zeros_like(phi_B)
+        tilt_a = not self.cb_noA.isChecked()
+        tilt_b = not self.cb_noB.isChecked()
 
-        xi_A_unnorm = np.sqrt(1 - alpha)
-        xi_B_unnorm = np.sqrt(alpha)
-        xi_sum = xi_A_unnorm + xi_B_unnorm
-        
-        xi_A_side = xi_B_unnorm / xi_sum
-        xi_B_side = xi_A_unnorm / xi_sum
-        
-        xi_A = xi_A_side * np.sqrt(1 - alpha_dump_A)
-        xi_A_dump = xi_A_side * np.sqrt(alpha_dump_A)
-        xi_B = xi_B_side * np.sqrt(1 - alpha_dump_B)
-        xi_B_dump = xi_B_side * np.sqrt(alpha_dump_B)
+        phiA  = ( kt*U if tilt_a else 0.0)
+        phiB  = (-kt*U if tilt_b else 0.0) + dphi
 
-        xmin = x[0]
-        ymin = y[0]
-        iX = np.floor((X - xmin)/pitch).astype(int)
-        iY = np.floor((Y - ymin)/pitch).astype(int)
-        ix0 = iX.min()
-        iy0 = iY.min()
-        nx = iX.max() - ix0 + 1
-        ny = iY.max() - iy0 + 1
+        kdumpA = dumpA * kt
+        kdumpB = dumpB * kt
+        phiAD  = (+kdumpA*U)
+        phiBD  = (-kdumpB*U)
+
+        sa, sb = np.sqrt(1-alpha), np.sqrt(alpha)
+        xiA = 0.0 if sa+sb == 0 else sa/(sa+sb)
+
+        ix = np.floor((X - X.min())/pitch).astype(np.int64)
+        iy = np.floor((Y - Y.min())/pitch).astype(np.int64)
+        pid = iy*(ix.max()+1) + ix
+        uniq, inv = np.unique(pid, return_inverse=True)
 
         rng = np.random.default_rng(12345)
-        rnd = rng.random((ny, nx))
-        sel = rnd[iY - iy0, iX - ix0]
+        sideA = rng.random(uniq.size)[inv] < xiA
+        u_int = rng.random(uniq.size)[inv]
 
-        t_A = xi_A
-        t_A_dump = t_A + xi_A_dump
-        t_B = t_A_dump + xi_B
+        mainA = sideA & (u_int < np.sqrt(1-alpha_dump_a))
+        mainB = (~sideA) & (u_int < np.sqrt(1-alpha_dump_b))
 
-        phase = np.zeros_like(X)
-
-        mask_A = sel < t_A
-        mask_A_dump = (sel >= t_A) & (sel < t_A_dump)
-        mask_B = (sel >= t_A_dump) & (sel < t_B)
-        mask_B_dump = sel >= t_B
-
-        phase[mask_A] = phi_A[mask_A]
-        phase[mask_A_dump] = phi_dumpA[mask_A_dump]
-        phase[mask_B] = phi_B[mask_B]
-        phase[mask_B_dump] = phi_dumpB[mask_B_dump]
+        phase = (
+            np.where(mainA, phiA, np.where(sideA,  phiAD, 0.0)) +
+            np.where(mainB, phiB, np.where(~sideA, phiBD, 0.0))
+        )
 
         wrapped = np.mod(phase, 2*np.pi)
         return wrapped * (bit_depth/(2*np.pi))
 
     def save_(self):
         return {
-            'wl_nm': self.le_wl.text(),
-            'f_focus_m': self.le_f.text(),
-            'sep_um': self.le_sep.text(),
-            'dphi_pi': self.le_dphi_pi.text(),
-            'pitch_um': self.le_pitch.text(),
-            'angle_deg': self.le_angle.text(),
-            'alpha': self.le_alpha.text(),
-            'alpha_dump_A': self.le_alpha_dump_A.text(),
-            'alpha_dump_B': self.le_alpha_dump_B.text(),
-            'dumpA': self.le_dumpA.text(),
-            'dumpB': self.le_dumpB.text(),
-            'noA': self.cb_noA.isChecked(),
-            'noB': self.cb_noB.isChecked(),
+            "wl_nm": self.le_wl.text(),
+            "f_focus_m": self.le_f.text(),
+            "sep_um": self.le_sep.text(),
+            "dphi_pi": self.le_dphi_pi.text(),
+            "pitch_um": self.le_pitch.text(),
+            "angle_deg": self.le_angle.text(),
+            "alpha": self.le_alpha.text(),
+            "alpha_dump_A": self.le_alpha_dump_A.text(),
+            "alpha_dump_B": self.le_alpha_dump_B.text(),
+            "dumpA": self.le_dumpA.text(),
+            "dumpB": self.le_dumpB.text(),
+            "noA": self.cb_noA.isChecked(),
+            "noB": self.cb_noB.isChecked(),
         }
 
     def load_(self, s):
-        self.le_wl.setText(s.get('wl_nm','1030'))
-        self.le_f.setText(s.get('f_focus_m','0.175'))
-        self.le_sep.setText(s.get('sep_um','100'))
-        self.le_dphi_pi.setText(s.get('dphi_pi','0.0'))
-        self.le_pitch.setText(s.get('pitch_um','124'))
-        self.le_angle.setText(s.get('angle_deg','0.0'))
-        self.le_alpha.setText(s.get('alpha','0.5'))
-        self.le_alpha_dump_A.setText(s.get('alpha_dump_A','0.0'))
-        self.le_alpha_dump_B.setText(s.get('alpha_dump_B','0.0'))
-        self.le_dumpA.setText(s.get('dumpA','10'))
-        self.le_dumpB.setText(s.get('dumpB','10'))
-        self.cb_noA.setChecked(s.get('noA',False))
-        self.cb_noB.setChecked(s.get('noB',False))
-
+        self.le_wl.setText(s.get("wl_nm", "1030"))
+        self.le_f.setText(s.get("f_focus_m", "0.175"))
+        self.le_sep.setText(s.get("sep_um", "100"))
+        self.le_dphi_pi.setText(s.get("dphi_pi", "0.0"))
+        self.le_pitch.setText(s.get("pitch_um", "128"))
+        self.le_angle.setText(s.get("angle_deg", "0.0"))
+        self.le_alpha.setText(s.get("alpha", "0.5"))
+        self.le_alpha_dump_A.setText(s.get("alpha_dump_A", "0.0"))
+        self.le_alpha_dump_B.setText(s.get("alpha_dump_B", "0.0"))
+        self.le_dumpA.setText(s.get("dumpA", "10"))
+        self.le_dumpB.setText(s.get("dumpB", "10"))
+        self.cb_noA.setChecked(s.get("noA", False))
+        self.cb_noB.setChecked(s.get("noB", False))
 
 def new_type(parent, typ):
     types_dict = {
