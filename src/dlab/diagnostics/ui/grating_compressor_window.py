@@ -1,261 +1,331 @@
-# src/dlab/diagnostics/ui/grating_compressor.py
 from __future__ import annotations
-import datetime
+
 from typing import Optional
 
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QGroupBox, QTextEdit, QMessageBox
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QGroupBox,
+    QMessageBox,
 )
 from PyQt5.QtGui import QDoubleValidator
 
 from dlab.boot import get_config
 from dlab.hardware.wrappers.zaber_controller import ZaberBinaryController
 from dlab.core.device_registry import REGISTRY
+from dlab.utils.log_panel import LogPanel
+
+REGISTRY_KEY = "stage:zaber:grating_compressor"
 
 
 class GratingCompressorWindow(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    """Control window for Zaber grating compressor stage."""
+
+    def __init__(
+        self, log_panel: LogPanel | None = None, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Grating Compressor")
-        self.stage: Optional[ZaberBinaryController] = None
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
-        # --- config ---
+        self._log = log_panel
+        self._stage: Optional[ZaberBinaryController] = None
+
+        # Load configuration
         cfg = get_config() or {}
-        zcfg = (cfg.get("zaber", {}) or {})
-        self.port = str(zcfg.get("port", "COM4"))
-        self.baud = int(zcfg.get("baud", 9600))
+        zcfg = cfg.get("zaber", {}) or {}
+        self._port = str(zcfg.get("port", "COM4"))
+        self._baud = int(zcfg.get("baud", 9600))
         rng = zcfg.get("range", {}) or {}
-        self.range_min = float(rng.get("min", 0.0))
-        self.range_max = float(rng.get("max", 50.0))
+        self._range_min = float(rng.get("min", 0.0))
+        self._range_max = float(rng.get("max", 50.0))
 
-        self._build_ui()
-        self._poll = QTimer(self)
-        self._poll.setInterval(200)  # ms
-        self._poll.timeout.connect(self._update_position)
+        self._init_ui()
 
-    def _build_ui(self) -> None:
+        # Position polling timer
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(200)  # ms
+        self._poll_timer.timeout.connect(self._update_position)
+
+    def _init_ui(self) -> None:
         main = QVBoxLayout(self)
 
+        # Connection group
         conn_box = QGroupBox("Connection")
         cl = QHBoxLayout(conn_box)
 
-        self.port_edit = QLineEdit(self.port); self.port_edit.setFixedWidth(120)
-        self.baud_edit = QLineEdit(str(self.baud)); self.baud_edit.setFixedWidth(80)
-        self.baud_edit.setValidator(QDoubleValidator(0, 1e9, 0, self))
+        self._port_edit = QLineEdit(self._port)
+        self._port_edit.setFixedWidth(120)
+        self._baud_edit = QLineEdit(str(self._baud))
+        self._baud_edit.setFixedWidth(80)
+        self._baud_edit.setValidator(QDoubleValidator(0, 1e9, 0, self))
 
-        self.btn_activate = QPushButton("Activate")
-        self.btn_deactivate = QPushButton("Deactivate"); self.btn_deactivate.setEnabled(False)
+        self._activate_btn = QPushButton("Activate")
+        self._deactivate_btn = QPushButton("Deactivate")
+        self._deactivate_btn.setEnabled(False)
 
-        self.btn_activate.clicked.connect(self._on_activate)
-        self.btn_deactivate.clicked.connect(self._on_deactivate)
+        self._activate_btn.clicked.connect(self._on_activate)
+        self._deactivate_btn.clicked.connect(self._on_deactivate)
 
-        cl.addWidget(QLabel("Port:")); cl.addWidget(self.port_edit)
-        cl.addWidget(QLabel("Baud:")); cl.addWidget(self.baud_edit)
+        cl.addWidget(QLabel("Port:"))
+        cl.addWidget(self._port_edit)
+        cl.addWidget(QLabel("Baud:"))
+        cl.addWidget(self._baud_edit)
         cl.addStretch(1)
-        cl.addWidget(self.btn_activate); cl.addWidget(self.btn_deactivate)
+        cl.addWidget(self._activate_btn)
+        cl.addWidget(self._deactivate_btn)
         main.addWidget(conn_box)
 
+        # Motion group
         mot_box = QGroupBox("Motion (mm)")
         ml = QVBoxLayout(mot_box)
 
+        # Absolute move row
         row1 = QHBoxLayout()
-        self.target_abs = QLineEdit(); self.target_abs.setPlaceholderText("Absolute position (mm)")
-        self.btn_move_abs = QPushButton("Move To")
-        self.btn_move_abs.setEnabled(False)
-        self.btn_move_abs.clicked.connect(self._on_move_abs)
-        row1.addWidget(self.target_abs, 1); row1.addWidget(self.btn_move_abs)
+        self._target_abs_edit = QLineEdit()
+        self._target_abs_edit.setPlaceholderText("Absolute position (mm)")
+        self._move_abs_btn = QPushButton("Move To")
+        self._move_abs_btn.setEnabled(False)
+        self._move_abs_btn.clicked.connect(self._on_move_abs)
+        row1.addWidget(self._target_abs_edit, 1)
+        row1.addWidget(self._move_abs_btn)
         ml.addLayout(row1)
 
+        # Relative move row
         row2 = QHBoxLayout()
-        self.step_rel = QLineEdit("0.001"); self.step_rel.setFixedWidth(100)
-        self.btn_rel_minus = QPushButton("− Step")
-        self.btn_rel_plus  = QPushButton("+ Step")
-        for b in (self.btn_rel_minus, self.btn_rel_plus):
-            b.setEnabled(False)
-        self.btn_rel_minus.clicked.connect(lambda: self._on_move_rel(sign=-1))
-        self.btn_rel_plus.clicked.connect(lambda: self._on_move_rel(sign=+1))
-        row2.addWidget(QLabel("Step (mm):")); row2.addWidget(self.step_rel)
+        self._step_rel_edit = QLineEdit("0.001")
+        self._step_rel_edit.setFixedWidth(100)
+        self._rel_minus_btn = QPushButton("− Step")
+        self._rel_plus_btn = QPushButton("+ Step")
+        self._rel_minus_btn.setEnabled(False)
+        self._rel_plus_btn.setEnabled(False)
+        self._rel_minus_btn.clicked.connect(lambda: self._on_move_rel(sign=-1))
+        self._rel_plus_btn.clicked.connect(lambda: self._on_move_rel(sign=+1))
+        row2.addWidget(QLabel("Step (mm):"))
+        row2.addWidget(self._step_rel_edit)
         row2.addStretch(1)
-        row2.addWidget(self.btn_rel_minus); row2.addWidget(self.btn_rel_plus)
+        row2.addWidget(self._rel_minus_btn)
+        row2.addWidget(self._rel_plus_btn)
         ml.addLayout(row2)
 
+        # Control buttons row
         row3 = QHBoxLayout()
-        self.btn_home = QPushButton("Home"); self.btn_home.setEnabled(False)
-        self.btn_ident = QPushButton("Identify"); self.btn_ident.setEnabled(False)
-        self.btn_stop = QPushButton("Stop"); self.btn_stop.setEnabled(False)
-        self.btn_home.clicked.connect(self._on_home)
-        self.btn_ident.clicked.connect(self._on_ident)
-        self.btn_stop.clicked.connect(self._on_stop)
-        row3.addWidget(self.btn_home); row3.addWidget(self.btn_ident); row3.addWidget(self.btn_stop)
+        self._home_btn = QPushButton("Home")
+        self._home_btn.setEnabled(False)
+        self._ident_btn = QPushButton("Identify")
+        self._ident_btn.setEnabled(False)
+        self._stop_btn = QPushButton("Stop")
+        self._stop_btn.setEnabled(False)
+        self._home_btn.clicked.connect(self._on_home)
+        self._ident_btn.clicked.connect(self._on_ident)
+        self._stop_btn.clicked.connect(self._on_stop)
+        row3.addWidget(self._home_btn)
+        row3.addWidget(self._ident_btn)
+        row3.addWidget(self._stop_btn)
         ml.addLayout(row3)
 
+        # Position display row
         row4 = QHBoxLayout()
-        self.cur_pos = QLineEdit(); self.cur_pos.setReadOnly(True); self.cur_pos.setPlaceholderText("—")
-        self.cur_pos.setFixedWidth(140)
-        row4.addWidget(QLabel("Current:")); row4.addWidget(self.cur_pos)
+        self._cur_pos_edit = QLineEdit()
+        self._cur_pos_edit.setReadOnly(True)
+        self._cur_pos_edit.setPlaceholderText("—")
+        self._cur_pos_edit.setFixedWidth(140)
+        row4.addWidget(QLabel("Current:"))
+        row4.addWidget(self._cur_pos_edit)
         row4.addStretch(1)
-        row4.addWidget(QLabel(f"Limits: {self.range_min:g} … {self.range_max:g} mm"))
+        row4.addWidget(QLabel(f"Limits: {self._range_min:g} … {self._range_max:g} mm"))
         ml.addLayout(row4)
 
         main.addWidget(mot_box)
-
-        # Log panel
-        log_box = QGroupBox("Log")
-        ll = QVBoxLayout(log_box)
-        self.log = QTextEdit(); self.log.setReadOnly(True)
-        ll.addWidget(self.log)
-        main.addWidget(log_box)
-
         main.addStretch(1)
 
-    def _log(self, msg: str) -> None:
-        t = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log.append(f"[{t}] {msg}")
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+    # -------------------------------------------------------------------------
+    # Logging
+    # -------------------------------------------------------------------------
+
+    def _log_message(self, msg: str) -> None:
+        if self._log:
+            self._log.log(msg, source="Compressor")
+
+    # -------------------------------------------------------------------------
+    # Position polling
+    # -------------------------------------------------------------------------
 
     def _update_position(self) -> None:
-        if not self.stage:
-            self._poll.stop(); return
+        if not self._stage:
+            self._poll_timer.stop()
+            return
         try:
-            p = self.stage.get_position()
+            p = self._stage.get_position()
             if p is not None:
-                self.cur_pos.setText(f"{p:.3f}")
+                self._cur_pos_edit.setText(f"{p:.3f}")
         except Exception as e:
-            self._log(f"Position read failed: {e}")
-            self._poll.stop()
+            self._log_message(f"Position read failed: {e}")
+            self._poll_timer.stop()
 
-    def _ui_enable(self, on: bool) -> None:
-        self.btn_deactivate.setEnabled(on)
-        self.btn_move_abs.setEnabled(on)
-        self.btn_rel_minus.setEnabled(on)
-        self.btn_rel_plus.setEnabled(on)
-        self.btn_home.setEnabled(on)
-        self.btn_ident.setEnabled(on)
-        self.btn_stop.setEnabled(on)
+    # -------------------------------------------------------------------------
+    # UI state management
+    # -------------------------------------------------------------------------
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        self._deactivate_btn.setEnabled(enabled)
+        self._move_abs_btn.setEnabled(enabled)
+        self._rel_minus_btn.setEnabled(enabled)
+        self._rel_plus_btn.setEnabled(enabled)
+        self._home_btn.setEnabled(enabled)
+        self._ident_btn.setEnabled(enabled)
+        self._stop_btn.setEnabled(enabled)
+
+    # -------------------------------------------------------------------------
+    # Stage control
+    # -------------------------------------------------------------------------
 
     def _on_activate(self) -> None:
-        if self.stage:
+        if self._stage:
             return
-        port = self.port_edit.text().strip() or self.port
+
+        port = self._port_edit.text().strip() or self._port
         try:
-            baud = int(float(self.baud_edit.text().strip()))
+            baud = int(float(self._baud_edit.text().strip()))
         except Exception:
-            baud = self.baud
+            baud = self._baud
 
         try:
             stg = ZaberBinaryController(
                 port=port,
                 baud_rate=baud,
-                range_min=self.range_min,
-                range_max=self.range_max,
+                range_min=self._range_min,
+                range_max=self._range_max,
             )
             stg.activate(homing=False)
-            self.stage = stg
-            self._log(f"Activated on {port} @ {baud}.")
-            # registry
-            key = "stage:zaber:grating_compressor"
+            self._stage = stg
+            self._log_message(f"Activated on {port} @ {baud}.")
+
+            # Register in device registry
             try:
-                prev = REGISTRY.get(key)
-                if prev is not None and prev is not self.stage:
-                    REGISTRY.unregister(key)
+                prev = REGISTRY.get(REGISTRY_KEY)
+                if prev is not None and prev is not self._stage:
+                    REGISTRY.unregister(REGISTRY_KEY)
             except Exception:
                 pass
-            REGISTRY.register(key, self.stage)
+            REGISTRY.register(REGISTRY_KEY, self._stage)
 
-            self._ui_enable(True)
-            self.btn_activate.setEnabled(False)
-            self.port_edit.setEnabled(False)
-            self.baud_edit.setEnabled(False)
-            self._poll.start()
+            self._set_controls_enabled(True)
+            self._activate_btn.setEnabled(False)
+            self._port_edit.setEnabled(False)
+            self._baud_edit.setEnabled(False)
+            self._poll_timer.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Activation failed: {e}")
-            self._log(f"Activation failed: {e}")
-            self.stage = None
+            self._log_message(f"Activation failed: {e}")
+            self._stage = None
 
     def _on_deactivate(self) -> None:
         try:
-            if self.stage:
+            if self._stage:
                 try:
-                    self.stage.disable()
+                    self._stage.disable()
                 finally:
                     try:
-                        REGISTRY.unregister("stage:zaber:grating_compressor")
+                        REGISTRY.unregister(REGISTRY_KEY)
                     except Exception:
                         pass
-            self._log("Deactivated.")
+            self._log_message("Deactivated.")
         finally:
-            self.stage = None
-            self._ui_enable(False)
-            self.btn_activate.setEnabled(True)
-            self.port_edit.setEnabled(True)
-            self.baud_edit.setEnabled(True)
-            self._poll.stop()
+            self._stage = None
+            self._set_controls_enabled(False)
+            self._activate_btn.setEnabled(True)
+            self._port_edit.setEnabled(True)
+            self._baud_edit.setEnabled(True)
+            self._poll_timer.stop()
 
     def _on_home(self) -> None:
-        if not self.stage:
-            QMessageBox.warning(self, "Error", "Stage not activated."); return
-        try:
-            self.stage.home(blocking=False)
-            self._log("Homing…")
-            self._poll.start()
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Home failed: {e}")
-            self._log(f"Home failed: {e}")
-
-    def _on_ident(self) -> None:
-        if not self.stage:
-            QMessageBox.warning(self, "Error", "Stage not activated."); return
-        try:
-            self.stage.identify()
-            self._log("Identify.")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Identify failed: {e}")
-            self._log(f"Identify failed: {e}")
-
-    def _on_stop(self) -> None:
-        if not self.stage:
+        if not self._stage:
+            QMessageBox.warning(self, "Error", "Stage not activated.")
             return
         try:
-            self.stage._ensure().stop()
-            self._log("Stop requested.")
+            self._stage.home(blocking=False)
+            self._log_message("Homing…")
+            self._poll_timer.start()
         except Exception as e:
-            self._log(f"Stop failed: {e}")
+            QMessageBox.critical(self, "Error", f"Home failed: {e}")
+            self._log_message(f"Home failed: {e}")
+
+    def _on_ident(self) -> None:
+        if not self._stage:
+            QMessageBox.warning(self, "Error", "Stage not activated.")
+            return
+        try:
+            self._stage.identify()
+            self._log_message("Identify.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Identify failed: {e}")
+            self._log_message(f"Identify failed: {e}")
+
+    def _on_stop(self) -> None:
+        if not self._stage:
+            return
+        try:
+            self._stage._ensure().stop()
+            self._log_message("Stop requested.")
+        except Exception as e:
+            self._log_message(f"Stop failed: {e}")
 
     def _on_move_abs(self) -> None:
-        if not self.stage:
-            QMessageBox.warning(self, "Error", "Stage not activated."); return
-        t = self.target_abs.text().strip()
+        if not self._stage:
+            QMessageBox.warning(self, "Error", "Stage not activated.")
+            return
+
+        t = self._target_abs_edit.text().strip()
         if not t:
-            QMessageBox.warning(self, "Error", "Enter a target position (mm)."); return
+            QMessageBox.warning(self, "Error", "Enter a target position (mm).")
+            return
+
         try:
             val = float(t)
-            self.stage.move_to(val, blocking=False)
-            self._log(f"Move to {val:.3f} mm …")
-            self._poll.start()
+            self._stage.move_to(val, blocking=False)
+            self._log_message(f"Move to {val:.3f} mm …")
+            self._poll_timer.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Move failed: {e}")
-            self._log(f"Move failed: {e}")
+            self._log_message(f"Move failed: {e}")
 
     def _on_move_rel(self, sign: int) -> None:
-        if not self.stage:
-            QMessageBox.warning(self, "Error", "Stage not activated."); return
+        if not self._stage:
+            QMessageBox.warning(self, "Error", "Stage not activated.")
+            return
+
         try:
-            step = float(self.step_rel.text().strip())
+            step = float(self._step_rel_edit.text().strip())
         except Exception:
-            QMessageBox.warning(self, "Error", "Invalid step."); return
+            QMessageBox.warning(self, "Error", "Invalid step.")
+            return
+
         try:
-            cur = self.stage.get_position() or 0.0
+            cur = self._stage.get_position() or 0.0
             tgt = cur + sign * step
-            if tgt < self.range_min: tgt = self.range_min
-            if tgt > self.range_max: tgt = self.range_max
-            self.stage.move_to(tgt, blocking=False)
-            self._log(f"Move to {tgt:.3f} mm …")
-            self._poll.start()
+            tgt = max(self._range_min, min(self._range_max, tgt))
+            self._stage.move_to(tgt, blocking=False)
+            self._log_message(f"Move to {tgt:.3f} mm …")
+            self._poll_timer.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Relative move failed: {e}")
-            self._log(f"Relative move failed: {e}")
+            self._log_message(f"Relative move failed: {e}")
+
+    # -------------------------------------------------------------------------
+    # Cleanup
+    # -------------------------------------------------------------------------
+
+    def closeEvent(self, event):
+        if self._stage:
+            self._on_deactivate()
+        super().closeEvent(event)
+
 
 if __name__ == "__main__":
     import sys

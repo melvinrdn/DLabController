@@ -182,12 +182,12 @@ class DlabControllerWindow(QMainWindow):
     def _open_andor_window(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
 
-        self._open_window("slm", AndorLiveWindow, "Andor", self._log)
+        self._open_window("andor", AndorLiveWindow, "Andor", self._log)
 
     def _open_avaspec_window(self):
-        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
+        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
 
-        self._open_window("avaspec", AvaspecLive, "Avaspec")
+        self._open_window("avaspec", AvaspecLiveWindow, "Avaspec", self._log)
 
     def _open_slm_window(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
@@ -231,7 +231,7 @@ class DlabControllerWindow(QMainWindow):
             win.activateWindow()
             return
 
-        win = DahengLiveWindow(camera_name=camera_name, fixed_index=index)
+        win = DahengLiveWindow(camera_name=camera_name, fixed_index=index, log_panel=self._log)
         win.closed.connect(lambda name=camera_name: self._on_daheng_window_closed(name))
         self._daheng_windows[camera_name] = win
         win.show()
