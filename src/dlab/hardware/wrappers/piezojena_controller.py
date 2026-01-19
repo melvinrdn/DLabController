@@ -1,7 +1,10 @@
 import serial
 import time
 
-
+V_MIN = 0.0
+V_MAX = 140.0
+RANGE_UM = 100.0
+    
 class NV40:
     ERRORS = {
         'err,1': 'Unknown command',
@@ -12,11 +15,6 @@ class NV40:
         'err,6': 'Wrong separator',
         'err,7': 'Position out of range',
     }
-
-    V_MIN = 0.0
-    V_MAX = 140.0
-    RANGE_UM = 100.0
-
     def __init__(self, port, timeout=0.05, closed_loop=False):
         self.ser = serial.Serial(
             port=port,
@@ -68,7 +66,7 @@ class NV40:
         self._send("ol")
 
     def set_position(self, value: float):
-        value = max(self.V_MIN, min(self.V_MAX, value))
+        value = max(V_MIN, min(V_MAX, value))
         self._send(f"wr,{value:.3f}")
 
     def get_position(self) -> float:
@@ -80,7 +78,7 @@ class NV40:
 
     @classmethod
     def get_voltage_limits(cls):
-        return cls.V_MIN, cls.V_MAX
+        return V_MIN, V_MAX
 
 
 if __name__ == "__main__":

@@ -30,9 +30,22 @@ pressure_sensor:
   prometheus_port: 8000
   grafana_url: http://localhost:3000
 
+# ------------------
+# Thorlabs wavelplates config
+#-------------------
+waveplates:
+  num_waveplates: 7
+  calibration_files:
+    '1': calibration/wp1/default_wp1.txt
+    '2': calibration/wp2/default_wp2.txt
+    '3': calibration/wp3/default_wp3.txt
+    '4': calibration/wp4/default_wp4.txt
+    '5': calibration/wp5/default_wp5.txt
+    '6': calibration/wp6/default_wp6.txt
 
-
-
+# ------------------
+# Thorlabs stages config
+#-------------------
 stages:
   default_ids:
     0: '00000000'
@@ -50,19 +63,13 @@ zaber:
   range:
     min: 24.0
     max: 25.3
-waveplates:
-  calibration_files:
-    '1': calibration/wp1/default_wp1.txt
-    '2': calibration/wp2/default_wp2.txt
-    '3': calibration/wp3/default_wp3.txt
-    '4': calibration/wp4/default_wp4.txt
-    '5': calibration/wp5/default_wp5.txt
-    '6': calibration/wp6/default_wp6.txt
 
 
-
+# ------------------
+# Avaspec spectrometer config
+#-------------------
 avaspec:
-  calibration_file: ressources/calibration/avaspec/avaspec_calibration_1030nm.dat
+  calibration_file_1030nm: ressources/calibration/avaspec/avaspec_calibration_1030nm.dat
 
 crosshair:
   daheng_1:

@@ -1,44 +1,53 @@
 from __future__ import annotations
-import time, threading
+
+import time
+import threading
+
 import numpy as np
-from pathlib import Path
+
 import dlab.hardware.drivers.avaspec_driver._avs_py as avs
 import dlab.hardware.drivers.avaspec_driver._avs_win as avs_win
-from dlab.boot import ROOT, get_config
+from dlab.utils.config_utils import cfg_get
+from dlab.utils.paths_utils import ressources_dir
+
 
 class AvaspecError(Exception):
-    pass
+    """Raised for Avaspec spectrometer operation errors."""
 
-def _cal_path_from_config():
-    cfg = get_config() or {}
-    rel = (cfg.get("avaspec", {}) or {}).get("calibration_file")
+
+def _avaspec_calibration_path():
+    """Get calibration file path from config."""
+    rel = cfg_get("avaspec.calibration_file_1030nm")
     if not rel:
         return None
-    p = Path(rel)
-    if not p.is_absolute():
-        p = (ROOT / p).resolve()
+    p = (ressources_dir() / str(rel)).resolve()
     return p if p.exists() else None
 
-def _is_pending(exc):
+
+def _is_pending(exc: Exception) -> bool:
     s = str(exc)
     return "ERR_OPERATION_PENDING" in s or "-5" in s
 
+
 class AvaspecController:
+    """Controller for Avantes spectrometer via AVS driver."""
+
     def __init__(self, spec_handle):
         self._orig_handle = spec_handle
         self._h = None
-        self._wl = None
-        self._npx = None
-        self._bg_wl = None
-        self._bg_counts = None
-        self._cal_wl = None
-        self._cal_vals = None
+        self._wl: np.ndarray | None = None
+        self._npx: int | None = None
+        self._bg_wl: np.ndarray | None = None
+        self._bg_counts: np.ndarray | None = None
+        self._cal_wl: np.ndarray | None = None
+        self._cal_vals: np.ndarray | None = None
         self._cal_enabled = False
         self._int_ms = 100.0
         self._avg = 1
         self._io_lock = threading.Lock()
 
-    def activate(self):
+    def activate(self) -> None:
+        """Initialize and activate the spectrometer."""
         try:
             avs.AVS_Init()
             self._h = avs.AVS_Activate(self._orig_handle)
@@ -57,7 +66,8 @@ class AvaspecController:
             self._h = None
             raise AvaspecError(f"Activate failed: {e}") from e
 
-    def deactivate(self):
+    def deactivate(self) -> None:
+        """Deactivate and close the spectrometer."""
         with self._io_lock:
             try:
                 if self._h is not None:
@@ -70,14 +80,16 @@ class AvaspecController:
                 self._h = None
 
     @classmethod
-    def list_spectrometers(cls):
+    def list_spectrometers(cls) -> list:
+        """Return list of available spectrometers."""
         try:
             avs.AVS_Init()
             return avs.AVS_GetList() or []
         except Exception:
             return []
 
-    def set_params(self, int_time_ms, averages):
+    def set_params(self, int_time_ms: float, averages: int) -> None:
+        """Set integration time and number of averages."""
         if self._h is None:
             raise AvaspecError("Not activated")
         int_time_ms = float(max(1.0, float(int_time_ms)))
@@ -101,27 +113,30 @@ class AvaspecController:
                         continue
                     raise
 
-    def set_background(self, wl_nm, counts):
+    def set_background(self, wl_nm: np.ndarray, counts: np.ndarray) -> None:
+        """Set background spectrum for subtraction."""
         self._bg_wl = np.asarray(wl_nm, float).ravel()
         self._bg_counts = np.asarray(counts, float).ravel()
 
-    def clear_background(self):
+    def clear_background(self) -> None:
+        """Clear background spectrum."""
         self._bg_wl = None
         self._bg_counts = None
 
-    def enable_calibration(self, enabled):
+    def enable_calibration(self, enabled: bool) -> None:
+        """Enable or disable calibration correction."""
         self._cal_enabled = bool(enabled)
         if enabled and (self._cal_wl is None or self._cal_vals is None):
-            p = _cal_path_from_config()
+            p = _avaspec_calibration_path()
             if p:
                 self._load_calibration_file(p)
 
-    def _load_calibration_file(self, path):
+    def _load_calibration_file(self, path) -> None:
         arr = np.loadtxt(str(path), dtype=float, delimiter=",")
         if arr.ndim == 1 and arr.size >= 2:
             arr = arr.reshape(-1, 2)
         if arr.ndim != 2 or arr.shape[1] < 2:
-            raise AvaspecError("Calibration .dat must have 2 columns: wavelength,value")
+            raise AvaspecError("Calibration file must have 2 columns: wavelength,value")
         wl = np.asarray(arr[:, 0], float)
         vals = np.asarray(arr[:, 1], float)
         eps = np.finfo(float).tiny
@@ -129,37 +144,36 @@ class AvaspecController:
         self._cal_wl = wl
         self._cal_vals = vals
 
-    def _apply_background(self, wl_nm, counts):
+    def _apply_background(self, wl_nm: np.ndarray, counts: np.ndarray) -> np.ndarray:
         if self._bg_wl is None or self._bg_counts is None:
             return counts
         bg = np.interp(wl_nm, self._bg_wl, self._bg_counts, left=np.nan, right=np.nan)
-        if np.isnan(bg[0]):
-            j = np.flatnonzero(~np.isnan(bg))
-            if j.size:
-                bg[:j[0]] = bg[j[0]]
-        if np.isnan(bg[-1]):
-            j = np.flatnonzero(~np.isnan(bg))
-            if j.size:
-                bg[j[-1]:] = bg[j[-1]]
+        self._fill_nan_edges(bg)
         return counts - bg
 
-    def _apply_calibration(self, wl_nm, counts):
+    def _apply_calibration(self, wl_nm: np.ndarray, counts: np.ndarray) -> np.ndarray:
         if not self._cal_enabled or self._cal_wl is None or self._cal_vals is None:
             return counts
         cal = np.interp(wl_nm, self._cal_wl, self._cal_vals, left=np.nan, right=np.nan)
-        if np.isnan(cal[0]):
-            j = np.flatnonzero(~np.isnan(cal))
-            if j.size:
-                cal[:j[0]] = cal[j[0]]
-        if np.isnan(cal[-1]):
-            j = np.flatnonzero(~np.isnan(cal))
-            if j.size:
-                cal[j[-1]:] = cal[j[-1]]
+        self._fill_nan_edges(cal)
         eps = np.finfo(float).tiny
         cal = np.where(np.isfinite(cal) & (np.abs(cal) > 0), cal, eps)
         return counts / cal
 
-    def measure_once(self):
+    @staticmethod
+    def _fill_nan_edges(arr: np.ndarray) -> None:
+        """Fill NaN values at edges with nearest valid value."""
+        if np.isnan(arr[0]):
+            j = np.flatnonzero(~np.isnan(arr))
+            if j.size:
+                arr[:j[0]] = arr[j[0]]
+        if np.isnan(arr[-1]):
+            j = np.flatnonzero(~np.isnan(arr))
+            if j.size:
+                arr[j[-1]:] = arr[j[-1]]
+
+    def measure_once(self) -> tuple[float, np.ndarray, np.ndarray]:
+        """Perform a single measurement and return (timestamp, wavelengths, counts)."""
         if self._h is None:
             raise AvaspecError("Not activated")
         with self._io_lock:
@@ -190,7 +204,8 @@ class AvaspecController:
                         continue
                     raise
 
-    def process_counts(self, wl_nm, counts):
+    def process_counts(self, wl_nm: np.ndarray, counts: np.ndarray) -> np.ndarray:
+        """Apply background subtraction and calibration to counts."""
         y = self._apply_background(wl_nm, counts)
         y = self._apply_calibration(wl_nm, y)
         return y

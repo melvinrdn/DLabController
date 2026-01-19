@@ -1,4 +1,3 @@
-import logging
 from typing import Optional, Any, Dict
 
 import pyvisa
@@ -22,7 +21,6 @@ class PowermeterController:
         self._rm: Optional[pyvisa.ResourceManager] = None
         self.instrument: Optional[pyvisa.resources.MessageBasedResource] = None
         self.power_meter: Optional[ThorlabsPM100] = None
-        self._log = logging.getLogger("dlab.hardware.wrappers.PowermeterController")
 
     def activate(self) -> None:
         """Open VISA resource and initialize ThorlabsPM100."""
@@ -31,7 +29,6 @@ class PowermeterController:
             self.instrument = self._rm.open_resource(self.powermeter_id)
             self.power_meter = ThorlabsPM100(inst=self.instrument)
             self.set_auto_range(1)  # default ON
-            self._log.info("Powermeter connected on %s", self.powermeter_id)
         except Exception as e:
             self.power_meter = None
             self.instrument = None
