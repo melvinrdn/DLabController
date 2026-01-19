@@ -29,8 +29,9 @@ class DlabControllerWindow(QMainWindow):
     Grafana credentials: user: admin, password: admin
     """
 
-    def __init__(self):
+    def __init__(self, log_panel: LogPanel):
         super().__init__()
+        self._log = log_panel
         self._windows: dict[str, QWidget | None] = {
             "andor": None,
             "avaspec": None,
@@ -46,13 +47,11 @@ class DlabControllerWindow(QMainWindow):
 
     def _setup_ui(self):
         self.setWindowTitle("DlabControllerWindow")
-        self.resize(300, 300)
+        self.resize(300, 400)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QHBoxLayout(central_widget)
-
-        left_panel = QVBoxLayout()
+        main_layout = QVBoxLayout(central_widget)
 
         # Windows group
         windows_group = QGroupBox("Windows")
@@ -78,7 +77,7 @@ class DlabControllerWindow(QMainWindow):
             self._add_daheng_control(view_layout, name, default_index=i)
 
         windows_group.setLayout(view_layout)
-        left_panel.addWidget(windows_group)
+        main_layout.addWidget(windows_group)
 
         # Grafana dashboard link
         dashboard_url = (
@@ -87,14 +86,14 @@ class DlabControllerWindow(QMainWindow):
         )
         path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
         path_label.setOpenExternalLinks(True)
-        left_panel.addWidget(path_label)
+        main_layout.addWidget(path_label)
 
-        # Log panel
-        self._log = LogPanel()
-        left_panel.addWidget(self._log)
-
-        left_panel.addStretch(1)
-        main_layout.addLayout(left_panel)
+        main_layout.addStretch(1)
+        
+        # Log toggle button
+        self._log_button = QPushButton("Hide Log")
+        self._log_button.clicked.connect(self._toggle_log)
+        main_layout.addWidget(self._log_button)
 
         self._setup_pressure_log()
 
@@ -120,7 +119,15 @@ class DlabControllerWindow(QMainWindow):
 
     def _setup_pressure_log(self):
         self._pressure_monitor = PressureMonitorWidget(self)
-        self._pressure_monitor.log_signal.connect(self._log.log)
+        self._pressure_monitor.log_signal.connect(self._log.logger("Pressure"))
+        
+    def _toggle_log(self):
+        if self._log.isVisible():
+            self._log.hide()
+            self._log_button.setText("Show Log")
+        else:
+            self._log.show()
+            self._log_button.setText("Hide Log")
 
     # -------------------------------------------------------------------------
     # Generic window management
@@ -145,24 +152,23 @@ class DlabControllerWindow(QMainWindow):
             use_destroyed_signal: Use 'destroyed' signal instead of 'closed'
             *args, **kwargs: Passed to window_class constructor
         """
-        
-        if self._windows[key] is None:
+        win = self._windows[key]
+
+        if win is None:
             win = window_class(*args, **kwargs)
             signal = win.destroyed if use_destroyed_signal else win.closed
             signal.connect(lambda *a, k=key, name=display_name: self._on_window_closed(k, name))
             self._windows[key] = win
-            self._log.log(f"{display_name} window opened.")
-        
-        win = self._windows[key]
-        if win is not None:
-            win.show()
-            win.raise_()
-            win.activateWindow()
+            self._log.log("Window opened.", source=display_name)
+
+        win.show()
+        win.raise_()
+        win.activateWindow()
 
     def _on_window_closed(self, key: str, display_name: str):
         """Handle window close event."""
         self._windows[key] = None
-        self._log.log(f"{display_name} window closed.")
+        self._log.log("Window closed.", source=display_name)
 
     # -------------------------------------------------------------------------
     # Individual window openers
@@ -178,7 +184,7 @@ class DlabControllerWindow(QMainWindow):
 
     def _open_slm_window(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
-        self._open_window("slm", SlmWindow, "SLM")
+        self._open_window("slm", SlmWindow, "SLM", self._log)
 
     def _open_stage_control_window(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
@@ -197,14 +203,14 @@ class DlabControllerWindow(QMainWindow):
         self._open_window("phase_lock", PhaseLockApp, "Phase Lock", use_destroyed_signal=True)
 
     # -------------------------------------------------------------------------
-    # Daheng camera windows
+    # Daheng camera windows (multiple instances)
     # -------------------------------------------------------------------------
 
     def _open_daheng_window(self, camera_name: str, index: int):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
 
         if camera_name in self._daheng_windows:
-            self._log.log(f"Daheng window for '{camera_name}' is already open.")
+            self._log.log("Window already open.", source=camera_name)
             win = self._daheng_windows[camera_name]
             win.show()
             win.raise_()
@@ -217,18 +223,23 @@ class DlabControllerWindow(QMainWindow):
         win.show()
         win.raise_()
         win.activateWindow()
-        self._log.log(f"Daheng window opened for '{camera_name}'.")
+        self._log.log("Window opened.", source=camera_name)
 
     def _on_daheng_window_closed(self, camera_name: str):
         self._daheng_windows.pop(camera_name, None)
-        self._log.log(f"Daheng window closed for '{camera_name}'.")
+        self._log.log("Window closed.", source=camera_name)
 
 
 def main():
     CFG = bootstrap(ROOT / "config" / "config.yaml")
     app = QApplication(sys.argv)
-    window = DlabControllerWindow()
+
+    log_panel = LogPanel()
+    log_panel.show()
+
+    window = DlabControllerWindow(log_panel)
     window.show()
+
     sys.exit(app.exec_())
 
 
