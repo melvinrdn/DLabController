@@ -73,7 +73,9 @@ class DlabControllerWindow(QMainWindow):
             view_layout.addWidget(btn)
 
         # Daheng camera controls
-        for i, name in enumerate(["DahengCam_1", "DahengCam_2", "DahengCam_3"], start=1):
+        for i, name in enumerate(
+            ["DahengCam_1", "DahengCam_2", "DahengCam_3"], start=1
+        ):
             self._add_daheng_control(view_layout, name, default_index=i)
 
         windows_group.setLayout(view_layout)
@@ -89,7 +91,7 @@ class DlabControllerWindow(QMainWindow):
         main_layout.addWidget(path_label)
 
         main_layout.addStretch(1)
-        
+
         # Log toggle button
         self._log_button = QPushButton("Hide Log")
         self._log_button.clicked.connect(self._toggle_log)
@@ -110,7 +112,9 @@ class DlabControllerWindow(QMainWindow):
         h_layout.addWidget(spinbox)
 
         button = QPushButton("Open")
-        button.clicked.connect(lambda _, n=name, sb=spinbox: self._open_daheng_window(n, sb.value()))
+        button.clicked.connect(
+            lambda _, n=name, sb=spinbox: self._open_daheng_window(n, sb.value())
+        )
         h_layout.addWidget(button)
 
         box.setLayout(h_layout)
@@ -118,9 +122,8 @@ class DlabControllerWindow(QMainWindow):
         self._camera_controls[name] = spinbox
 
     def _setup_pressure_log(self):
-        self._pressure_monitor = PressureMonitorWidget(self)
-        self._pressure_monitor.log_signal.connect(self._log.logger("Pressure"))
-        
+        self._pressure_monitor = PressureMonitorWidget(self, log_panel=self._log)
+
     def _toggle_log(self):
         if self._log.isVisible():
             self._log.hide()
@@ -157,7 +160,9 @@ class DlabControllerWindow(QMainWindow):
         if win is None:
             win = window_class(*args, **kwargs)
             signal = win.destroyed if use_destroyed_signal else win.closed
-            signal.connect(lambda *a, k=key, name=display_name: self._on_window_closed(k, name))
+            signal.connect(
+                lambda *a, k=key, name=display_name: self._on_window_closed(k, name)
+            )
             self._windows[key] = win
             self._log.log("Window opened.", source=display_name)
 
@@ -176,31 +181,40 @@ class DlabControllerWindow(QMainWindow):
 
     def _open_andor_window(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
+
         self._open_window("andor", AndorLiveWindow, "Andor")
 
     def _open_avaspec_window(self):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
+
         self._open_window("avaspec", AvaspecLive, "Avaspec")
 
     def _open_slm_window(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
+
         self._open_window("slm", SlmWindow, "SLM", self._log)
 
     def _open_stage_control_window(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
+
         self._open_window("stage_control", StageControlWindow, "Stage Control")
 
     def _open_scan_window(self):
         from dlab.diagnostics.ui.scans.scan_window import ScanWindow
+
         self._open_window("scan", ScanWindow, "Scan")
 
     def _open_powermeter_window(self):
         from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
+
         self._open_window("powermeter", PowermeterLiveWindow, "Powermeter")
 
     def _open_phase_lock_window(self):
         from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
-        self._open_window("phase_lock", PhaseLockApp, "Phase Lock", use_destroyed_signal=True)
+
+        self._open_window(
+            "phase_lock", PhaseLockApp, "Phase Lock", use_destroyed_signal=True
+        )
 
     # -------------------------------------------------------------------------
     # Daheng camera windows (multiple instances)

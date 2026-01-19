@@ -46,7 +46,7 @@ class LogPanel(QWidget):
             cursor.movePosition(cursor.Start)
             cursor.movePosition(cursor.Down, cursor.KeepAnchor, 50)
             cursor.removeSelectedText()
-            
+
     def eventFilter(self, obj, event):
         if obj == self._log and event.type() == event.Close:
             self._log_button.setText("Show Log")

@@ -9,7 +9,6 @@ DEFAULT_CHIP_W = 15.36e-3
 DEFAULT_CHIP_H = 9.6e-3
 DEFAULT_PIXEL_SIZE = 8e-6
 DEFAULT_BIT_DEPTH = 1023  # 10 bits
-DEFAULT_BEAM_RADIUS_ON_SLM = 3.5e-3  
 
 class SLMController:
     """
@@ -42,7 +41,6 @@ class SLMController:
         """
         arr = np.asarray(phase)
         arr = np.mod(arr, self.bit_depth + 1)
-        # uint16 is enough for 10-bit; adjust if driver needs int32:
         arr = arr.astype(np.uint16, copy=False)
         return np.ascontiguousarray(arr)
 
@@ -54,7 +52,7 @@ class SLMController:
         self.screen_num = screen_num
 
         slm_driver.SLM_Disp_Open(self.screen_num)
-        h, w = self.slm_size  # (rows, cols)
+        h, w = self.slm_size
         slm_driver.SLM_Disp_Data(self.screen_num, self.phase, w, h)
 
     def close(self) -> None:
