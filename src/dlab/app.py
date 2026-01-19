@@ -1,32 +1,51 @@
 from __future__ import annotations
-from pathlib import Path
+
 import datetime
 import sys
-import subprocess
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QGroupBox, QTextEdit, QSpinBox
+    QApplication,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QSpinBox,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from dlab.boot import ROOT, bootstrap
 from dlab.hardware.wrappers.pressure_sensor import PressureMonitorWidget
 
+
 class DlabControllerWindow(QMainWindow):
+    """
+    Main launcher window for lab instrument control.
+
+    To run Grafana with Prometheus:
+        cd C:\\Prometheus
+        .\\prometheus.exe --config.file=prometheus.yml
+    Grafana credentials: user: admin, password: admin
+    """
+
     def __init__(self):
         super().__init__()
-        self.andor_window = None
-        self.avaspec_window = None
-        self.powermeter_window = None
-        self.daheng_windows: dict[str, object] = {}
-        self.stage_control_window = None
-        self.slm_window = None
-        self.scan_window = None
-        self.phase_lock_window = None
-        self.smaract_proc: subprocess.Popen | None = None
-        self.setup_ui()
+        self._windows: dict[str, QWidget | None] = {
+            "andor": None,
+            "avaspec": None,
+            "powermeter": None,
+            "stage_control": None,
+            "slm": None,
+            "scan": None,
+            "phase_lock": None,
+        }
+        self._daheng_windows: dict[str, QWidget] = {}
+        self._camera_controls: dict[str, QSpinBox] = {}
+        self._setup_ui()
 
-    def setup_ui(self):
+    def _setup_ui(self):
         self.setWindowTitle("DlabControllerWindow")
         self.resize(300, 300)
 
@@ -35,222 +54,176 @@ class DlabControllerWindow(QMainWindow):
         main_layout = QHBoxLayout(central_widget)
 
         left_panel = QVBoxLayout()
+
+        # Windows group
         windows_group = QGroupBox("Windows")
         view_layout = QVBoxLayout()
 
-        self.slm_button = QPushButton("Open SLM Window")
-        self.slm_button.clicked.connect(self.open_slm_window)
-        view_layout.addWidget(self.slm_button)
+        # Main instrument buttons
+        buttons = [
+            ("Open SLM Window", self._open_slm_window),
+            ("Open Andor Window", self._open_andor_window),
+            ("Open Avaspec Window", self._open_avaspec_window),
+            ("Open Powermeter Window", self._open_powermeter_window),
+            ("Open Stage Control Window", self._open_stage_control_window),
+            ("Open Scan Window", self._open_scan_window),
+            ("Open Phase Lock Window", self._open_phase_lock_window),
+        ]
+        for label, callback in buttons:
+            btn = QPushButton(label)
+            btn.clicked.connect(callback)
+            view_layout.addWidget(btn)
 
-        self.andor_button = QPushButton("Open Andor Window")
-        self.andor_button.clicked.connect(self.open_andor_window)
-        view_layout.addWidget(self.andor_button)
-
-        self.avaspec_button = QPushButton("Open Avaspec Window")
-        self.avaspec_button.clicked.connect(self.open_avaspec_window)
-        view_layout.addWidget(self.avaspec_button)
-
-        self.powermeter_button = QPushButton("Open Powermeter Window")
-        self.powermeter_button.clicked.connect(self.open_powermeter_window)
-        view_layout.addWidget(self.powermeter_button)
-
-        self.thorlabs_button = QPushButton("Open Stage Control Window")
-        self.thorlabs_button.clicked.connect(self.open_stage_control_window)
-        view_layout.addWidget(self.thorlabs_button)
-
-        self.smaract_button = QPushButton("Open SmarAct Control")
-        self.smaract_button.clicked.connect(self.open_smaract_control)
-        view_layout.addWidget(self.smaract_button)
-
-        self.scan_button = QPushButton("Open Scan Window")
-        self.scan_button.clicked.connect(self.open_scan_window)
-        view_layout.addWidget(self.scan_button)
-
-        self.phase_lock_button = QPushButton("Open Phase Lock Window")
-        self.phase_lock_button.clicked.connect(self.open_phase_lock_window)
-        view_layout.addWidget(self.phase_lock_button)
-
-        self.camera_controls = {}
-        default_indices = {"DahengCam_1": 1, "DahengCam_2": 2, "DahengCam_3": 3}
-        for label in ["DahengCam_1", "DahengCam_2", "DahengCam_3"]:
-            box = QGroupBox(f"{label}")
-            layout = QHBoxLayout()
-
-            spinbox = QSpinBox()
-            spinbox.setRange(1, 5)
-            spinbox.setValue(default_indices[label])
-            layout.addWidget(QLabel("Index:"))
-            layout.addWidget(spinbox)
-
-            button = QPushButton("Open")
-            layout.addWidget(button)
-            button.clicked.connect(lambda _, name=label, sb=spinbox: self.open_daheng_window(name, sb.value()))
-
-            box.setLayout(layout)
-            view_layout.addWidget(box)
-            self.camera_controls[label] = spinbox
+        # Daheng camera controls
+        for i, name in enumerate(["DahengCam_1", "DahengCam_2", "DahengCam_3"], start=1):
+            self._add_daheng_control(view_layout, name, default_index=i)
 
         windows_group.setLayout(view_layout)
         left_panel.addWidget(windows_group)
 
-        """
-        To run Grafana, Windows powershell:
-        cd C:\Prometheus
-        .\prometheus.exe --config.file=prometheus.yml
-        On Grafana: user: admin password: admin
-        """
-        dashboard_url = "http://localhost:3000/d/ad6bbh8/pressure-dashboard?orgId=1&from=now-30m&to=now&timezone=browser&refresh=auto"
-        self.path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
-        self.path_label.setOpenExternalLinks(True)
-        left_panel.addWidget(self.path_label)
+        # Grafana dashboard link
+        dashboard_url = (
+            "http://localhost:3000/d/ad6bbh8/pressure-dashboard"
+            "?orgId=1&from=now-30m&to=now&timezone=browser&refresh=auto"
+        )
+        path_label = QLabel(f'<a href="{dashboard_url}">Open Pressure Dashboard</a>')
+        path_label.setOpenExternalLinks(True)
+        left_panel.addWidget(path_label)
 
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        left_panel.addWidget(self.log_text)
+        # Log panel
+        self._log_text = QTextEdit()
+        self._log_text.setReadOnly(True)
+        left_panel.addWidget(self._log_text)
 
         left_panel.addStretch(1)
         main_layout.addLayout(left_panel)
 
-        self.setup_pressure_log()
+        self._setup_pressure_log()
 
-    def append_log(self, message: str):
+    def _add_daheng_control(self, layout: QVBoxLayout, name: str, default_index: int):
+        """Add a Daheng camera control group with index spinbox."""
+        box = QGroupBox(name)
+        h_layout = QHBoxLayout()
+
+        spinbox = QSpinBox()
+        spinbox.setRange(1, 5)
+        spinbox.setValue(default_index)
+
+        h_layout.addWidget(QLabel("Index:"))
+        h_layout.addWidget(spinbox)
+
+        button = QPushButton("Open")
+        button.clicked.connect(lambda _, n=name, sb=spinbox: self._open_daheng_window(n, sb.value()))
+        h_layout.addWidget(button)
+
+        box.setLayout(h_layout)
+        layout.addWidget(box)
+        self._camera_controls[name] = spinbox
+
+    def _append_log(self, message: str):
+        """Append a timestamped message to the log panel."""
         now = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{now}] {message}")
+        self._log_text.append(f"[{now}] {message}")
 
-    def setup_pressure_log(self):
-        self.pressure_monitor = PressureMonitorWidget(self)
-        self.pressure_monitor.log_signal.connect(self.append_log)
+    def _setup_pressure_log(self):
+        self._pressure_monitor = PressureMonitorWidget(self)
+        self._pressure_monitor.log_signal.connect(self._append_log)
 
-    def open_andor_window(self):
+    # Generic window management
+    def _open_window(
+        self,
+        key: str,
+        window_class: type,
+        display_name: str,
+        *args,
+        use_destroyed_signal: bool = False,
+        **kwargs,
+    ):
+        """
+        Open a window if not already open, or bring it to front.
+
+        Args:
+            key: Key in self._windows dict
+            window_class: The window class to instantiate
+            display_name: Human-readable name for logging
+            use_destroyed_signal: Use 'destroyed' signal instead of 'closed'
+            *args, **kwargs: Passed to window_class constructor
+        """
+        if self._windows[key] is None:
+            win = window_class(*args, **kwargs)
+            signal = win.destroyed if use_destroyed_signal else win.closed
+            signal.connect(lambda *a, k=key, name=display_name: self._on_window_closed(k, name))
+            self._windows[key] = win
+            self._append_log(f"{display_name} window opened.")
+
+        win = self._windows[key]
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _on_window_closed(self, key: str, display_name: str):
+        """Handle window close event."""
+        self._windows[key] = None
+        self._append_log(f"{display_name} window closed.")
+
+    # -------------------------------------------------------------------------
+    # Individual window openers
+    # -------------------------------------------------------------------------
+
+    def _open_andor_window(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
-        if self.andor_window is None:
-            self.andor_window = AndorLiveWindow()
-            self.andor_window.closed.connect(self.on_andor_window_closed)
-            self.andor_window.show()
-            self.andor_window.raise_()
-            self.andor_window.activateWindow()
-            self.append_log("Andor window opened.")
-        else:
-            self.append_log("Andor window is already open.")
+        self._open_window("andor", AndorLiveWindow, "Andor")
 
-    def on_andor_window_closed(self):
-        self.andor_window = None
-        self.append_log("Andor window closed.")
-
-    def open_avaspec_window(self):
+    def _open_avaspec_window(self):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
-        if self.avaspec_window is None:
-            self.avaspec_window = AvaspecLive()
-            self.avaspec_window.closed.connect(self.on_avaspec_window_closed)
-            self.avaspec_window.show()
-            self.avaspec_window.raise_()
-            self.avaspec_window.activateWindow()
-            self.append_log("Avaspec window opened.")
-        else:
-            self.append_log("Avaspec window is already open.")
+        self._open_window("avaspec", AvaspecLive, "Avaspec")
 
-    def on_avaspec_window_closed(self):
-        self.avaspec_window = None
-        self.append_log("Avaspec window closed.")
-
-    def open_slm_window(self):
+    def _open_slm_window(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
-        if self.slm_window is None:
-            self.slm_window = SlmWindow()
-            self.slm_window.closed.connect(self.on_slm_window_closed)
-            self.slm_window.show()
-            self.slm_window.raise_()
-            self.slm_window.activateWindow()
-            self.append_log("SLM window opened.")
-        else:
-            self.append_log("SLM window is already open.")
+        self._open_window("slm", SlmWindow, "SLM")
 
-    def on_slm_window_closed(self):
-        self.slm_window = None
-        self.append_log("SLM window closed.")
-
-    def open_stage_control_window(self):
+    def _open_stage_control_window(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
-        if self.stage_control_window is None:
-            self.stage_control_window = StageControlWindow()
-        self.stage_control_window.show()
-        self.stage_control_window.raise_()
-        self.stage_control_window.activateWindow()
-        self.append_log("Stage Control window opened.")
+        self._open_window("stage_control", StageControlWindow, "Stage Control")
 
-    def open_smaract_control(self):
-        script = ROOT / "src" / "dlab" / "diagnostics" / "ui" / "run_smaract_gui.py"
-        if not script.exists():
-            self.append_log(f"SmarAct launcher not found: {script}")
-            return
-        if self.smaract_proc is not None and self.smaract_proc.poll() is None:
-            self.append_log("SmarAct Control already running.")
-            return
-        try:
-            self.smaract_proc = subprocess.Popen([sys.executable, str(script)], cwd=str(ROOT))
-            self.append_log("SmarAct Control launched.")
-        except Exception as e:
-            self.append_log(f"Failed to launch SmarAct Control: {e}")
+    def _open_scan_window(self):
+        from dlab.diagnostics.ui.scans.scan_window import ScanWindow
+        self._open_window("scan", ScanWindow, "Scan")
 
-    def open_daheng_window(self, camera_name: str, fixed_index: int):
+    def _open_powermeter_window(self):
+        from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
+        self._open_window("powermeter", PowermeterLiveWindow, "Powermeter")
+
+    def _open_phase_lock_window(self):
+        from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
+        self._open_window("phase_lock", PhaseLockApp, "Phase Lock", use_destroyed_signal=True)
+
+    # -------------------------------------------------------------------------
+    # Daheng camera windows
+    # -------------------------------------------------------------------------
+
+    def _open_daheng_window(self, camera_name: str, index: int):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
-        if camera_name not in self.daheng_windows:
-            win = DahengLiveWindow(camera_name=camera_name, fixed_index=fixed_index)
-            win.closed.connect(lambda name=camera_name: self.on_daheng_window_closed(name))
-            self.daheng_windows[camera_name] = win
+
+        if camera_name in self._daheng_windows:
+            self._append_log(f"Daheng window for '{camera_name}' is already open.")
+            win = self._daheng_windows[camera_name]
             win.show()
             win.raise_()
             win.activateWindow()
-            self.append_log(f"Daheng window opened for '{camera_name}'.")
-        else:
-            self.append_log(f"Daheng window for '{camera_name}' is already open.")
+            return
 
-    def on_daheng_window_closed(self, camera_name: str):
-        if camera_name in self.daheng_windows:
-            del self.daheng_windows[camera_name]
-        self.append_log(f"Daheng window closed for '{camera_name}'.")
+        win = DahengLiveWindow(camera_name=camera_name, fixed_index=index)
+        win.closed.connect(lambda name=camera_name: self._on_daheng_window_closed(name))
+        self._daheng_windows[camera_name] = win
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        self._append_log(f"Daheng window opened for '{camera_name}'.")
 
-    def open_scan_window(self):
-        from dlab.diagnostics.ui.scans.scan_window import ScanWindow
-        if self.scan_window is None:
-            self.scan_window = ScanWindow()
-            self.scan_window.closed.connect(self.on_scan_window_closed)
-        self.scan_window.show()
-        self.scan_window.raise_()
-        self.scan_window.activateWindow()
-        self.append_log("Scan window opened.")
-
-    def on_scan_window_closed(self):
-        self.scan_window = None
-        self.append_log("Scan window closed.")
-
-    def open_powermeter_window(self):
-        from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
-        if self.powermeter_window is None:
-            self.powermeter_window = PowermeterLiveWindow()
-            self.powermeter_window.closed.connect(self.on_powermeter_window_closed)
-        self.powermeter_window.show()
-        self.powermeter_window.raise_()
-        self.powermeter_window.activateWindow()
-        self.append_log("Powermeter window opened.")
-
-    def on_powermeter_window_closed(self):
-        self.powermeter_window = None
-        self.append_log("Powermeter window closed.")
-
-    def open_phase_lock_window(self):
-        from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
-        if self.phase_lock_window is None:
-            self.phase_lock_window = PhaseLockApp()
-            self.phase_lock_window.destroyed.connect(self.on_phase_lock_window_closed)
-        self.phase_lock_window.show()
-        self.phase_lock_window.raise_()
-        self.phase_lock_window.activateWindow()
-        self.append_log("Phase Lock window opened.")
-
-    def on_phase_lock_window_closed(self, *args, **kwargs):
-        self.phase_lock_window = None
-        self.append_log("Phase Lock window closed.")
+    def _on_daheng_window_closed(self, camera_name: str):
+        self._daheng_windows.pop(camera_name, None)
+        self._append_log(f"Daheng window closed for '{camera_name}'.")
 
 
 def main():
