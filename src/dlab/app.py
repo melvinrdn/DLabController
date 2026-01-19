@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 import sys
 
 from PyQt5.QtWidgets import (
@@ -11,13 +10,13 @@ from PyQt5.QtWidgets import (
     QMainWindow,
     QPushButton,
     QSpinBox,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from dlab.boot import ROOT, bootstrap
 from dlab.hardware.wrappers.pressure_sensor import PressureMonitorWidget
+from dlab.utils.log_panel import LogPanel
 
 
 class DlabControllerWindow(QMainWindow):
@@ -91,9 +90,8 @@ class DlabControllerWindow(QMainWindow):
         left_panel.addWidget(path_label)
 
         # Log panel
-        self._log_text = QTextEdit()
-        self._log_text.setReadOnly(True)
-        left_panel.addWidget(self._log_text)
+        self._log = LogPanel()
+        left_panel.addWidget(self._log)
 
         left_panel.addStretch(1)
         main_layout.addLayout(left_panel)
@@ -120,16 +118,14 @@ class DlabControllerWindow(QMainWindow):
         layout.addWidget(box)
         self._camera_controls[name] = spinbox
 
-    def _append_log(self, message: str):
-        """Append a timestamped message to the log panel."""
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        self._log_text.append(f"[{now}] {message}")
-
     def _setup_pressure_log(self):
         self._pressure_monitor = PressureMonitorWidget(self)
-        self._pressure_monitor.log_signal.connect(self._append_log)
+        self._pressure_monitor.log_signal.connect(self._log.log)
 
+    # -------------------------------------------------------------------------
     # Generic window management
+    # -------------------------------------------------------------------------
+
     def _open_window(
         self,
         key: str,
@@ -149,22 +145,24 @@ class DlabControllerWindow(QMainWindow):
             use_destroyed_signal: Use 'destroyed' signal instead of 'closed'
             *args, **kwargs: Passed to window_class constructor
         """
+        
         if self._windows[key] is None:
             win = window_class(*args, **kwargs)
             signal = win.destroyed if use_destroyed_signal else win.closed
             signal.connect(lambda *a, k=key, name=display_name: self._on_window_closed(k, name))
             self._windows[key] = win
-            self._append_log(f"{display_name} window opened.")
-
+            self._log.log(f"{display_name} window opened.")
+        
         win = self._windows[key]
-        win.show()
-        win.raise_()
-        win.activateWindow()
+        if win is not None:
+            win.show()
+            win.raise_()
+            win.activateWindow()
 
     def _on_window_closed(self, key: str, display_name: str):
         """Handle window close event."""
         self._windows[key] = None
-        self._append_log(f"{display_name} window closed.")
+        self._log.log(f"{display_name} window closed.")
 
     # -------------------------------------------------------------------------
     # Individual window openers
@@ -206,7 +204,7 @@ class DlabControllerWindow(QMainWindow):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
 
         if camera_name in self._daheng_windows:
-            self._append_log(f"Daheng window for '{camera_name}' is already open.")
+            self._log.log(f"Daheng window for '{camera_name}' is already open.")
             win = self._daheng_windows[camera_name]
             win.show()
             win.raise_()
@@ -219,11 +217,11 @@ class DlabControllerWindow(QMainWindow):
         win.show()
         win.raise_()
         win.activateWindow()
-        self._append_log(f"Daheng window opened for '{camera_name}'.")
+        self._log.log(f"Daheng window opened for '{camera_name}'.")
 
     def _on_daheng_window_closed(self, camera_name: str):
         self._daheng_windows.pop(camera_name, None)
-        self._append_log(f"Daheng window closed for '{camera_name}'.")
+        self._log.log(f"Daheng window closed for '{camera_name}'.")
 
 
 def main():
