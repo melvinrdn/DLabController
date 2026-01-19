@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Dict, Any
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG_ROOT = Path(__file__).resolve().parent

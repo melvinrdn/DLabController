@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dlab"
-version = "2.0.0"
+version = "2.2.0"
 requires-python = ">=3.10"
 dependencies = [
   "PyQt5>=5.15.0",
@@ -26,7 +26,7 @@ dependencies = [
 dlab = "dlab.app:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

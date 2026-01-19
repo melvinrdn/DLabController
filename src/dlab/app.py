@@ -182,7 +182,7 @@ class DlabControllerWindow(QMainWindow):
     def _open_andor_window(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
 
-        self._open_window("andor", AndorLiveWindow, "Andor")
+        self._open_window("slm", AndorLiveWindow, "Andor", self._log)
 
     def _open_avaspec_window(self):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLive
