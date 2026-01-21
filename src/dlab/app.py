@@ -197,7 +197,7 @@ class DlabControllerWindow(QMainWindow):
     def _open_stage_control_window(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
 
-        self._open_window("stage_control", StageControlWindow, "Stage Control")
+        self._open_window("stage_control", StageControlWindow, "Stage Control", self._log)
 
     def _open_scan_window(self):
         from dlab.diagnostics.ui.scans.scan_window import ScanWindow

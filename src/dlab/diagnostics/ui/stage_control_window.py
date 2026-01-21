@@ -1,41 +1,64 @@
 from __future__ import annotations
 
-import datetime
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from PyQt5.QtCore import QTimer, Qt
 from PyQt5.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton,
-    QLineEdit, QGroupBox, QTextEdit, QTabWidget, QMainWindow, QCheckBox, QMessageBox
+    QWidget,
+    QHBoxLayout,
+    QVBoxLayout,
+    QLabel,
+    QPushButton,
+    QLineEdit,
+    QGroupBox,
+    QTabWidget,
+    QMainWindow,
+    QCheckBox,
+    QMessageBox,
 )
 from PyQt5.QtGui import QIntValidator
 
 from dlab.boot import get_config
-from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
-from dlab.hardware.wrappers.waveplate_calib import WaveplateCalibWidget, NUM_WAVEPLATES
-from dlab.diagnostics.ui.auto_waveplate_calib_window import AutoWaveplateCalibWindow
-from dlab.diagnostics.ui.grating_compressor_window import GratingCompressorWindow
-from dlab.diagnostics.ui.piezojena_window import PiezoJenaStageWindow
 from dlab.core.device_registry import REGISTRY
+from dlab.utils.log_panel import LogPanel
+from dlab.utils.config_utils import cfg_get
 
-import logging
-logger = logging.getLogger("dlab.ui.StageControlWindow")
+from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
+
+
+NUM_WAVEPLATES = int(cfg_get("waveplates.num_waveplates", 7))
+
+
+# -----------------------------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------------------------
 
 
 def _wp_index_from_stage_number(stage_number: int) -> int:
+    """Convert 0-based stage number to 1-based waveplate index."""
     return stage_number + 1
 
+
 def _reg_key_powermode(wp_index: int) -> str:
-    return f"waveplate:powermode:{wp_index}"  
+    """Registry key for waveplate power mode flag."""
+    return f"waveplate:powermode:{wp_index}"
+
 
 def _reg_key_calib(wp_index: int) -> str:
-    return f"waveplate:calib:{wp_index}"    
+    """Registry key for waveplate calibration data."""
+    return f"waveplate:calib:{wp_index}"
+
 
 def power_to_angle(power_fraction: float, _amp_unused: float, phase_deg: float) -> float:
+    """Convert power fraction (0-1) to waveplate angle using calibration phase."""
     y = float(np.clip(power_fraction, 0.0, 1.0))
     return (phase_deg + (45.0 / np.pi) * float(np.arccos(2.0 * y - 1.0))) % 360.0
 
+
 def load_default_ids() -> dict[int, str]:
+    """Load default motor IDs from configuration."""
     cfg = get_config() or {}
     defaults = {i: "00000000" for i in range(10)}
     try:
@@ -50,90 +73,170 @@ def load_default_ids() -> dict[int, str]:
     return defaults
 
 
+# -----------------------------------------------------------------------------
+# StageRow
+# -----------------------------------------------------------------------------
+
 
 class StageRow(QWidget):
-    def __init__(self, stage_number: int, description: str = "", log_callback=None, parent: QWidget = None):
+    """Single row controlling one Thorlabs rotation/translation stage."""
+
+    def __init__(
+        self,
+        stage_number: int,
+        description: str = "",
+        log_panel: LogPanel | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.stage_number = stage_number
-        self.is_waveplate = (stage_number < NUM_WAVEPLATES)
+        self.is_waveplate = stage_number < NUM_WAVEPLATES
         self.controller: ThorlabsController | None = None
-        self.log_callback = log_callback
+        self._log = log_panel
 
-        self._poll = QTimer(self); self._poll.setInterval(200); self._poll.timeout.connect(self._update_position)
+        self._poll = QTimer(self)
+        self._poll.setInterval(200)
+        self._poll.timeout.connect(self._update_position)
 
         self.amplitude = 1.0
         self.offset = 0.0
 
-        layout = QHBoxLayout(self); layout.setSpacing(5)
+        self._init_ui(description)
 
-        title = f"Waveplate {stage_number+1}:" if self.is_waveplate else f"Stage {stage_number+1}:"
-        self.stage_label = QLabel(title); self.stage_label.setFixedWidth(120); layout.addWidget(self.stage_label)
-        self.desc_label = QLabel(f"{description}"); self.desc_label.setFixedWidth(120); layout.addWidget(self.desc_label)
+    def _init_ui(self, description: str) -> None:
+        layout = QHBoxLayout(self)
+        layout.setSpacing(5)
 
-        self.motor_id_edit = QLineEdit(); self.motor_id_edit.setFixedWidth(90)
-        self.motor_id_edit.setPlaceholderText("Motor ID")
-        self.motor_id_edit.setValidator(QIntValidator(0, 99999999, self))
+        # Labels
+        title = f"Waveplate {self.stage_number + 1}:" if self.is_waveplate else f"Stage {self.stage_number + 1}:"
+        self._stage_label = QLabel(title)
+        self._stage_label.setFixedWidth(120)
+        layout.addWidget(self._stage_label)
+
+        self._desc_label = QLabel(description)
+        self._desc_label.setFixedWidth(120)
+        layout.addWidget(self._desc_label)
+
+        # Motor ID
+        self._motor_id_edit = QLineEdit()
+        self._motor_id_edit.setFixedWidth(90)
+        self._motor_id_edit.setPlaceholderText("Motor ID")
+        self._motor_id_edit.setValidator(QIntValidator(0, 99999999, self))
         defaults = load_default_ids()
-        motor_id = defaults.get(stage_number, "00000000")
-        self.motor_id_edit.setText(motor_id)
-        layout.addWidget(self.motor_id_edit)
+        self._motor_id_edit.setText(defaults.get(self.stage_number, "00000000"))
+        layout.addWidget(self._motor_id_edit)
 
-        self.activate_btn = QPushButton("Activate"); self.activate_btn.clicked.connect(self.activate_stage); layout.addWidget(self.activate_btn)
-        self.home_on_activate_checkbox = QCheckBox("Home on Activate"); self.home_on_activate_checkbox.setChecked(False); layout.addWidget(self.home_on_activate_checkbox)
-        self.home_btn = QPushButton("Home"); self.home_btn.clicked.connect(self.home_stage); self.home_btn.setEnabled(False); layout.addWidget(self.home_btn)
-        self.ident_btn = QPushButton("Identify"); self.ident_btn.clicked.connect(self.identify_stage); self.ident_btn.setEnabled(False); layout.addWidget(self.ident_btn)
+        # Control buttons
+        self._activate_btn = QPushButton("Activate")
+        self._activate_btn.clicked.connect(self._on_activate)
+        layout.addWidget(self._activate_btn)
 
-        self.target_edit = QLineEdit(); self.target_edit.setFixedWidth(100); layout.addWidget(self.target_edit)
+        self._home_on_activate_checkbox = QCheckBox("Home on Activate")
+        self._home_on_activate_checkbox.setChecked(False)
+        layout.addWidget(self._home_on_activate_checkbox)
 
-        self.power_mode_checkbox = QCheckBox("Power Mode")
+        self._home_btn = QPushButton("Home")
+        self._home_btn.clicked.connect(self._on_home)
+        self._home_btn.setEnabled(False)
+        layout.addWidget(self._home_btn)
+
+        self._ident_btn = QPushButton("Identify")
+        self._ident_btn.clicked.connect(self._on_identify)
+        self._ident_btn.setEnabled(False)
+        layout.addWidget(self._ident_btn)
+
+        # Target input
+        self._target_edit = QLineEdit()
+        self._target_edit.setFixedWidth(100)
+        layout.addWidget(self._target_edit)
+
+        # Power mode checkbox (waveplates only)
+        self._power_mode_checkbox = QCheckBox("Power Mode")
         if self.is_waveplate:
             wp_idx = _wp_index_from_stage_number(self.stage_number)
             pm = REGISTRY.get(_reg_key_powermode(wp_idx))
             if isinstance(pm, bool):
-                self.power_mode_checkbox.setChecked(pm)
-            self.power_mode_checkbox.toggled.connect(lambda chk, wpi=wp_idx: REGISTRY.register(_reg_key_powermode(wpi), bool(chk)))
+                self._power_mode_checkbox.setChecked(pm)
+            self._power_mode_checkbox.toggled.connect(
+                lambda chk, wpi=wp_idx: REGISTRY.register(_reg_key_powermode(wpi), bool(chk))
+            )
         else:
-            self.power_mode_checkbox.setChecked(False); self.power_mode_checkbox.setEnabled(False); self.power_mode_checkbox.setVisible(False)
-        layout.addWidget(self.power_mode_checkbox)
+            self._power_mode_checkbox.setChecked(False)
+            self._power_mode_checkbox.setEnabled(False)
+            self._power_mode_checkbox.setVisible(False)
+        layout.addWidget(self._power_mode_checkbox)
 
-        self.move_btn = QPushButton("Move To"); self.move_btn.clicked.connect(self.move_stage); self.move_btn.setEnabled(False); layout.addWidget(self.move_btn)
+        self._move_btn = QPushButton("Move To")
+        self._move_btn.clicked.connect(self._on_move)
+        self._move_btn.setEnabled(False)
+        layout.addWidget(self._move_btn)
 
-        self.current_edit = QLineEdit(); self.current_edit.setPlaceholderText("Current"); self.current_edit.setFixedWidth(100); self.current_edit.setReadOnly(True); layout.addWidget(self.current_edit)
+        # Current position display
+        self._current_edit = QLineEdit()
+        self._current_edit.setPlaceholderText("Current")
+        self._current_edit.setFixedWidth(100)
+        self._current_edit.setReadOnly(True)
+        layout.addWidget(self._current_edit)
+
         layout.addStretch(1)
 
         self._refresh_target_placeholder()
-        self.power_mode_checkbox.toggled.connect(lambda _=None: self._refresh_target_placeholder())
+        self._power_mode_checkbox.toggled.connect(lambda _: self._refresh_target_placeholder())
 
-    def log(self, message: str) -> None:
-        full_msg = f"Stage {self.stage_number+1}: {message}"
-        if self.log_callback:
-            self.log_callback(full_msg)
-        logger.info(full_msg)
+    # -------------------------------------------------------------------------
+    # Logging
+    # -------------------------------------------------------------------------
+
+    def _log_message(self, msg: str) -> None:
+        full_msg = f"Stage {self.stage_number + 1}: {msg}"
+        if self._log:
+            self._log.log(full_msg, source="Thorlabs")
+
+    # -------------------------------------------------------------------------
+    # Position polling
+    # -------------------------------------------------------------------------
 
     def _update_position(self) -> None:
         if not self.controller:
-            self._poll.stop(); return
+            self._poll.stop()
+            return
         try:
             pos = self.controller.get_position()
             if pos is not None:
-                self.current_edit.setText(f"{pos:.3f}")
+                self._current_edit.setText(f"{pos:.3f}")
         except Exception as e:
-            self._poll.stop(); self.log(f"Position read failed: {e}")
+            self._poll.stop()
+            self._log_message(f"Position read failed: {e}")
+
+    # -------------------------------------------------------------------------
+    # UI helpers
+    # -------------------------------------------------------------------------
 
     def _refresh_target_placeholder(self) -> None:
         if not self.is_waveplate:
-            self.target_edit.setPlaceholderText("Position")
-            self.target_edit.setToolTip("")
+            self._target_edit.setPlaceholderText("Position")
+            self._target_edit.setToolTip("")
             return
-        if self.power_mode_checkbox.isChecked():
-            self.target_edit.setPlaceholderText("Power fraction (0..1)")
-            self.target_edit.setToolTip("Enter fraction of max power; converted to angle via calibration.")
+        if self._power_mode_checkbox.isChecked():
+            self._target_edit.setPlaceholderText("Power fraction (0..1)")
+            self._target_edit.setToolTip("Enter fraction of max power; converted to angle via calibration.")
         else:
-            self.target_edit.setPlaceholderText("Angle (deg)")
-            self.target_edit.setToolTip("Enter target angle in degrees.")
+            self._target_edit.setPlaceholderText("Angle (deg)")
+            self._target_edit.setToolTip("Enter target angle in degrees.")
 
-    def activate_stage(self) -> None:
-        txt = self.motor_id_edit.text().strip()
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        self._home_btn.setEnabled(enabled)
+        self._ident_btn.setEnabled(enabled)
+        self._move_btn.setEnabled(enabled)
+
+    # -------------------------------------------------------------------------
+    # Stage control
+    # -------------------------------------------------------------------------
+
+    def _on_activate(self) -> None:
+        from dlab.hardware.wrappers.thorlabs_controller import ThorlabsController
+
+        txt = self._motor_id_edit.text().strip()
         if not txt:
             QMessageBox.warning(self, "Error", "Please enter a motor ID.")
             return
@@ -142,27 +245,28 @@ class StageRow(QWidget):
         except ValueError:
             QMessageBox.warning(self, "Error", "Invalid motor ID.")
             return
+
         try:
             self.controller = ThorlabsController(motor_id)
-            self.controller.activate(homing=self.home_on_activate_checkbox.isChecked())
+            self.controller.activate(homing=self._home_on_activate_checkbox.isChecked())
 
-            self.activate_btn.setEnabled(False)
-            self.motor_id_edit.setEnabled(False)
-            self.home_btn.setEnabled(True)
-            self.ident_btn.setEnabled(True)
-            self.move_btn.setEnabled(True)
-            self.stage_label.setStyleSheet("background-color: lightgreen;")
-            self.log("Activated.")
+            self._activate_btn.setEnabled(False)
+            self._motor_id_edit.setEnabled(False)
+            self._set_controls_enabled(True)
+            self._stage_label.setStyleSheet("background-color: lightgreen;")
+            self._log_message("Activated.")
 
-            key_ui = f"stage:{self.stage_number+1}"
+            # Register in device registry
+            key_ui = f"stage:{self.stage_number + 1}"
             key_ser = f"stage:serial:{motor_id}"
             for k in (key_ui, key_ser):
                 prev = REGISTRY.get(k)
                 if prev and prev is not self.controller:
-                    self.log(f"Registry key '{k}' already in use. Replacing.")
-            REGISTRY.register(key_ui,  self.controller)
+                    self._log_message(f"Registry key '{k}' already in use. Replacing.")
+            REGISTRY.register(key_ui, self.controller)
             REGISTRY.register(key_ser, self.controller)
 
+            # Load waveplate calibration if applicable
             if self.is_waveplate:
                 wp_idx = _wp_index_from_stage_number(self.stage_number)
                 calib_ui = REGISTRY.get("ui:waveplate_calib_widget")
@@ -172,60 +276,62 @@ class StageRow(QWidget):
                         calib = REGISTRY.get(_reg_key_calib(wp_idx))
                         if isinstance(calib, (tuple, list)) and len(calib) >= 2:
                             self.amplitude, self.offset = float(calib[0]), float(calib[1])
-                            self.log(f"WP{wp_idx} calibration loaded (phase={self.offset:.2f}°).")
+                            self._log_message(f"WP{wp_idx} calibration loaded (phase={self.offset:.2f}°).")
                     else:
-                        self.log(f"No calibration found for WP{wp_idx}.")
+                        self._log_message(f"No calibration found for WP{wp_idx}.")
 
             self._poll.start()
             self._refresh_target_placeholder()
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to activate stage: {e}")
-            self.log(f"Activation failed: {e}")
+            self._log_message(f"Activation failed: {e}")
             self.controller = None
-            self.stage_label.setStyleSheet("")
+            self._stage_label.setStyleSheet("")
             self._poll.stop()
 
-    def home_stage(self) -> None:
+    def _on_home(self) -> None:
         if not self.controller:
             QMessageBox.warning(self, "Error", "Stage not activated.")
             return
         try:
             self.controller.home(blocking=False)
-            self.log("Homing…")
+            self._log_message("Homing…")
             self._poll.start()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to home stage: {e}")
-            self.log(f"Home failed: {e}")
+            self._log_message(f"Home failed: {e}")
 
-    def identify_stage(self) -> None:
+    def _on_identify(self) -> None:
         if not self.controller:
             QMessageBox.warning(self, "Error", "Stage not activated.")
             return
         try:
             self.controller.identify()
-            self.log("Identify blink.")
+            self._log_message("Identify blink.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Identify failed: {e}")
-            self.log(f"Identify failed: {e}")
+            self._log_message(f"Identify failed: {e}")
 
-    def move_stage(self) -> None:
+    def _on_move(self) -> None:
         if not self.controller:
             QMessageBox.warning(self, "Error", "Stage not activated.")
             return
 
-        t = self.target_edit.text().strip()
+        t = self._target_edit.text().strip()
         if not t:
             QMessageBox.warning(self, "Error", "Please enter a target value.")
             return
 
         try:
-            if self.is_waveplate and self.power_mode_checkbox.isChecked():
+            # Power mode for waveplates
+            if self.is_waveplate and self._power_mode_checkbox.isChecked():
                 requested_frac = float(t)
                 frac = float(np.clip(requested_frac, 0.0, 1.0))
                 if abs(frac - requested_frac) > 1e-12:
-                    self.target_edit.blockSignals(True)
-                    self.target_edit.setText(f"{frac:.3f}")
-                    self.target_edit.blockSignals(False)
+                    self._target_edit.blockSignals(True)
+                    self._target_edit.setText(f"{frac:.3f}")
+                    self._target_edit.blockSignals(False)
 
                 wp_idx = _wp_index_from_stage_number(self.stage_number)
                 phase = float(self.offset)
@@ -238,171 +344,224 @@ class StageRow(QWidget):
                 self.controller.move_to(angle_deg, blocking=False)
 
                 if mv is not None and np.isfinite(float(mv)):
-                    self.log(f"Moving to {angle_deg:.3f}° (fraction={frac:.3f}, ~{frac*float(mv):.3g} W)…")
+                    self._log_message(f"Moving to {angle_deg:.3f}° (fraction={frac:.3f}, ~{frac * float(mv):.3g} W)…")
                 else:
-                    self.log(f"Moving to {angle_deg:.3f}° (fraction={frac:.3f})…")
+                    self._log_message(f"Moving to {angle_deg:.3f}° (fraction={frac:.3f})…")
 
                 self._poll.start()
                 return
 
+            # Normal angle/position mode
             value = float(t)
             if self.is_waveplate:
                 value = value % 360.0
             self.controller.move_to(value, blocking=False)
-            self.log(f"Moving to {value:.3f}{'°' if self.is_waveplate else ''} …")
+            self._log_message(f"Moving to {value:.3f}{'°' if self.is_waveplate else ''} …")
             self._poll.start()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to move stage: {e}")
-            self.log(f"Move failed: {e}")
+            self._log_message(f"Move failed: {e}")
+
+
+# -----------------------------------------------------------------------------
+# ThorlabsView
+# -----------------------------------------------------------------------------
 
 
 class ThorlabsView(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Thorlabs Stage Control")
-        self.stage_rows = []
-        self.initUI()
+    """Main view containing all Thorlabs stage rows organized by group."""
 
-    def initUI(self):
+    def __init__(self, log_panel: LogPanel | None = None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Thorlabs Stage Control")
+        self._log = log_panel
+        self._stage_rows: list[StageRow] = []
+        self._init_ui()
+
+    def _init_ui(self) -> None:
         main_layout = QHBoxLayout(self)
 
-        # Left panel
+        # Left panel: stage groups
         left_layout = QVBoxLayout()
 
-        # Group 1
+        # Group 1: w vs (2w, 3w) mixing
         group1 = QGroupBox("w vs (2w,3w) mixing")
-        g1_layout = QVBoxLayout()
+        g1_layout = QVBoxLayout(group1)
         activate_all_g1 = QPushButton("Activate All in Group")
-        activate_all_g1.clicked.connect(lambda: self.activate_group([0]))
+        activate_all_g1.clicked.connect(lambda: self._activate_group([0]))
         g1_layout.addWidget(activate_all_g1)
-        row1 = StageRow(0, description="w/(2w,3w)", log_callback=self.log_message)
-        self.stage_rows.append(row1)
+        row1 = StageRow(0, description="w/(2w,3w)", log_panel=self._log)
+        self._stage_rows.append(row1)
         g1_layout.addWidget(row1)
-        group1.setLayout(g1_layout)
         left_layout.addWidget(group1)
 
-        # Group 2
+        # Group 2: w, 2w, 3w attenuation
         group2 = QGroupBox("w, 2w, 3w attenuation")
-        g2_layout = QVBoxLayout()
+        g2_layout = QVBoxLayout(group2)
         activate_all_g2 = QPushButton("Activate All in Group")
-        activate_all_g2.clicked.connect(lambda: self.activate_group([1, 2, 3]))
+        activate_all_g2.clicked.connect(lambda: self._activate_group([1, 2, 3]))
         g2_layout.addWidget(activate_all_g2)
-        row2 = StageRow(1, description="w", log_callback=self.log_message)
-        row3 = StageRow(2, description="2w", log_callback=self.log_message)
-        row4 = StageRow(3, description="3w", log_callback=self.log_message)
-        self.stage_rows.extend([row2, row3, row4])
-        g2_layout.addWidget(row2); g2_layout.addWidget(row3); g2_layout.addWidget(row4)
-        group2.setLayout(g2_layout)
+        for i, desc in enumerate(["w", "2w", "3w"], start=1):
+            row = StageRow(i, description=desc, log_panel=self._log)
+            self._stage_rows.append(row)
+            g2_layout.addWidget(row)
         left_layout.addWidget(group2)
 
-        # Group 3
+        # Group 3: MPC
         group3 = QGroupBox("MPC")
-        g3_layout = QVBoxLayout()
+        g3_layout = QVBoxLayout(group3)
         activate_all_g3 = QPushButton("Activate All in Group")
-        activate_all_g3.clicked.connect(lambda: self.activate_group([4, 5]))
+        activate_all_g3.clicked.connect(lambda: self._activate_group([4, 5]))
         g3_layout.addWidget(activate_all_g3)
-        row5 = StageRow(4, description="Before MPC", log_callback=self.log_message)
-        row6 = StageRow(5, description="After MPC", log_callback=self.log_message)
-        self.stage_rows.extend([row5, row6])
-        g3_layout.addWidget(row5); g3_layout.addWidget(row6)
-        group3.setLayout(g3_layout)
+        for i, desc in [(4, "Before MPC"), (5, "After MPC")]:
+            row = StageRow(i, description=desc, log_panel=self._log)
+            self._stage_rows.append(row)
+            g3_layout.addWidget(row)
         left_layout.addWidget(group3)
-        
-        # Group 4: SFG c
+
+        # Group 4: SFG
         group4 = QGroupBox("SFG")
-        g4_layout = QVBoxLayout()
+        g4_layout = QVBoxLayout(group4)
         activate_all_g4 = QPushButton("Activate All in Group")
-        # The next row we append will be index 6
-        activate_all_g4.clicked.connect(lambda: self.activate_group([6]))
+        activate_all_g4.clicked.connect(lambda: self._activate_group([6]))
         g4_layout.addWidget(activate_all_g4)
-        # Waveplate 7 (0-based stage_number=6), named "3w/2w"
-        row7_wp = StageRow(6, description="3w/2w", log_callback=self.log_message)
-        self.stage_rows.append(row7_wp)
-        g4_layout.addWidget(row7_wp)
-        group4.setLayout(g4_layout)
+        row7 = StageRow(6, description="3w/2w", log_panel=self._log)
+        self._stage_rows.append(row7)
+        g4_layout.addWidget(row7)
         left_layout.addWidget(group4)
 
-        # --- Group 5: Translation Stages (stages 7,8,9) ---------------------
+        # Group 5: Translation Stages
         group5 = QGroupBox("Translation Stages")
-        g5_layout = QVBoxLayout()
+        g5_layout = QVBoxLayout(group5)
         activate_all_g5 = QPushButton("Activate All in Group")
-        # The next three rows we append will be indices 7,8,9
-        activate_all_g5.clicked.connect(lambda: self.activate_group([7, 8, 9]))
+        activate_all_g5.clicked.connect(lambda: self._activate_group([7, 8, 9]))
         g5_layout.addWidget(activate_all_g5)
-
-        row8 = StageRow(7, description="Focus",   log_callback=self.log_message)
-        row9 = StageRow(8, description="Delay 1", log_callback=self.log_message)
-        row10 = StageRow(9, description="Delay 2", log_callback=self.log_message)
-        self.stage_rows.extend([row8, row9, row10])
-        g5_layout.addWidget(row8); g5_layout.addWidget(row9); g5_layout.addWidget(row10)
-        group5.setLayout(g5_layout)
+        for i, desc in [(7, "Focus"), (8, "Delay 1"), (9, "Delay 2")]:
+            row = StageRow(i, description=desc, log_panel=self._log)
+            self._stage_rows.append(row)
+            g5_layout.addWidget(row)
         left_layout.addWidget(group5)
 
         left_layout.addStretch(1)
-
-        # Right panel: log
-        right_layout = QVBoxLayout()
-        log_label = QLabel("Log:")
-        right_layout.addWidget(log_label)
-        self.log_text = QTextEdit(); self.log_text.setReadOnly(True)
-        right_layout.addWidget(self.log_text)
-
         main_layout.addLayout(left_layout, 2)
-        main_layout.addLayout(right_layout, 1)
 
-    def activate_group(self, indices):
+    # -------------------------------------------------------------------------
+    # Logging
+    # -------------------------------------------------------------------------
+
+    def _log_message(self, msg: str) -> None:
+        if self._log:
+            self._log.log(msg, source="Thorlabs")
+
+    # -------------------------------------------------------------------------
+    # Group activation
+    # -------------------------------------------------------------------------
+
+    def _activate_group(self, indices: list[int]) -> None:
         for idx in indices:
-            row = self.stage_rows[idx]
+            row = self._stage_rows[idx]
             try:
-                row.activate_stage()
+                row._on_activate()
                 if row.controller is not None:
-                    row.stage_label.setStyleSheet("background-color: lightgreen;")
-                    self.log_message(f"Stage {row.stage_number + 1} activated successfully.")
+                    row._stage_label.setStyleSheet("background-color: lightgreen;")
+                    self._log_message(f"Stage {row.stage_number + 1} activated successfully.")
                 else:
-                    row.stage_label.setStyleSheet("")
+                    row._stage_label.setStyleSheet("")
             except Exception as e:
-                self.log_message(f"Stage {row.stage_number + 1} activation error: {e}")
-                row.stage_label.setStyleSheet("background-color: lightcoral;")
+                self._log_message(f"Stage {row.stage_number + 1} activation error: {e}")
+                row._stage_label.setStyleSheet("background-color: lightcoral;")
 
-    def log_message(self, message: str):
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log_text.append(f"[{current_time}] {message}")
-        self.log_text.verticalScrollBar().setValue(self.log_text.verticalScrollBar().maximum())
-        logger.info(message)
+    # -------------------------------------------------------------------------
+    # Calibration update
+    # -------------------------------------------------------------------------
 
-    def update_stage_calibration(self, wp_index, calibration):
-        for row in self.stage_rows:
-            if row.stage_number < NUM_WAVEPLATES and (row.stage_number + 1) == wp_index:
+    def update_stage_calibration(self, wp_index: int, calibration: tuple[float, float]) -> None:
+        """Update calibration for a specific waveplate."""
+        for row in self._stage_rows:
+            if row.is_waveplate and (row.stage_number + 1) == wp_index:
                 row.amplitude, row.offset = calibration
                 REGISTRY.register(_reg_key_calib(wp_index), (float(calibration[0]), float(calibration[1])))
-                self.log_message(f"Updated calibration for Stage {row.stage_number + 1}: phase={calibration[1]:.2f}°")
+                self._log_message(f"Updated calibration for Stage {row.stage_number + 1}: phase={calibration[1]:.2f}°")
+
+
+# -----------------------------------------------------------------------------
+# StageControlWindow
+# -----------------------------------------------------------------------------
 
 
 class StageControlWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    """Main window with tabs for all stage control interfaces."""
+
+    from PyQt5.QtCore import pyqtSignal
+
+    closed = pyqtSignal()
+
+    def __init__(
+        self, log_panel: LogPanel | None = None, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
         self.setWindowTitle("Stage Control")
-        self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
+        self.setAttribute(Qt.WA_DeleteOnClose)
 
-        self.thorlabs_view = ThorlabsView()
-        self.tabs.addTab(self.thorlabs_view, "Thorlabs Control")
+        self._log = log_panel
+        self._init_ui()
 
-        self.gc_view = GratingCompressorWindow()
-        self.tabs.addTab(self.gc_view, "Grating Compressor")
-        
-        self.piezojena_view = PiezoJenaStageWindow()
-        self.tabs.addTab(self.piezojena_view, "PiezoJena")
+    def _init_ui(self) -> None:
+        # Lazy imports to avoid circular imports
+        from dlab.diagnostics.ui.auto_waveplate_calib_window import AutoWaveplateCalibWindow
+        from dlab.diagnostics.ui.grating_compressor_window import GratingCompressorWindow
+        from dlab.diagnostics.ui.piezojena_window import PiezoJenaStageWindow
+        from dlab.hardware.wrappers.waveplate_calib import WaveplateCalibWidget
 
-        self.calib_widget = WaveplateCalibWidget(
-            log_callback=self.thorlabs_view.log_message,
-            calibration_changed_callback=self.update_stage_calibrations
+        self._tabs = QTabWidget()
+        self.setCentralWidget(self._tabs)
+
+        # Thorlabs tab
+        self._thorlabs_view = ThorlabsView(log_panel=self._log)
+        self._tabs.addTab(self._thorlabs_view, "Thorlabs Control")
+
+        # Grating Compressor tab
+        self._gc_view = GratingCompressorWindow(log_panel=self._log)
+        self._tabs.addTab(self._gc_view, "Grating Compressor")
+
+        # PiezoJena tab
+        self._piezojena_view = PiezoJenaStageWindow(log_panel=self._log)
+        self._tabs.addTab(self._piezojena_view, "PiezoJena")
+
+        # Waveplate Calibration tab
+        self._calib_widget = WaveplateCalibWidget(
+            log_panel=self._log,
+            calibration_changed_callback=self._update_stage_calibrations,
         )
-        self.tabs.addTab(self.calib_widget, "Waveplate Calibration")
-        REGISTRY.register("ui:waveplate_calib_widget", self.calib_widget)
+        self._tabs.addTab(self._calib_widget, "Waveplate Calibration")
+        REGISTRY.register("ui:waveplate_calib_widget", self._calib_widget)
 
-        self.autocalib_view = AutoWaveplateCalibWindow()
-        self.tabs.addTab(self.autocalib_view, "Automatic Waveplate Calibration")
+        # Auto Waveplate Calibration tab
+        self._autocalib_view = AutoWaveplateCalibWindow()
+        self._tabs.addTab(self._autocalib_view, "Automatic Waveplate Calibration")
 
-    def update_stage_calibrations(self, wp_index, calibration):
-        self.thorlabs_view.update_stage_calibration(wp_index, calibration)
+    # -------------------------------------------------------------------------
+    # Calibration callback
+    # -------------------------------------------------------------------------
+
+    def _update_stage_calibrations(self, wp_index: int, calibration: tuple[float, float]) -> None:
+        self._thorlabs_view.update_stage_calibration(wp_index, calibration)
+
+    # -------------------------------------------------------------------------
+    # Cleanup
+    # -------------------------------------------------------------------------
+
+    def closeEvent(self, event) -> None:
+        self.closed.emit()
+        super().closeEvent(event)
+
+
+if __name__ == "__main__":
+    import sys
+    from PyQt5.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    window = StageControlWindow()
+    window.show()
+    sys.exit(app.exec_())
