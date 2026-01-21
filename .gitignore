@@ -23,45 +23,26 @@ dist/
 .eggs/
 dlab.egg-info/
 
-# Environnements virtuels
 .venv/
-venv/
-env/
-ENV/
-.conda/
-.conda_env/
 
 # IDE / éditeurs
 .vscode/
-.idea/
-*.code-workspace
 
 # OS junk
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Logs
-logs/
-*.log
-!logs/.gitkeep
-
-# Fichiers temporaires divers
-*.tmp
-*.bak
-*.old
-*.swp
-*.swo
-
-# PyInstaller / Nuitka, etc.
-*.spec
-
-# Notebooks
-.ipynb_checkpoints/
-
-# Configs locales (si tu en crées)
 config/*local*.yaml
 config/*secrets*.yaml
 
-# Données/calibrations générées automatiquement (on garde les "default_*")
 ressources/calibration/**/calib_*.txt
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Sphinx build
+docs/build/
+docs/doctrees/
