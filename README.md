@@ -1,28 +1,72 @@
 # DLab Controller
 
-A PyQt5 app to drive the Dlab hardware, at Lund University.
+DLab Controller is a PyQt5-based application used to control experimental hardware in the DLab at Lund University.
 
-## Run
+The project provides a modular graphical interface and a Python backend to interact with laboratory devices (stages, power meters, cameras, etc.).
 
-At the start of VS Code, from the repo root, in the terminal:
+---
+
+## Installation
+
+From the repository root:
+
+```powershell
+# One-shot setup (creates venv and installs the package)
+.\scripts\setup.ps1
+```
+
+---
+
+## Running the application
+
+### Development
+
 ```powershell
 .\scripts\run.ps1
 ```
 
-After the virtual environnement has been activated, the script can be launch using
+### Manual launch
+
+Once the virtual environment is activated:
+
 ```powershell
 dlab
 ```
 
-## Install
-
-From the repo root:
+or:
 
 ```powershell
-# one-shot setup (creates venv, installs package)
-.\scripts\setup.ps1
+python -m dlab.app
 ```
+
+---
+
+## Documentation
+
+The documentation (user guide, developer guide, and API reference) is available online https://melvinrdn.github.io/dlabcontroller/
+
+To build the documentation locally:
+
+```powershell
+cd docs
+.\make.bat html
+```
+
+---
+
+## Project layout
+
+```
+src/dlab/
+├── ui/          # GUI components
+├── hardware/    # Hardware abstraction and wrappers
+├── core/        # Shared infrastructure (device manager)
+├── utils/       # Utilities
+└── app.py
+```
+
+---
 
 ## Author
 
-This code was written by **Melvin Redon**. 
+This software was written by **Melvin Redon**.
