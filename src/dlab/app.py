@@ -210,10 +210,10 @@ class DlabControllerWindow(QMainWindow):
         self._open_window("powermeter", PowermeterLiveWindow, "Powermeter", self._log)
 
     def _open_phase_lock_window(self):
-        from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
+        from dlab.diagnostics.ui.phase_lock_window import AvaspecPhaseLockWindow
 
         self._open_window(
-            "phase_lock", PhaseLockApp, "Phase Lock", use_destroyed_signal=True
+            "phase_lock", AvaspecPhaseLockWindow, "Phase Lock", self._log
         )
 
     # -------------------------------------------------------------------------
