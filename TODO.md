@@ -1,3 +1,2 @@
-- Phase lock, stage_control_window
-- Rfactor the scans
+- Refactor the two color scan
 - Add live view on the grid scan
