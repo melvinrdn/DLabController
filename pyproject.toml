@@ -13,7 +13,6 @@ dependencies = [
   "matplotlib",
   "prometheus-client",
   "pyserial",
-  "prysm",
   "pylablib",
   "ThorlabsPM100",
   "thorlabs-apt",

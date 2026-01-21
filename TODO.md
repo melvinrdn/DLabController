@@ -1,0 +1,3 @@
+- Phase lock, stage_control_window
+- Rfactor the scans
+- Add live view on the grid scan

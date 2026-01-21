@@ -207,7 +207,7 @@ class DlabControllerWindow(QMainWindow):
     def _open_powermeter_window(self):
         from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
 
-        self._open_window("powermeter", PowermeterLiveWindow, "Powermeter")
+        self._open_window("powermeter", PowermeterLiveWindow, "Powermeter", self._log)
 
     def _open_phase_lock_window(self):
         from dlab.diagnostics.ui.phase_lock_window import PhaseLockApp
@@ -231,7 +231,9 @@ class DlabControllerWindow(QMainWindow):
             win.activateWindow()
             return
 
-        win = DahengLiveWindow(camera_name=camera_name, fixed_index=index, log_panel=self._log)
+        win = DahengLiveWindow(
+            camera_name=camera_name, fixed_index=index, log_panel=self._log
+        )
         win.closed.connect(lambda name=camera_name: self._on_daheng_window_closed(name))
         self._daheng_windows[camera_name] = win
         win.show()

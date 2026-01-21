@@ -105,3 +105,9 @@ crosshair2:
   daheng_2:
     x_mm: 3.4435419659828534
     y_mm: 1.8551511429061915
+
+# ------------------
+# Piezojena config
+#-------------------  
+piezojena:
+  port: COM6
