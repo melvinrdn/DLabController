@@ -34,7 +34,9 @@ class DlabControllerWindow(QMainWindow):
         self._log = log_panel
         self._windows: dict[str, QWidget | None] = {
             "andor": None,
-            "avaspec": None,
+            "avaspec_w": None,
+            "avaspec_2w": None,
+            "avaspec_3w": None,
             "powermeter": None,
             "stage_control": None,
             "slm": None,
@@ -60,12 +62,14 @@ class DlabControllerWindow(QMainWindow):
 
         # Main instrument buttons
         buttons = [
-            ("Open SLM Window", self._open_slm_window),
-            ("Open Andor Window", self._open_andor_window),
-            ("Open Avaspec Window", self._open_avaspec_window),
-            ("Open Powermeter Window", self._open_powermeter_window),
-            ("Open Stage Control Window", self._open_stage_control_window),
-            ("Open Scan Window", self._open_scan_window),
+            ("Open SLM", self._open_slm),
+            ("Open Andor", self._open_andor),
+            ("Open Avaspec ω", self._open_avaspec_w),
+            ("Open Avaspec 2ω", self._open_avaspec_2w),
+            ("Open Avaspec 3ω", self._open_avaspec_3w),
+            ("Open Powermeter", self._open_powermeter),
+            ("Open Stage Control", self._open_stage_control),
+            ("Open Scan Panel", self._open_scan),
             ("Open Phase Lock ω/2ω", self._open_phase_lock_2w),
             ("Open Phase Lock ω/3ω", self._open_phase_lock_3w),
         ]
@@ -115,7 +119,7 @@ class DlabControllerWindow(QMainWindow):
 
         button = QPushButton("Open")
         button.clicked.connect(
-            lambda _, n=name, sb=spinbox: self._open_daheng_window(n, sb.value())
+            lambda _, n=name, sb=spinbox: self._open_daheng(n, sb.value())
         )
         h_layout.addWidget(button)
 
@@ -181,38 +185,69 @@ class DlabControllerWindow(QMainWindow):
     # Individual window openers
     # -------------------------------------------------------------------------
 
-    def _open_andor_window(self):
+    def _open_andor(self):
         from dlab.diagnostics.ui.andor_live_window import AndorLiveWindow
 
         self._open_window("andor", AndorLiveWindow, "Andor", self._log)
 
-    def _open_avaspec_window(self):
+    def _open_avaspec_w(self):
         from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
 
-        self._open_window("avaspec", AvaspecLiveWindow, "Avaspec", self._log)
+        self._open_window(
+            "avaspec_w",
+            AvaspecLiveWindow,
+            "Avaspec ω",
+            instance_id="w",
+            log_panel=self._log,
+        )
 
-    def _open_slm_window(self):
+    def _open_avaspec_2w(self):
+        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
+
+        self._open_window(
+            "avaspec_2w",
+            AvaspecLiveWindow,
+            "Avaspec ω/2ω",
+            instance_id="2w",
+            log_panel=self._log,
+        )
+
+    def _open_avaspec_3w(self):
+        from dlab.diagnostics.ui.avaspec_live_window import AvaspecLiveWindow
+
+        self._open_window(
+            "avaspec_3w",
+            AvaspecLiveWindow,
+            "Avaspec ω/3ω",
+            instance_id="3w",
+            log_panel=self._log,
+        )
+
+    def _open_slm(self):
         from dlab.diagnostics.ui.slm_window import SlmWindow
 
         self._open_window("slm", SlmWindow, "SLM", self._log)
 
-    def _open_stage_control_window(self):
+    def _open_stage_control(self):
         from dlab.diagnostics.ui.stage_control_window import StageControlWindow
 
-        self._open_window("stage_control", StageControlWindow, "Stage Control", self._log)
+        self._open_window(
+            "stage_control", StageControlWindow, "Stage Control", self._log
+        )
 
-    def _open_scan_window(self):
+    def _open_scan(self):
         from dlab.diagnostics.ui.scans.scan_window import ScanWindow
 
         self._open_window("scan", ScanWindow, "Scan")
 
-    def _open_powermeter_window(self):
+    def _open_powermeter(self):
         from dlab.diagnostics.ui.powermeter_live_window import PowermeterLiveWindow
 
         self._open_window("powermeter", PowermeterLiveWindow, "Powermeter", self._log)
 
     def _open_phase_lock_2w(self):
         from dlab.diagnostics.ui.phase_lock_window import AvaspecPhaseLockWindow
+
         self._open_window(
             "phase_lock_2w",
             AvaspecPhaseLockWindow,
@@ -223,6 +258,7 @@ class DlabControllerWindow(QMainWindow):
 
     def _open_phase_lock_3w(self):
         from dlab.diagnostics.ui.phase_lock_window import AvaspecPhaseLockWindow
+
         self._open_window(
             "phase_lock_3w",
             AvaspecPhaseLockWindow,
@@ -235,7 +271,7 @@ class DlabControllerWindow(QMainWindow):
     # Daheng camera windows (multiple instances)
     # -------------------------------------------------------------------------
 
-    def _open_daheng_window(self, camera_name: str, index: int):
+    def _open_daheng(self, camera_name: str, index: int):
         from dlab.diagnostics.ui.daheng_live_window import DahengLiveWindow
 
         if camera_name in self._daheng_windows:

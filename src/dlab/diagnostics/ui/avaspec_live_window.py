@@ -4,6 +4,7 @@ import sys
 import time
 import datetime
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +31,43 @@ from dlab.utils.paths_utils import data_dir
 from dlab.utils.log_panel import LogPanel
 from dlab.boot import ROOT, get_config
 
-REGISTRY_KEY = "spectrometer:avaspec"
+
+# -----------------------------------------------------------------------------
+# Instance presets
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AvaspecPreset:
+    """Default values for an Avaspec live-view instance."""
+
+    label: str
+    registry_prefix: str
+    ui_registry_key: str
+
+
+_PRESETS: dict[str, AvaspecPreset] = {
+    "w": AvaspecPreset(
+        label="ω",
+        registry_prefix="spectrometer:avaspec:w",
+        ui_registry_key="ui:avaspec_live:w",
+    ),
+    "2w": AvaspecPreset(
+        label="ω/2ω",
+        registry_prefix="spectrometer:avaspec:2w",
+        ui_registry_key="ui:avaspec_live:2w",
+    ),
+    "3w": AvaspecPreset(
+        label="ω/3ω",
+        registry_prefix="spectrometer:avaspec:3w",
+        ui_registry_key="ui:avaspec_live:3w",
+    ),
+}
+
+
+# -----------------------------------------------------------------------------
+# Worker Threads
+# -----------------------------------------------------------------------------
 
 
 class _MeasureThread(QThread):
@@ -78,14 +115,40 @@ class _MeasureThread(QThread):
                 break
 
 
+# -----------------------------------------------------------------------------
+# AvaspecLiveWindow
+# -----------------------------------------------------------------------------
+
+
 class AvaspecLiveWindow(QWidget):
-    """Live view window for Avaspec spectrometer."""
+    """Live view window for Avaspec spectrometer.
+
+    Parameters
+    ----------
+    instance_id : str
+        Preset identifier (``"w"``, ``"2w"`` or ``"3w"``).  Determines the
+        window title, registry keys, and log source.
+    preset : AvaspecPreset | None
+        Override the built-in preset for *instance_id*.
+    log_panel : LogPanel | None
+        Shared log panel.
+    """
 
     closed = pyqtSignal()
 
-    def __init__(self, log_panel: LogPanel | None = None):
-        super().__init__()
-        self.setWindowTitle("Avaspec Live")
+    def __init__(
+        self,
+        instance_id: str = "w",
+        preset: AvaspecPreset | None = None,
+        log_panel: LogPanel | None = None,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+
+        self._preset = preset or _PRESETS[instance_id]
+        self._instance_id = instance_id
+
+        self.setWindowTitle(f"Avaspec Live — {self._preset.label}")
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         self._log = log_panel
@@ -121,7 +184,7 @@ class AvaspecLiveWindow(QWidget):
         self.resize(1400, 780)
 
         try:
-            REGISTRY.register("ui:avaspec_live", self)
+            REGISTRY.register(self._preset.ui_registry_key, self)
         except Exception:
             pass
 
@@ -311,7 +374,7 @@ class AvaspecLiveWindow(QWidget):
 
     def _log_message(self, message: str):
         if self._log:
-            self._log.log(message, source="Avaspec")
+            self._log.log(message, source=f"Avaspec/{self._preset.label}")
 
     # -------------------------------------------------------------------------
     # Spectrometer control
@@ -342,9 +405,9 @@ class AvaspecLiveWindow(QWidget):
             self._ctrl.activate()
             self._apply_params()
 
-            key = f"{REGISTRY_KEY}:spec_{idx + 1}"
+            key = self._preset.registry_prefix
             try:
-                for k, v in REGISTRY.items(prefix=f"{REGISTRY_KEY}:"):
+                for k, v in REGISTRY.items(prefix=self._preset.registry_prefix):
                     if k == key or v is self._ctrl:
                         REGISTRY.unregister(k)
             except Exception:
@@ -899,7 +962,7 @@ class AvaspecLiveWindow(QWidget):
 
         dir_path, now = self._get_save_directory()
         safe_ts = now.strftime("%Y-%m-%d_%H-%M-%S")
-        base = "Avaspec"
+        base = f"Avaspec_{self._instance_id}"
         filename = f"{base}_Spectrum_{safe_ts}.txt"
         filepath = dir_path / filename
         comment = self._comment_edit.text() or ""
@@ -937,6 +1000,7 @@ class AvaspecLiveWindow(QWidget):
                 if comment:
                     f.write(f"# Comment: {comment}\n")
                 f.write(f"# Timestamp: {now:%Y-%m-%d %H:%M:%S}\n")
+                f.write(f"# Instance: {self._instance_id} ({self._preset.label})\n")
                 f.write(f"# IntegrationTime_ms: {self._int_edit.text()}\n")
                 f.write(f"# Averages: {self._avg_edit.text()}\n")
                 f.write(f"# BackgroundApplied: {self._ctrl._bg_counts is not None}\n")
@@ -960,7 +1024,7 @@ class AvaspecLiveWindow(QWidget):
                     f.write("Wavelength_nm;Counts_raw;Counts_bgsub\n")
                     for x, y_raw, y_bg in zip(wl, raw, bgsub):
                         f.write(
-                            f"{float(x):.6f};{float(y_raw):.6f};" f"{float(y_bg):.6f}\n"
+                            f"{float(x):.6f};{float(y_raw):.6f};{float(y_bg):.6f}\n"
                         )
 
             # Write log entry
@@ -1063,6 +1127,6 @@ class AvaspecLiveWindow(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    gui = AvaspecLiveWindow()
+    gui = AvaspecLiveWindow(instance_id="w")
     gui.show()
     sys.exit(app.exec_())
