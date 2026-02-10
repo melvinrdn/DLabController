@@ -39,7 +39,8 @@ class DlabControllerWindow(QMainWindow):
             "stage_control": None,
             "slm": None,
             "scan": None,
-            "phase_lock": None,
+            "phase_lock_2w": None,
+            "phase_lock_3w": None,
         }
         self._daheng_windows: dict[str, QWidget] = {}
         self._camera_controls: dict[str, QSpinBox] = {}
@@ -65,7 +66,8 @@ class DlabControllerWindow(QMainWindow):
             ("Open Powermeter Window", self._open_powermeter_window),
             ("Open Stage Control Window", self._open_stage_control_window),
             ("Open Scan Window", self._open_scan_window),
-            ("Open Phase Lock Window", self._open_phase_lock_window),
+            ("Open Phase Lock ω/2ω", self._open_phase_lock_2w),
+            ("Open Phase Lock ω/3ω", self._open_phase_lock_3w),
         ]
         for label, callback in buttons:
             btn = QPushButton(label)
@@ -209,11 +211,24 @@ class DlabControllerWindow(QMainWindow):
 
         self._open_window("powermeter", PowermeterLiveWindow, "Powermeter", self._log)
 
-    def _open_phase_lock_window(self):
+    def _open_phase_lock_2w(self):
         from dlab.diagnostics.ui.phase_lock_window import AvaspecPhaseLockWindow
-
         self._open_window(
-            "phase_lock", AvaspecPhaseLockWindow, "Phase Lock", self._log
+            "phase_lock_2w",
+            AvaspecPhaseLockWindow,
+            "Phase Lock ω/2ω",
+            instance_id="2w",
+            log_panel=self._log,
+        )
+
+    def _open_phase_lock_3w(self):
+        from dlab.diagnostics.ui.phase_lock_window import AvaspecPhaseLockWindow
+        self._open_window(
+            "phase_lock_3w",
+            AvaspecPhaseLockWindow,
+            "Phase Lock ω/3ω",
+            instance_id="3w",
+            log_panel=self._log,
         )
 
     # -------------------------------------------------------------------------

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -25,11 +26,38 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 from dlab.core.device_registry import REGISTRY
 from dlab.utils.log_panel import LogPanel
-
-
 from dlab.hardware.wrappers.piezojena_controller import NV40
 
-REGISTRY_KEY_DEFAULT = "phaselock:avaspec"
+
+# -----------------------------------------------------------------------------
+# Instance presets
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PhaseLockPreset:
+    """Default values for a phase-lock instance."""
+
+    label: str
+    registry_key: str
+    spec_key: str
+    stage_key: str
+
+
+_PRESETS: dict[str, PhaseLockPreset] = {
+    "2w": PhaseLockPreset(
+        label="ω/2ω",
+        registry_key="phaselock:avaspec:2w",
+        spec_key="spectrometer:avaspec:2w",
+        stage_key="stage:piezojena:nv40_2w",
+    ),
+    "3w": PhaseLockPreset(
+        label="ω/3ω",
+        registry_key="phaselock:avaspec:3w",
+        spec_key="spectrometer:avaspec:3w",
+        stage_key="stage:piezojena:nv40_3w",
+    ),
+}
 
 
 # -----------------------------------------------------------------------------
@@ -146,22 +174,39 @@ class AvaspecThread(QThread):
 
 
 class AvaspecPhaseLockWindow(QWidget):
-    """Phase locking control window using Avaspec spectrometer and PiezoJena stage."""
+    """Phase locking control window using Avaspec spectrometer and PiezoJena stage.
+
+    Parameters
+    ----------
+    instance_id : str
+        Preset identifier (``"2w"`` or ``"3w"``).  Determines the window
+        title, registry key, and default device keys shown in the UI.
+        A custom ``PhaseLockPreset`` can also be supplied via *preset*.
+    preset : PhaseLockPreset | None
+        Override the built-in preset for *instance_id*.
+    log_panel : LogPanel | None
+        Shared log panel.
+    """
 
     closed = pyqtSignal()
 
     def __init__(
         self,
+        instance_id: str = "2w",
+        preset: PhaseLockPreset | None = None,
         log_panel: LogPanel | None = None,
-        registry_key: str = REGISTRY_KEY_DEFAULT,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Phase Locking Control")
+
+        self._preset = preset or _PRESETS[instance_id]
+        self._instance_id = instance_id
+
+        self.setWindowTitle(f"Phase Lock — {self._preset.label}")
         self.setAttribute(Qt.WA_DeleteOnClose)
 
         self._log = log_panel
-        self._registry_key = registry_key
+        self._registry_key = self._preset.registry_key
         self._spec_ctrl = None
         self._stage = None
         self._acq_thread = None
@@ -202,28 +247,16 @@ class AvaspecPhaseLockWindow(QWidget):
         middle_row = QHBoxLayout()
         left_panel = QVBoxLayout()
 
-        # Device connection group
         left_panel.addWidget(self._create_connection_group())
-
-        # FFT analysis group
         left_panel.addWidget(self._create_fft_group())
-
-        # PID control group
         left_panel.addWidget(self._create_pid_group())
-
-        # Voltage limits group
         left_panel.addWidget(self._create_voltage_group())
-
-        # Stability test group
         left_panel.addWidget(self._create_stability_group())
-
-        # Control row
         left_panel.addLayout(self._create_control_row())
 
         middle_row.addLayout(left_panel, 1)
         root.addLayout(middle_row, 2)
 
-        # Stability timer
         self._stability_timer = QTimer()
         self._stability_timer.timeout.connect(self._on_stability_step)
 
@@ -236,7 +269,7 @@ class AvaspecPhaseLockWindow(QWidget):
         layout = QGridLayout(group)
 
         layout.addWidget(QLabel("Spectrometer:"), 0, 0)
-        self._spec_key_edit = QLineEdit("spectrometer:avaspec:spec_1")
+        self._spec_key_edit = QLineEdit(self._preset.spec_key)
         self._spec_key_edit.setMaximumWidth(200)
         layout.addWidget(self._spec_key_edit, 0, 1)
         btn_spec = QPushButton("Connect")
@@ -245,7 +278,7 @@ class AvaspecPhaseLockWindow(QWidget):
         layout.addWidget(btn_spec, 0, 2)
 
         layout.addWidget(QLabel("NV40 Stage:"), 1, 0)
-        self._stage_key_edit = QLineEdit("stage:piezojena:nv40")
+        self._stage_key_edit = QLineEdit(self._preset.stage_key)
         self._stage_key_edit.setMaximumWidth(200)
         layout.addWidget(self._stage_key_edit, 1, 1)
         btn_stage = QPushButton("Connect")
@@ -475,7 +508,7 @@ class AvaspecPhaseLockWindow(QWidget):
 
     def _log_message(self, msg: str) -> None:
         if self._log:
-            self._log.log(msg, source="PhaseLock")
+            self._log.log(msg, source=f"PhaseLock/{self._preset.label}")
 
     # -------------------------------------------------------------------------
     # Public API
@@ -973,7 +1006,7 @@ if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
-    window = AvaspecPhaseLockWindow()
+    window = AvaspecPhaseLockWindow(instance_id="2w")
     window.resize(800, 800)
     window.show()
     sys.exit(app.exec_())
