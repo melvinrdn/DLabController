@@ -110,4 +110,7 @@ crosshair2:
 # Piezojena config
 #-------------------  
 piezojena:
-  port: COM6
+  nv40_2w:
+    port: COM6
+  nv40_3w:
+    port: COMX
